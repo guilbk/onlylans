@@ -1,12 +1,4 @@
 /* K4: map canvas and the recentre button */
-#stage {
-  position: relative;
-  overflow: hidden;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
 #map {
   position: absolute;
   left: 0;
@@ -26,7 +18,7 @@
 #map-center {
   position: absolute;
   right: 10px;
-  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
   z-index: 5;
   min-width: 44px;
   min-height: 44px;
