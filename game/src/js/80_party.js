@@ -268,6 +268,7 @@
     function take(o, act) {
       const g = G();
       if (!g || g.over) return false;
+      if (snap && snap.start_at - srvNow() > 0) { e.say('Зачекай на старт'); return false; }   // the server refuses (409) a claim during the countdown
       if (pending.has(o.i)) return true;
       const prev = g.mode === 'ride' ? g.next : g.cur;
       if (!act(o)) return false;
