@@ -4,7 +4,7 @@
   const doc = root.document;
   const qs = new URLSearchParams(root.location.search);
   const SCREEN = qs.get('screen') === '1';   // the clean spectator view for a projector
-  const POLL_MS = 200;
+  const POLL_MS = 200, BACKOFF_MAX = 2000;   // the server may set `poll_ms`
   const KEY = 'party-session';
   const JSON_TYPE = { 'Content-Type': 'application/json' };
   const MAP_W = 15000, MAP_H = 19000;
@@ -32,6 +32,13 @@
   const eur = (x) => PG.util.eur(x);
   const ranked = () => snap.players.slice().sort((a, b) => b.money - a.money);
   const isHost = () => !!me && !!me.token;
+  const TOP = 10;            // the big screen names and lists this many cars
+  const FEED_S = 7;          // s, a live-feed line stays this long
+  const LAST_S = 30;         // s, the final countdown
+  let feed = [], prev = null, hover = null;
+
+  /** Own car (skin id and mods) for the other screens; the server passes it through. */
+  const look = () => ({ skin: PG.cars.skin(), mods: PG.cars.mods() });
 
   function el(tag, cls, text, parent) {
     const e = doc.createElement(tag);
@@ -93,6 +100,7 @@
   function enter(path, body, name) {
     ui.err.textContent = '';
     if (body.room) body.room = normCode(body.room);
+    Object.assign(body, look());
     return root.fetch(path, { method: 'POST', headers: JSON_TYPE, body: JSON.stringify(body) }).then(function (r) {
       return r.json().then(function (d) {
         if (!r.ok) { ui.err.textContent = ({ no_room: 'Такого лобі немає', phase: 'Гру вже завершено', full: 'Лобі заповнене', busy: 'Забагато лобі' })[d.error] || 'Не вдалося'; return; }
@@ -298,7 +306,7 @@
   function syncBody() {
     const g = started && !SCREEN ? G() : null;
     if (!g) return { key: me.key };
-    return { key: me.key, x: Math.round(g.x), y: Math.round(g.y), hx: g.hx, hy: g.hy, money: g.tot, trips: g.rides };
+    return Object.assign({ key: me.key }, { x: Math.round(g.x), y: Math.round(g.y), hx: g.hx, hy: g.hy, money: g.tot, trips: g.rides });
   }
 
   // ---- other cars: samples on the server clock, drawn a little behind it so they glide ----
@@ -324,27 +332,59 @@
     return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
   }
 
+  const skinOk = (id) => PG.cars.SKINS.some(function (k) { return k.id === id; });
+  const look1 = (p) => (skinOk(p.skin) ? [p.skin, p.mods && typeof p.mods === 'object' ? p.mods : null] : [undefined, undefined]);
+
+  /** Name tags that never overlap: the top TOP cars and the hovered one, each tries a few spots around its car. */
+  function placeLabel(ctx, x, y, len, w, h, taken) {
+    const gap = len * 0.55, spots = [[0, -gap - h], [0, gap], [0, -gap - 2.1 * h], [0, gap + h * 1.1], [w / 2 + len * 0.6, -h / 2], [-w / 2 - len * 0.6, -h / 2]];
+    for (let k = 0; k < spots.length; k++) {
+      const r = { x: x + spots[k][0] - w / 2, y: y + spots[k][1], w: w, h: h };
+      if (!taken.some(function (t) { return r.x < t.x + t.w && r.x + r.w > t.x && r.y < t.y + t.h && r.y + r.h > t.y; })) { taken.push(r); return r; }
+    }
+    return null;
+  }
+
   function drawCars(ctx) {
     if (!snap || !started) return;
     const dt = Math.min(0.1, nowS() - lastDraw), W = stage().clientWidth, t = srvNow() - DELAY;
     lastDraw = nowS();
     // phones: the size of the hero; the projector: big, readable from the back of the room
-    const len = SCREEN ? Math.max(44, W * 0.034) : PG.render.carLen('hero'), fs = Math.round(SCREEN ? len * 0.45 : 11);
+    const len = SCREEN ? Math.max(40, W * 0.03) : PG.render.carLen('hero'), fs = Math.round(SCREEN ? len * 0.42 : 11);
     ctx.font = '700 ' + fs + 'px system-ui, sans-serif';
     ctx.textAlign = 'center';
+    const order = SCREEN ? ranked() : [], taken = [], seen = [];
     snap.players.forEach(function (p, i) {
       const s = cars.get(p.id);
       if (!s || (me && p.id === me.id)) return;
       const c = carAt(s, t), a = PG.cars.turn(FIRST_SLOT + i % SLOTS, p.hx, p.hy, dt, false);
-      const q = PG.render.P(c.x, c.y), x = q.x, y = q.y, alpha = p.online ? 1 : 0.4;
+      const q = PG.render.P(c.x, c.y), x = q.x, y = q.y, alpha = p.online ? 1 : 0.4, lk = look1(p);
       if (x < -60 || y < -60 || x > W + 60 || y > stage().clientHeight + 60) return;
-      PG.cars.draw(ctx, x, y, a, len, p.color, alpha, 'rival');
-      const w = ctx.measureText(p.name).width + fs * 0.7, h = fs * 1.3, ty = y - len * 0.9;
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = PG.theme.pal.card;
-      ctx.fillRect(x - w / 2, ty - h, w, h);
-      ctx.fillStyle = p.color;
-      ctx.fillText(p.name, x, ty - h * 0.25);
+      PG.cars.draw(ctx, x, y, a, len, p.color, alpha, 'rival', lk[0], lk[1]);
+      seen.push({ p: p, x: x, y: y, alpha: alpha });
+    });
+    // labels after all cars: the leaders first, so they get the best spots; the rest are dots on the car
+    const rank = (p) => order.indexOf(p);
+    const list = SCREEN ? seen.slice().sort(function (a, b) { return rank(a.p) - rank(b.p); }) : seen;
+    list.forEach(function (c) {
+      const p = c.p, top = !SCREEN || rank(p) < TOP || (hover && Math.hypot(hover.x - c.x, hover.y - c.y) < len * 0.7);
+      ctx.globalAlpha = c.alpha;
+      const w = top ? ctx.measureText(p.name).width + fs * 0.7 : 0, h = fs * 1.3;
+      const r = top ? placeLabel(ctx, c.x, c.y, len, w, h, taken) : null;
+      if (r) {
+        ctx.fillStyle = PG.theme.pal.card;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.fillStyle = p.color;
+        ctx.fillText(p.name, r.x + r.w / 2, r.y + h * 0.75);
+      } else if (SCREEN) {
+        ctx.fillStyle = p.color;
+        ctx.strokeStyle = PG.theme.pal.card;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y - len * 0.7, fs * 0.3, 0, 7);
+        ctx.fill();
+        ctx.stroke();
+      }
     });
     ctx.globalAlpha = 1;
   }
@@ -355,15 +395,76 @@
       hud.board = el('aside', 'pty-board', undefined, doc.getElementById('app'));
       hud.title = el('h2', null, '', hud.board);
       hud.time = el('div', 'pty-time', '', hud.board);
+      hud.last = el('div', 'pty-last', '', doc.getElementById('app'));
       hud.rows = el('div', 'pty-rows', undefined, hud.board);
+      hud.more = el('p', 'pty-more', '', hud.board);
+      hud.feed = el('div', 'pty-feed', undefined, hud.board);
       const foot = el('div', 'pty-foot', undefined, hud.board);
       el('p', 'pty-sub', 'Долучайся за кодом ' + room, foot);
       qrInto(el('canvas', 'pty-qr small', undefined, foot));
     }
     hud.title.textContent = snap.phase === 'done' ? 'Фінал' : PG.data.shifts[snap.shift].name;
     hud.rows.textContent = '';
-    ranked().forEach(function (p, i) {
+    const list = ranked(), n = list.length;
+    list.slice(0, TOP).forEach(function (p, i) {
       const row = el('div', 'pty-row' + (p.online ? '' : ' off'), undefined, hud.rows);
+      el('span', 'pty-pos', String(i + 1), row);
+      el('i', 'pty-dot', undefined, row).style.background = p.color;
+      el('span', 'pty-name', p.name, row);
+      el('span', 'pty-trips', String(p.trips), row);
+      el('b', 'pty-eur', eur(p.money), row);
+    });
+    hud.more.textContent = n + ' ' + PG.util.plural(n, 'гравець', 'гравці', 'гравців') + (n > TOP ? ' · ще ' + (n - TOP) + ' нижче' : '');
+    showFeed();
+  }
+
+  function showFeed() {
+    const keep = feed.filter(function (f) { return nowS() - f.at < FEED_S; });
+    if (keep.length === feed.length && hud.feed.childNodes.length === keep.length) return;
+    feed = keep;
+    hud.feed.textContent = '';
+    feed.forEach(function (f) { el('div', 'pty-feed-row', f.text, hud.feed); });
+  }
+
+  /** The live feed: who earned and who overtook whom, from two consecutive states. */
+  function feedFrom(s) {
+    const order = s.players.slice().sort(function (a, b) { return b.money - a.money; }), now = nowS(), pos = {};
+    order.forEach(function (p, i) { pos[p.id] = i; });
+    if (prev) {
+      const add = [];
+      order.forEach(function (p) {
+        const o = prev.money[p.id];
+        if (o === undefined) return;
+        if (p.money - o >= 1) add.push(p.name + ': +' + eur(p.money - o));
+        const j = pos[p.id] + 1, under = order[j];
+        if (under && prev.pos[under.id] !== undefined && prev.pos[p.id] > prev.pos[under.id] && j < order.length) add.push(p.name + ' випереджає ' + under.name);
+      });
+      add.forEach(function (text) { feed.push({ text: text, at: now }); });
+    }
+    prev = { money: {}, pos: pos };
+    order.forEach(function (p) { prev.money[p.id] = p.money; });
+    feed = feed.slice(-4);
+  }
+
+  /** The end on the projector: the podium for the top 3 with their cars, then the full table. */
+  function buildPodium(card) {
+    card.classList.add('wide', 'final');
+    el('h1', null, 'Фінал', card);
+    const list = ranked(), pod = el('div', 'pty-podium', undefined, card);
+    [1, 0, 2].forEach(function (i) {
+      const p = list[i];
+      if (!p) return;
+      const col = el('div', 'pty-pl pl' + (i + 1), undefined, pod), cv = el('canvas', 'pty-pcar', undefined, col), lk = look1(p);
+      cv.width = 240;
+      cv.height = 120;
+      PG.cars.paint(cv.getContext('2d'), lk[0], 120, 60, 150, p.color, lk[1] || {});
+      el('b', 'pty-pname', p.name, col).style.color = p.color;
+      el('span', 'pty-peur', eur(p.money), col);
+      el('div', 'pty-step', String(i + 1), col);
+    });
+    const tab = el('div', 'pty-table', undefined, card);
+    list.forEach(function (p, i) {
+      const row = el('div', 'pty-row', undefined, tab);
       el('span', 'pty-pos', String(i + 1), row);
       el('i', 'pty-dot', undefined, row).style.background = p.color;
       el('span', 'pty-name', p.name, row);
@@ -372,6 +473,8 @@
     });
   }
 
+  const myRank = () => { const l = ranked(); return 'Ти — #' + (l.findIndex(function (p) { return p.id === me.id; }) + 1) + ' з ' + l.length; };
+
   /** Top 3 and you, on the phone. */
   function mini() {
     const m = hud.mini || (hud.mini = el('div', 'pty-mini', undefined, doc.getElementById('app')));
@@ -379,6 +482,7 @@
     const rows = list.slice(0, 3);
     if (at > 2) rows.push(list[at]);
     m.textContent = '';
+    el('div', 'pty-rank', '#' + (at + 1) + ' з ' + list.length, m);
     rows.forEach(function (p) {
       const i = list.indexOf(p), row = el('div', 'pty-mrow' + (p.id === me.id ? ' me' : ''), undefined, m);
       el('span', 'pty-pos', String(i + 1), row);
@@ -397,7 +501,7 @@
       res.insertBefore(box, res.querySelector('.res-buttons'));
     }
     box.textContent = '';
-    el('h2', null, 'Перегони гравців', box);
+    el('h2', null, myRank(), box);
     ranked().forEach(function (p) {
       const row = el('div', 'race-row' + (p.id === me.id ? ' me' : ''), undefined, box);
       el('i', 'race-dot', undefined, row).style.background = p.color;
@@ -422,7 +526,7 @@
     if (ui.head) ui.head.textContent = s.players.length + ' ' + PG.util.plural(s.players.length, 'гравець', 'гравці', 'гравців');
     if (ui.list) fillList(ui.list);
     if (!started) return;
-    if (SCREEN) board();
+    if (SCREEN) { feedFrom(s); board(); }
     else {
       syncTaken();
       mini();
@@ -455,6 +559,10 @@
 
   function frame() {
     if (!snap || !started) return;
+    if (snap.phase === 'done') {
+      if (SCREEN && mode !== 'podium') show('podium', buildPodium);
+      return;
+    }
     const left = snap.start_at - srvNow();
     const count = left > 0 ? String(Math.ceil(left)) : '';
     if (mode !== 'count:' + count) show('count:' + count, count ? function (card) { el('div', 'pty-count', count, card); } : null);
@@ -462,7 +570,11 @@
       screenCamera();
       if (hud.time) {
         const r = Math.max(0, Math.ceil(snap.start_at + snap.duration - srvNow()));
-        hud.time.textContent = snap.phase === 'done' ? '' : Math.floor(r / 60) + ':' + String(r % 60).padStart(2, '0');
+        hud.time.textContent = Math.floor(r / 60) + ':' + String(r % 60).padStart(2, '0');
+        hud.time.classList.toggle('last', r > 0 && r <= LAST_S);
+        hud.last.textContent = r > 0 && r <= LAST_S ? String(r) : '';
+        hud.last.hidden = !hud.last.textContent;
+        showFeed();
       }
     }
   }
@@ -472,14 +584,26 @@
     if (!polling) { polling = true; poll(); }
   }
 
+  let pollMs = POLL_MS, wait = 0;   // wait: the back-off after errors, 0 when the link is fine
+  function reach(ok) {
+    wait = ok ? 0 : Math.min(BACKOFF_MAX, (wait || pollMs) * 2);
+    if (!ok && !hud.lost) { hud.lost = el('div', 'pty-lost', 'Перепідключення…', doc.getElementById('app')); }
+    if (hud.lost) hud.lost.hidden = ok;
+  }
+
+  /** One request at a time: the next poll starts only after the last answer (or error) plus the pause. */
   function poll() {
     const t0 = nowS();
     const req = me ? api('/api/sync', syncBody()) : api('/api/party');
     req.then(function (r) {
       if (r.status === 403 || (r.status === 404 && me)) { leave(); return; }
       if (r.status === 404 && !me) { ui.err && (ui.err.textContent = 'Такого лобі немає'); return; }
-      if (r.ok) onState(r.data);
-    }).catch(function () {}).then(function () { root.setTimeout(poll, Math.max(0, POLL_MS - (nowS() - t0) * 1000)); });
+      if (r.ok) {
+        if (r.data.poll_ms >= 50 && r.data.poll_ms <= 2000) pollMs = r.data.poll_ms;
+        onState(r.data);
+      }
+      reach(r.ok || r.status < 500);
+    }).catch(function () { reach(false); }).then(function () { root.setTimeout(poll, Math.max(wait, pollMs - (nowS() - t0) * 1000)); });
   }
 
   /** Start the party UI: resume a saved room, open the room from the link, or ask what to do. */
@@ -500,7 +624,13 @@
     });
     const code = normCode(qs.get('room'));
     const saved = JSON.parse(root.sessionStorage.getItem(KEY) || 'null');
-    if (SCREEN) { room = code; startPoll(); return; }
+    if (SCREEN) {
+      room = code;
+      stage().addEventListener('pointermove', function (e) { const b = stage().getBoundingClientRect(); hover = { x: e.clientX - b.left, y: e.clientY - b.top }; });
+      stage().addEventListener('pointerleave', function () { hover = null; });
+      startPoll();
+      return;
+    }
     if (saved && (!code || normCode(saved.room) === code)) {
       room = normCode(saved.room);
       me = { key: saved.key, id: saved.id, token: saved.token };
