@@ -158,7 +158,7 @@ def test_run_roads_and_run_html(tmp_path: Path) -> None:
     assert rules(v.run_roads(tmp_path / "missing.json")) == {"file"}
     html = tmp_path / "g.html"
     html.write_text("<html></html>", encoding="utf-8")
-    assert rules(v.run_html(html, None)) == {"html-data", "html-placeholder"}
+    assert rules(v.run_html(html, None)) == {"html-data"}
     assert rules(v.run_html(tmp_path / "missing.html", None)) == {"file"}
 
 
