@@ -58,7 +58,7 @@
   });
   A.radio.stations().forEach((st) => btn('stl', 'station: ' + st.name, () => {
     A.music.start(st.night ? 'night' : 'day'); A.radio.on(1);
-    let n = 0; while (A.radio.station() && A.radio.station().id !== st.id && n++ < 6) A.radio.next();
+    let n = 0; while (A.radio.station() && A.radio.station().id !== st.id && n++ < 12) A.radio.next();
     setTimeout(now, 100);
   }));
   btn('mus', 'stop music', () => A.music.stop());

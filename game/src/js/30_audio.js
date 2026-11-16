@@ -290,6 +290,33 @@
       o.connect(fl); o.start(t); o.stop(t + dur + 0.15);
     }));
   }
+  function sopilka(d, t, f, dur, v) { // wooden flute: triangle plus a quiet sine, vibrato from scheduled pitch points (no LFO node)
+    const o = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain(), g2 = ctx.createGain(), fl = ctx.createBiquadFilter();
+    o.type = 'triangle'; o2.type = 'sine';
+    o.frequency.setValueAtTime(f, t); o2.frequency.setValueAtTime(f * 2, t);
+    for (let x = t + 0.16, i = 0; x < t + dur - 0.05; x += 0.07, i++) {
+      const m = i % 2 ? 0.995 : 1.005; o.frequency.linearRampToValueAtTime(f * m, x); o2.frequency.linearRampToValueAtTime(f * 2 * m, x);
+    }
+    fl.type = 'lowpass'; fl.frequency.value = 3000; g2.gain.value = 0.2;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + 0.045);
+    g.gain.setValueAtTime(v * 0.9, t + Math.max(0.05, dur - 0.12)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(fl); fl.connect(d);
+    o.start(t); o.stop(t + dur + 0.03); o2.start(t); o2.stop(t + dur + 0.03);
+    noise(d, { t, f: 3200, dur: 0.05, v: v * 0.12, q: 1.2, a: 0.01 }); // breath
+  }
+  function tsym(d, t, f, dur, v) { // hammered dulcimer: bright short pluck, fast decay
+    tone(d, { t, f, dur, v, type: 'triangle', lp: 4200, a: 0.001 });
+    tone(d, { t, f: f * 3.01, dur: dur * 0.3, v: v * 0.3, a: 0.001 });
+    noise(d, { t, f: 4500, dur: 0.01, v: v * 0.25, q: 1, a: 0.001 });
+  }
+  // own phrases, A Ukrainian Dorian (A B C D# E F# G): [step, midi, length] per bar, chords Am D Em Am
+  const UKM = [
+    [[0, 76, 3], [3, 79, 1], [4, 81, 4], [8, 79, 2], [10, 76, 2], [12, 75, 1], [13, 76, 3]],
+    [[0, 74, 2], [2, 78, 2], [4, 81, 3], [7, 78, 1], [8, 76, 2], [10, 74, 2], [12, 72, 4]],
+    [[0, 71, 2], [2, 74, 2], [4, 76, 4], [8, 79, 2], [10, 78, 2], [12, 76, 2], [14, 74, 2]],
+    [[0, 72, 2], [2, 76, 2], [4, 75, 2], [6, 76, 2], [8, 81, 4], [12, 76, 2], [14, 72, 2]]
+  ].map((b) => { const m = {}; b.forEach((n) => { m[n[0]] = n; }); return m; });
+
   const SYM = [[72, 75, 70], [68, 72, 75], [72, 68, 65], [70, 74, 70]]; // plucky melody, one row per bar
 
   // step functions: (dest, t, pos 0..15, bar, variation 0..3, chord, step length s, intensity, drop-out)
@@ -346,6 +373,24 @@
         }
         if (v === 2 && (p === 2 || p === 8 || p === 11)) pluck(d, t, hz(melody(ch, bar, p)), sd * 3, 0.04);
       } },
+    ukr: { name: 'Українська хвиля', bpm: 116, ch: [[57, 60, 64, 69], [50, 54, 57, 62], [52, 55, 59, 64], [57, 60, 64, 69]],
+      fn(d, t, p, bar, v, ch, sd, I, dr) { // 2/4 kolomyika bounce: two beats per half bar, bass on the beat, chord and fifth off it
+        if (p % 8 === 0) bass(d, t, hz(ch[0] - 12), sd * 3, 0.14);
+        if (p % 8 === 4) bass(d, t, hz(ch[0] - 5), sd * 2, 0.1);
+        if (p % 2 === 0 && !(dr && p > 7)) { // dulcimer arpeggio, up and down the chord
+          const k = [0, 1, 2, 3, 2, 1, 2, 1][p >> 1];
+          tsym(d, t, hz(ch[k] + 12), sd * 2.2, v === 0 || v === 3 ? 0.032 : 0.024);
+        }
+        if (p % 8 === 4 && v !== 3) chord(d, t, ch.slice(1), sd * 2, 0.018, tsym);
+        if (!dr) {
+          if (p % 8 === 0) kick(d, t, 0.1);
+          if (p % 8 === 4) noise(d, { t, f: 3200, dur: 0.07, v: 0.05, q: 0.8, a: 0.002 }); // tambourine-like slap
+          if (p % 2 === 1) hat(d, t, 0.008);
+        }
+        const n = (v === 1 || v === 2) && UKM[bar % 4][p];
+        if (n) sopilka(d, t, hz(n[1]), sd * n[2] * 0.95, 0.045);
+        if (v === 2 && n && p % 4 === 0) tsym(d, t, hz(n[1] - 12), sd * 2, 0.02);
+      } },
     synth: { name: 'Нічний синт', bpm: 90, night: 1, ch: [[48, 55, 58, 63], [53, 56, 60, 63], [56, 60, 63, 67], [58, 62, 65, 68]],
       fn(d, t, p, bar, v, ch, sd, I, dr) {
         const s = synSend(d);
@@ -387,7 +432,7 @@
     const night = rd.mood === 'night';
     let x = (rd.seed >>> 0) || 1;
     const r = () => { x = (x + 0x6d2b79f5) >>> 0; let y = Math.imul(x ^ (x >>> 15), 1 | x); y = (y + Math.imul(y ^ (y >>> 7), 61 | y)) ^ y; return ((y ^ (y >>> 14)) >>> 0) / 4294967296; };
-    const body = night ? ['lofi', 'bossa', 'jazz', 'chill'] : ['chill', 'lofi', 'bossa', 'jazz'];
+    const body = night ? ['lofi', 'bossa', 'jazz', 'chill', 'ukr'] : ['chill', 'lofi', 'bossa', 'jazz', 'ukr'];
     for (let i = body.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const q = body[i]; body[i] = body[j]; body[j] = q; }
     if (night) { // synth first or second, and again later in the loop; Noite FM takes the other slot
       rd.order = (r() < 0.6 ? ['synth', 'night'] : ['night', 'synth']).concat(body.slice(0, 2), ['synth'], body.slice(2));
