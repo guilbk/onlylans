@@ -6,8 +6,11 @@ import sys
 import threading
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
+
+from pipeline import build_game
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
@@ -279,6 +282,8 @@ def test_qr_payload_rows_are_square() -> None:
 
 # ---- one real HTTP round on a free port ----
 
+JSON = {"Content-Type": "application/json"}
+
 
 def call(port: int, method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
@@ -321,7 +326,13 @@ def test_http_round(tmp_path: Path) -> None:
         assert call(port, "POST", "/api/claim", claim)[0] == 409
         bad = {"room": room, "token": b["key"], "shift": 1, "difficulty": "normal"}
         assert call(port, "POST", "/api/start", bad) == (403, {"error": "host_only"})
-        go = {"room": room, "token": host["token"], "shift": 1, "difficulty": "normal"}
+        go = {
+            "room": room,
+            "token": host["token"],
+            "shift": 1,
+            "difficulty": "normal",
+            "countdown": 0,
+        }
         status, st = call(port, "POST", "/api/start", go)
         assert (status, st["phase"]) == (200, "running")
         ok = call(port, "POST", "/api/claim", {**claim, "order": 5})[1]
@@ -357,9 +368,256 @@ def test_http_keeps_the_connection_alive(tmp_path: Path) -> None:
     with serving(tmp_path) as port:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
         for _ in range(3):
-            conn.request("POST", "/api/create", body="{}")
+            conn.request("POST", "/api/create", body="{}", headers=JSON)
             resp = conn.getresponse()
             assert resp.status == 200
             assert resp.getheader("Connection") != "close"
             resp.read()
         conn.close()
+
+
+# ---- browser: friends in a room, from the menu hook to the result ----
+
+SHOTS = Path("test-screenshots/party2")
+REACHABLE = (
+    "() => __porto.PG.engine.G.sh.orders.filter(o => __porto.PG.engine.reachable(o)).map(o => o.i)"
+)
+BOOK = """i => { const E = __porto.PG.engine, o = E.G.sh.orders[i];
+  const ok = E.startPickup(o); return [ok, E.G.mode]; }"""
+
+
+@pytest.fixture(scope="module")
+def game(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[str, int]]:
+    pytest.importorskip("playwright.sync_api")
+    out = tmp_path_factory.mktemp("game")
+    if build_game.main(["--out", str(out / "index.html")]) != 0:
+        pytest.skip("the game cannot be built here")
+    with serving(out) as port:
+        yield f"http://127.0.0.1:{port}", port
+
+
+@pytest.fixture(scope="module")
+def browser() -> Iterator[Any]:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as pw:
+        try:
+            b = pw.chromium.launch()
+        except sync_api.Error:
+            pytest.skip("chromium is not installed (python -m playwright install chromium)")
+        yield b
+        b.close()
+
+
+def phone(browser: Any, url: str, width: int = 390, height: int = 844) -> Any:
+    page = browser.new_context(viewport={"width": width, "height": height}).new_page()
+    page.goto(url)
+    page.wait_for_function("window.__porto && __porto.PG.screen === 'menu'")
+    return page
+
+
+def create_lobby(browser: Any, base: str) -> tuple[Any, str]:
+    host = phone(browser, base + "/")
+    host.evaluate("__porto.PG.bus.emit('party:open')")
+    host.fill(".pty-input", "Ведучий")
+    host.click("text=Створити лобі")
+    host.wait_for_selector(".pty-code")
+    return host, host.inner_text(".pty-code")
+
+
+def join_by_link(browser: Any, base: str, code: str, name: str) -> Any:
+    guest = phone(browser, f"{base}/?room={code.lower()}")
+    guest.fill(".pty-input", name)
+    guest.click("text=Приєднатися")
+    guest.wait_for_selector(".pty-wait")
+    return guest
+
+
+def in_play(page: Any) -> None:
+    page.wait_for_function(
+        "__porto.PG.screen === 'play' && __porto.PG.engine.G && __porto.PG.engine.G.t > 0",
+        timeout=15000,
+    )
+
+
+def test_room_from_the_menu_to_a_contested_claim(browser: Any, game: tuple[str, int]) -> None:
+    base, port = game
+    SHOTS.mkdir(parents=True, exist_ok=True)
+    host, code = create_lobby(browser, base)
+    assert len(code) == party.CODE_LEN
+    assert host.url.endswith(f"?room={code}")  # the link is in the address bar
+    host.screenshot(path=str(SHOTS / "lobby-host-390.png"))
+    anna = join_by_link(browser, base, code, "Анна")
+    # the second guest uses the shortcut and types the code in lower case
+    ivan = phone(browser, base + "/?party=1")
+    ivan.fill(".pty-input >> nth=0", "Іван")
+    ivan.fill(".pty-codein", code.lower())
+    ivan.click("text=Приєднатися")
+    ivan.wait_for_selector(".pty-wait")
+    anna.screenshot(path=str(SHOTS / "lobby-guest-390.png"))
+    host.wait_for_function("document.querySelectorAll('.pty-list .pty-row').length === 3")
+    assert "ведучий" in host.inner_text(".pty-list")
+    assert "(ти)" in anna.inner_text(".pty-list")
+    screen = phone(browser, f"{base}/?room={code}&screen=1", 1366, 768)
+    screen.wait_for_selector("canvas.pty-qr")
+    screen.wait_for_function("document.querySelectorAll('.pty-list .pty-row').length === 3")
+    screen.screenshot(path=str(SHOTS / "screen-lobby-1366.png"))
+
+    refused = call(port, "POST", "/api/start", {"room": code, "token": "no", "shift": 0})
+    assert refused[0] == 403
+    host.click("text=Старт")
+    for page in (host, anna, ivan):
+        in_play(page)
+    host.wait_for_selector(".pty-mini")
+    # two phones book the same order; the second one is told he lost and is rolled back
+    page_ids = []
+    for _ in range(40):
+        page_ids = [set(p.evaluate(REACHABLE)) for p in (host, anna)]
+        if page_ids[0] & page_ids[1]:
+            break
+        host.wait_for_timeout(250)
+    common = min(page_ids[0] & page_ids[1])
+    assert host.evaluate(BOOK, common) == [True, "pickup"]
+    for _ in range(40):
+        if call(port, "GET", f"/api/party?room={code}")[1]["claims"].get(str(common)):
+            break
+        host.wait_for_timeout(50)
+    assert anna.evaluate(BOOK, common) == [True, "pickup"]  # instant, before the server answered
+    anna.wait_for_function("__porto.PG.engine.G.mode === 'idle'", timeout=3000)
+    assert "Вже забрав Ведучий" in anna.inner_text("body")
+    assert host.evaluate("__porto.PG.engine.G.mode") == "pickup"
+    host.wait_for_timeout(1500)
+    host.screenshot(path=str(SHOTS / "play-host-390.png"))
+    anna.screenshot(path=str(SHOTS / "play-anna-390.png"))
+    screen.wait_for_selector(".pty-board .pty-row")
+    screen.screenshot(path=str(SHOTS / "screen-play-1366.png"))
+    assert screen.locator(".pty-board .pty-row").count() == 3
+
+
+def test_a_short_shift_ends_with_the_player_race(browser: Any, game: tuple[str, int]) -> None:
+    base, port = game
+    host, code = create_lobby(browser, base)
+    anna = join_by_link(browser, base, code, "Анна")
+    token = host.evaluate("JSON.parse(sessionStorage.getItem('party-session')).token")
+    st = call(
+        port,
+        "POST",
+        "/api/start",
+        {
+            "room": code,
+            "token": token,
+            "shift": 1,
+            "difficulty": "easy",
+            "duration": 10,
+            "countdown": 3,
+        },
+    )
+    assert st[1]["phase"] == "running"
+    host.wait_for_selector(".pty-count")  # the 3-2-1
+    in_play(host)
+    for page in (host, anna):
+        page.wait_for_selector("#party-race", timeout=30000)
+        assert "Перегони гравців" in page.inner_text("#party-race")
+        assert "Анна" in page.inner_text("#party-race")
+    assert host.locator("#party-race >> text=Ще раз").count() == 1
+    assert anna.locator("#party-race >> text=Ще раз").count() == 0
+    host.screenshot(path=str(SHOTS / "result-host-390.png"))
+    host.click("#party-race >> text=Ще раз")
+    anna.wait_for_selector(".pty-code", timeout=8000)  # the reset sends everybody back to the lobby
+
+
+def test_http_body_limits(tmp_path: Path) -> None:
+    with serving(tmp_path) as port:
+
+        def post(body: bytes, headers: dict[str, str]) -> tuple[int, dict]:
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("POST", "/api/create", body=body, headers=headers)
+            resp = conn.getresponse()
+            data = json.loads(resp.read())
+            conn.close()
+            return resp.status, data
+
+        assert post(b"{}", {"Content-Type": "text/plain"}) == (415, {"error": "bad_type"})
+        assert post(b"{}", {}) == (415, {"error": "bad_type"})
+        assert post(b"x" * (party.MAX_BODY + 1), JSON) == (413, {"error": "bad_body"})
+        assert post(b"{nope", JSON) == (400, {"error": "bad_body"})
+        assert post(b"[1]", JSON) == (400, {"error": "bad_body"})
+        assert post(b"{}", JSON)[0] == 200
+
+
+def test_claim_rejects_bad_indices_without_clamping() -> None:
+    p, _, (a, _b) = running()
+    for bad in (-5, 3.7, 1e9, party.DEFAULT_SIZES[3], True, "1", None):
+        with pytest.raises(party.PartyError) as err:
+            p.claim(a.key, bad)
+        assert err.value.code == "bad_value"
+        with pytest.raises(party.PartyError):
+            p.release(a.key, bad)
+    assert p.state()["claims"] == {}
+    assert p.claim(a.key, party.DEFAULT_SIZES[3] - 1) == (True, None)
+
+
+def test_the_real_order_count_is_the_bound() -> None:
+    clock = Clock()
+    p = party.Party(clock, sizes=(10, 20))
+    a, _ = p.join("A")
+    p.start(p.token, 0, "easy", 100, 0)
+    with pytest.raises(party.PartyError):
+        p.claim(a.key, 10)
+    assert p.claim(a.key, 9)[0]
+
+
+def test_a_player_holds_only_a_few_bookings() -> None:
+    p, _, (a, b) = running()
+    for i in range(party.MAX_ACTIVE):
+        assert p.claim(a.key, i)[0]
+    with pytest.raises(party.PartyError) as err:
+        p.claim(a.key, 50)
+    assert (err.value.code, err.value.status) == ("too_many", 409)
+    assert p.claim(a.key, 0)[0]  # repeating a held order is fine
+    assert p.release(a.key, 0)
+    assert p.claim(a.key, 50)[0]
+    assert p.claim(b.key, 0)[0]  # the others are not affected
+    p.sync(a.key, {"trips": 2})  # two were picked up: they are no longer bookings
+    assert p.claim(a.key, 51)[0]
+    assert p.claim(a.key, 52)[0]
+
+
+def test_claims_only_while_the_shift_is_on() -> None:
+    p, clock = make()
+    a, _ = p.join("A")
+    p.start(p.token, 0, "easy", 100, 5)
+    with pytest.raises(party.PartyError):
+        p.claim(a.key, 1)  # countdown
+    clock.t += 5
+    assert p.claim(a.key, 1)[0]
+    clock.t += 100
+    with pytest.raises(party.PartyError):
+        p.claim(a.key, 2)  # the closing grace
+
+
+def test_sync_after_the_end_keeps_the_final_money() -> None:
+    p, clock, (a, _b) = running()
+    p.sync(a.key, {"money": 40, "trips": 3})
+    clock.t += 180 + party.GRACE_S + 1
+    st = p.sync(a.key, {"money": 9999, "trips": 99, "x": 1, "y": 2})
+    assert st["phase"] == "done"
+    assert (st["players"][0]["money"], st["players"][0]["trips"]) == (40, 3)
+    assert st["players"][0]["x"] is None
+
+
+def test_start_rejects_a_shift_that_does_not_exist() -> None:
+    p = party.Party(Clock(), sizes=(5, 5))
+    p.join("A")
+    for bad in (2, -1, 1.5, "0"):
+        with pytest.raises(party.PartyError):
+            p.start(p.token, bad, "easy")
+    assert p.start(p.token, 1, "easy")["shift"] == 1
+
+
+def test_load_sizes(tmp_path: Path) -> None:
+    f = tmp_path / "game_data.json"
+    f.write_text(json.dumps({"shifts": [{"orders": [1, 2]}, {"orders": [1]}]}), encoding="utf-8")
+    assert party.load_sizes(f) == (2, 1)
+    assert party.load_sizes(tmp_path / "none.json") == party.DEFAULT_SIZES
+    f.write_text("{}", encoding="utf-8")
+    assert party.load_sizes(f) == party.DEFAULT_SIZES

@@ -22,7 +22,7 @@ import socket
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
@@ -48,7 +48,9 @@ DEFAULT_PORT = 8090
 MAX_PLAYERS = 60
 MAX_NAME = 20
 MAX_BODY = 4096
-MAX_ORDER = 100_000  # order index per shift; real shifts have about 500
+MAX_TRIPS = 100_000
+MAX_ACTIVE = 3  # booked, not yet picked up: the pickup, the next one, one release in flight
+DEFAULT_SIZES = (700,) * 28  # orders per shift when no game data is given; real shifts have ~500
 MAX_MONEY = 1_000_000.0
 COORD_LIMIT = 1e6  # metres; the map is 15 x 19 km
 DEFAULT_DURATION = 180.0  # real seconds of one shift: 7200 game seconds at 40x
@@ -136,6 +138,40 @@ def _number(value: object, lo: float, hi: float) -> float:
     return min(max(float(value), lo), hi)
 
 
+def order_index(value: object, count: int) -> int:
+    """Validate an order index.
+
+    Args:
+        value: Value from the request body.
+        count: Number of orders in the shift.
+
+    Returns:
+        The index.
+
+    Raises:
+        PartyError: If it is not an integer in ``[0, count)``.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < count:
+        raise PartyError("bad_value")
+    return value
+
+
+def load_sizes(path: Path) -> tuple[int, ...]:
+    """Read the order count of every shift from the game data.
+
+    Args:
+        path: ``game_data.json``.
+
+    Returns:
+        Orders per shift, or ``DEFAULT_SIZES`` if the file cannot be read.
+    """
+    try:
+        shifts = json.loads(path.read_text(encoding="utf-8"))["shifts"]
+        return tuple(len(sh["orders"]) for sh in shifts) or DEFAULT_SIZES
+    except (OSError, ValueError, KeyError, TypeError):
+        return DEFAULT_SIZES
+
+
 def clean_code(raw: object) -> str:
     """Normalise a typed room code: upper case, spaces dropped, Cyrillic lookalikes turned Latin.
 
@@ -168,14 +204,21 @@ def clean_name(raw: object) -> str:
 class Party:
     """The whole game state, without any network code. Every method takes the lock."""
 
-    def __init__(self, now: Callable[[], float] = time.time, code: str = "") -> None:
+    def __init__(
+        self,
+        now: Callable[[], float] = time.time,
+        code: str = "",
+        sizes: Sequence[int] = DEFAULT_SIZES,
+    ) -> None:
         """Create an empty lobby.
 
         Args:
             now: Clock in seconds (injected for tests).
             code: The room code (shown in every state).
+            sizes: Number of orders in each shift (the shifts that can be started).
         """
         self._now = now
+        self._sizes = tuple(sizes)
         self.code = code
         self.token = secrets.token_hex(8)  # proves the host; given only to the creator
         self.touched = now()
@@ -330,6 +373,8 @@ class Party:
         with self._lock:
             p = self._player(key)
             self._prune()
+            if self._phase() == "done":
+                return self._state()  # the final money is what the last sync said
             if "x" in body and "y" in body:
                 p.x = _number(body["x"], -COORD_LIMIT, COORD_LIMIT)
                 p.y = _number(body["y"], -COORD_LIMIT, COORD_LIMIT)
@@ -340,7 +385,7 @@ class Party:
             if "money" in body:
                 p.money = _number(body["money"], 0.0, MAX_MONEY)
             if "trips" in body:
-                p.trips = int(_number(body["trips"], 0, MAX_ORDER))
+                p.trips = int(_number(body["trips"], 0, MAX_TRIPS))
             return self._state()
 
     def claim(self, key: object, order: object) -> tuple[bool, str | None]:
@@ -348,21 +393,28 @@ class Party:
 
         Args:
             key: Secret key of the player.
-            order: Order index in the shift.
+            order: Order index in the shift (an integer below the shift's order count).
 
         Returns:
             ``(True, None)`` if the player now owns it (or already did), else ``(False, name)``
             with the name of the player who took it first.
 
         Raises:
-            PartyError: If the key is unknown, the order is invalid or the game is not running.
+            PartyError: If the key is unknown, the order is invalid, the player holds too many
+                bookings, or the shift is not on (countdown and the closing grace do not count).
         """
         with self._lock:
             p = self._player(key)
-            if self._phase() != "running":
+            n = order_index(order, self._sizes[self._shift])
+            now = self._now()
+            start = self._start_at
+            if start is None or not start <= now < start + self._duration:
                 raise PartyError("phase", HTTPStatus.CONFLICT)
-            n = int(_number(order, 0, MAX_ORDER))
-            owner = self._claims.setdefault(n, p.id)
+            owner = self._claims.get(n)
+            if owner is None:
+                if self._active(p) >= MAX_ACTIVE:
+                    raise PartyError("too_many", HTTPStatus.CONFLICT)
+                self._claims[n] = owner = p.id
             if owner == p.id:
                 return True, None
             return False, self._players[owner].name
@@ -382,11 +434,15 @@ class Party:
         """
         with self._lock:
             p = self._player(key)
-            n = int(_number(order, 0, MAX_ORDER))
+            n = order_index(order, self._sizes[self._shift])
             if self._claims.get(n) != p.id:
                 return False
             del self._claims[n]
             return True
+
+    def _active(self, p: Player) -> int:
+        """Orders the player booked and has not picked up yet (the reported trips are picked up)."""
+        return sum(1 for owner in self._claims.values() if owner == p.id) - p.trips
 
     def _host(self, token: object) -> None:
         """Check the host token.
@@ -418,7 +474,8 @@ class Party:
             The new state.
 
         Raises:
-            PartyError: If the token is wrong, a game is already running, or a value is invalid.
+            PartyError: If the token is wrong, a game is already running, the shift does not exist,
+                or a value is invalid.
         """
         with self._lock:
             self._host(token)
@@ -426,7 +483,7 @@ class Party:
                 raise PartyError("phase", HTTPStatus.CONFLICT)
             if difficulty not in DIFFICULTIES:
                 raise PartyError("bad_value")
-            self._shift = int(_number(shift, 0, 1000))
+            self._shift = order_index(shift, len(self._sizes))
             self._difficulty = str(difficulty)
             self._duration = _number(duration, *DURATION_RANGE)
             self._start_at = self._now() + _number(countdown, *COUNTDOWN_RANGE)
@@ -466,16 +523,21 @@ class Rooms:
     """Many parties side by side, found by a 4-letter code."""
 
     def __init__(
-        self, now: Callable[[], float] = time.time, rng: random.Random | None = None
+        self,
+        now: Callable[[], float] = time.time,
+        rng: random.Random | None = None,
+        sizes: Sequence[int] = DEFAULT_SIZES,
     ) -> None:
         """Create an empty registry.
 
         Args:
             now: Clock in seconds (injected for tests).
             rng: Source of room codes (injected for tests).
+            sizes: Number of orders in each shift, passed to every room.
         """
         self._now = now
-        self._rng = rng or random.Random()  # noqa: S311 (a room code is not a secret)
+        self._sizes = tuple(sizes)
+        self._rng = rng or random.Random()
         self._lock = threading.Lock()
         self._rooms: dict[str, Party] = {}
 
@@ -500,7 +562,7 @@ class Rooms:
             code = ""
             while not code or code in self._rooms:
                 code = "".join(self._rng.choice(CODE_ALPHABET) for _ in range(CODE_LEN))
-            room = Party(self._now, code)
+            room = Party(self._now, code, self._sizes)
             self._rooms[code] = room
         player, state = room.join(name)
         return room, player, state
@@ -552,127 +614,147 @@ def join_link(host_header: str, code: str, lan_base: str = "") -> str:
     return f"{base}?room={code}"
 
 
-def make_handler(rooms: Rooms, lan_base: str = "") -> type:
-    """Build the request handler class bound to the rooms.
+def route_create(rooms: Rooms, body: dict[str, Any]) -> dict[str, Any]:
+    """Open a room for the caller (the reply holds the host token; only the creator gets it).
 
     Args:
         rooms: The registry of parties.
-        lan_base: URL of this server on the LAN, used in links when the caller is on loopback.
+        body: The request body (``name``).
 
     Returns:
-        A handler class for :class:`serve.LanServer`.
+        ``{room, token, id, key, state}``.
+    """
+    room, player, state = rooms.create(body.get("name"))
+    return {
+        "room": room.code,
+        "token": room.token,
+        "id": player.id,
+        "key": player.key,
+        "state": state,
+    }
+
+
+def route(rooms: Rooms, path: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch a POST to its room.
+
+    Args:
+        rooms: The registry of parties.
+        path: The URL path.
+        body: The JSON body.
+
+    Returns:
+        The JSON reply.
+
+    Raises:
+        PartyError: If the path is unknown or the party refuses.
+    """
+    if path == "/api/create":
+        return route_create(rooms, body)
+    room = rooms.get(body.get("room"))
+    key = body.get("key")
+    if path == "/api/join":
+        player, state = room.join(body.get("name"), key)
+        return {"id": player.id, "key": player.key, "state": state}
+    if path == "/api/sync":
+        return room.sync(key, body)
+    if path == "/api/claim":
+        ok, by = room.claim(key, body.get("order"))
+        return {"ok": ok, "by": by}
+    if path == "/api/release":
+        return {"ok": room.release(key, body.get("order"))}
+    token = body.get("token")
+    if path == "/api/start":
+        duration = body.get("duration", DEFAULT_DURATION)
+        countdown = body.get("countdown", DEFAULT_COUNTDOWN)
+        return room.start(token, body.get("shift"), body.get("difficulty"), duration, countdown)
+    if path == "/api/reset":
+        return room.reset(token)
+    raise PartyError("not_found", HTTPStatus.NOT_FOUND)
+
+
+class PartyHandler(NoCacheHandler):
+    """Static files from the game folder plus the JSON API (keep-alive, no Nagle delay).
+
+    ``rooms`` and ``lan_base`` are set by :func:`make_party_server` on a subclass.
     """
 
-    class PartyHandler(NoCacheHandler):
-        """Static files from the game folder plus the JSON API (keep-alive, no Nagle delay)."""
+    protocol_version = "HTTP/1.1"
+    rooms: Rooms
+    lan_base = ""
 
-        protocol_version = "HTTP/1.1"
+    def setup(self) -> None:
+        """Turn off Nagle's algorithm: a small reply must leave at once."""
+        super().setup()
+        self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
-        def setup(self) -> None:
-            """Turn off Nagle's algorithm: a small reply must leave at once."""
-            super().setup()
-            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    def log_message(self, format: str, *args: object) -> None:
+        """Log everything except the 200 ms API polling."""
+        if not self.path.startswith("/api/"):
+            super().log_message(format, *args)
 
-        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
-            """Log everything except the 200 ms API polling."""
-            if not self.path.startswith("/api/"):
-                super().log_message(format, *args)
+    def _reply(self, status: int, payload: dict[str, Any]) -> None:
+        """Send a JSON reply."""
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
-        def _reply(self, status: int, payload: dict[str, Any]) -> None:
-            """Send a JSON reply in one write."""
-            data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+    def _body(self) -> dict[str, Any]:
+        """Read the JSON object of a POST.
 
-        def _body(self) -> dict[str, Any]:
-            """Read the JSON object of a POST.
+        Raises:
+            PartyError: If it is not ``application/json``, or is missing, too large or not an
+                object. (A page of another site cannot send that type without a preflight.)
+        """
+        if not self.headers.get("Content-Type", "").startswith("application/json"):
+            raise PartyError("bad_type", HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+        try:
+            size = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            size = -1
+        if not 0 <= size <= MAX_BODY:
+            raise PartyError("bad_body", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+        try:
+            body = json.loads(self.rfile.read(size) or b"{}")
+        except ValueError as err:
+            raise PartyError("bad_body") from err
+        if not isinstance(body, dict):
+            raise PartyError("bad_body")
+        return body
 
-            Raises:
-                PartyError: If the body is missing, too large or not a JSON object.
-            """
-            try:
-                size = int(self.headers.get("Content-Length") or 0)
-            except ValueError:
-                size = -1
-            if not 0 <= size <= MAX_BODY:
-                raise PartyError("bad_body", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
-            try:
-                body = json.loads(self.rfile.read(size) or b"{}")
-            except ValueError as err:
-                raise PartyError("bad_body") from err
-            if not isinstance(body, dict):
-                raise PartyError("bad_body")
-            return body
+    def _get_api(self, path: str, code: str) -> dict[str, Any]:
+        """Answer ``/api/party`` and ``/api/qr``.
 
-        def do_GET(self) -> None:  # noqa: N802
-            """Serve ``/api/party?room=``, ``/api/qr?room=`` or a static file."""
-            path, _, query = self.path.partition("?")
-            if not path.startswith("/api/"):
-                super().do_GET()
-                return
-            try:
-                code = parse_qs(query).get("room", [""])[0]
-                if path == "/api/party":
-                    self._reply(HTTPStatus.OK, rooms.get(code).state())
-                elif path == "/api/qr":
-                    room = rooms.get(code)
-                    link = join_link(self.headers.get("Host", ""), room.code, lan_base)
-                    self._reply(HTTPStatus.OK, qr_payload(link))
-                else:
-                    raise PartyError("not_found", HTTPStatus.NOT_FOUND)
-            except PartyError as err:
-                self._reply(err.status, {"error": err.code})
+        Raises:
+            PartyError: If the path or the room is unknown.
+        """
+        if path == "/api/party":
+            return self.rooms.get(code).state()
+        if path == "/api/qr":
+            room = self.rooms.get(code)
+            return qr_payload(join_link(self.headers.get("Host", ""), room.code, self.lan_base))
+        raise PartyError("not_found", HTTPStatus.NOT_FOUND)
 
-        def do_POST(self) -> None:  # noqa: N802
-            """Run one API action."""
-            try:
-                self._reply(HTTPStatus.OK, self._route(self.path.split("?", 1)[0], self._body()))
-            except PartyError as err:
-                self._reply(err.status, {"error": err.code})
+    def do_GET(self) -> None:
+        """Serve ``/api/party?room=``, ``/api/qr?room=`` or a static file."""
+        path, _, query = self.path.partition("?")
+        if not path.startswith("/api/"):
+            super().do_GET()
+            return
+        try:
+            self._reply(HTTPStatus.OK, self._get_api(path, parse_qs(query).get("room", [""])[0]))
+        except PartyError as err:
+            self._reply(err.status, {"error": err.code})
 
-        def _route(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-            """Dispatch a POST to its room.
-
-            Raises:
-                PartyError: If the path is unknown or the party refuses.
-            """
-            if path == "/api/create":
-                room, player, state = rooms.create(body.get("name"))
-                return {
-                    "room": room.code,
-                    "token": room.token,
-                    "id": player.id,
-                    "key": player.key,
-                    "state": state,
-                }
-            room = rooms.get(body.get("room"))
-            key = body.get("key")
-            if path == "/api/join":
-                player, state = room.join(body.get("name"), key)
-                return {"id": player.id, "key": player.key, "state": state}
-            if path == "/api/sync":
-                return room.sync(key, body)
-            if path == "/api/claim":
-                ok, by = room.claim(key, body.get("order"))
-                return {"ok": ok, "by": by}
-            if path == "/api/release":
-                return {"ok": room.release(key, body.get("order"))}
-            if path == "/api/start":
-                return room.start(
-                    body.get("token"),
-                    body.get("shift"),
-                    body.get("difficulty"),
-                    body.get("duration", DEFAULT_DURATION),
-                    body.get("countdown", DEFAULT_COUNTDOWN),
-                )
-            if path == "/api/reset":
-                return room.reset(body.get("token"))
-            raise PartyError("not_found", HTTPStatus.NOT_FOUND)
-
-    return PartyHandler
+    def do_POST(self) -> None:
+        """Run one API action."""
+        try:
+            body = self._body()
+            self._reply(HTTPStatus.OK, route(self.rooms, self.path.split("?", 1)[0], body))
+        except PartyError as err:
+            self._reply(err.status, {"error": err.code})
 
 
 def make_party_server(
@@ -694,7 +776,7 @@ def make_party_server(
     Returns:
         The bound server.
     """
-    handler = make_handler(rooms, lan_base)
+    handler = type("BoundPartyHandler", (PartyHandler,), {"rooms": rooms, "lan_base": lan_base})
 
     def build(*args: Any, **kwargs: Any) -> Any:
         """Create a handler that serves ``directory``."""
@@ -728,7 +810,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         lan = args.host or detect_lan_ip()
         base = build_url(lan, args.port)
-        server = make_party_server(args.dir, args.port, Rooms(), lan_base=base)
+        server = make_party_server(
+            args.dir, args.port, Rooms(sizes=load_sizes(args.dir / "game_data.json")), lan_base=base
+        )
     except (OSError, ValueError) as err:
         print(f"cannot start the server: {err}", file=sys.stderr)
         return EXIT_FAIL
