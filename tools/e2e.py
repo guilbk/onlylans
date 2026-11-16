@@ -35,9 +35,9 @@ SKIP = "SKIP"
 EXPECTED_SHIFTS = 28
 EXPECTED_DIFFICULTIES = ("Легко", "Нормально", "Важко")
 HERO_NAME = "Ріїн Гіслінг"
-MEDAL_NAMES = ("без медалі", "Бронза", "Срібло", "Золото", "Легенда")
+MEDAL_NAMES = ("Без медалі", "Бронза", "Срібло", "Золото", "Легенда")
 RACE_TITLE = "Перегони 7 ланосів"
-RACE_ROWS = 8
+RACE_ROWS = 8  # player rows of the race table, header row not counted
 RIVAL_COUNT = 7
 PIN_SAMPLES = 20
 PIN_CANDIDATES = 60
@@ -420,7 +420,7 @@ JS_RIVALS = (
 )
 JS_RESULT = (
     "() => { const q = s => document.querySelector(s);"
-    " const rows = document.querySelectorAll('#result .race-row').length;"
+    " const rows = document.querySelectorAll('#result .race-row:not(.race-head)').length;"
     " const h = q('#result .res-race h2');"
     " return {medal: (q('#res-medal') || {}).textContent || '',"
     " rank: (q('#result .res-rank') || {}).textContent || '', rows,"
