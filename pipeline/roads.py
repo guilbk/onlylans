@@ -15,7 +15,9 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
+import networkx as nx
 import numpy as np
+from scipy import ndimage
 from skimage.morphology import closing, skeletonize
 
 from pipeline import geo
@@ -30,6 +32,8 @@ CSV_FIELD_LIMIT = 1 << 27
 CELL_M = 8.0  # raster pixel size, metres
 MIN_TRIPS = 3  # a pixel is road if at least this many different trips touch it
 SAMPLE_STEP_M = CELL_M / 2  # spacing of the points sampled along a segment, metres
+EIGHT = np.ones((3, 3), dtype=int)  # 8-connectivity structure
+NEIGHBOURS = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
 
 
 def parse_polyline(text: str) -> list[list[float]] | None:
@@ -168,3 +172,135 @@ def thin_mask(mask: np.ndarray) -> np.ndarray:
         Boolean skeleton of the same shape.
     """
     return skeletonize(mask).astype(bool)
+
+
+Pixel = tuple[int, int]  # (row, col)
+Point = tuple[float, float]  # (x, y) in metres
+
+
+def px_to_m(row: float, col: float, cell_m: float = CELL_M) -> Point:
+    """Return the metre position (x, y) of the centre of a pixel (pixel * cell + cell / 2)."""
+    return col * cell_m + cell_m / 2, row * cell_m + cell_m / 2
+
+
+def polyline_length(pts: list[Point]) -> float:
+    """Return the length in metres of a polyline given in metres."""
+    return sum(math.dist(a, b) for a, b in zip(pts, pts[1:], strict=False))
+
+
+def classify_pixels(skel: np.ndarray) -> np.ndarray:
+    """Count the 8-connected skeleton neighbours of every skeleton pixel.
+
+    Args:
+        skel: Boolean skeleton.
+
+    Returns:
+        Integer array of the same shape: neighbour count on skeleton pixels, 0 elsewhere.
+    """
+    total = ndimage.convolve(skel.astype(np.uint8), EIGHT.astype(np.uint8), mode="constant")
+    return np.where(skel, total - 1, 0)
+
+
+def node_pixels(skel: np.ndarray, degree: np.ndarray) -> np.ndarray:
+    """Select the junction and end pixels (1 or at least 3 neighbours).
+
+    A skeleton component without any such pixel (a pure ring) gets its first pixel as a node.
+
+    Args:
+        skel: Boolean skeleton with specks (0 neighbours) already removed.
+        degree: Neighbour counts from :func:`classify_pixels`.
+
+    Returns:
+        Boolean mask of node pixels.
+    """
+    nodes = skel & ((degree == 1) | (degree >= 3))
+    labels, count = ndimage.label(skel, structure=EIGHT)
+    has_node = np.zeros(count + 1, dtype=bool)
+    has_node[labels[nodes]] = True
+    for i, box in enumerate(ndimage.find_objects(labels), start=1):
+        if not has_node[i]:
+            ys, xs = np.nonzero(labels[box] == i)
+            nodes[box][ys[0], xs[0]] = True
+    return nodes
+
+
+def _walk_chain(pixels: set[Pixel], start: Pixel) -> list[Pixel]:
+    """Follow a one-pixel-wide chain from ``start`` through unvisited neighbours."""
+    path = [start]
+    seen = {start}
+    while True:
+        r, c = path[-1]
+        nxt = next(
+            (
+                (r + dr, c + dc)
+                for dr, dc in NEIGHBOURS
+                if (r + dr, c + dc) in pixels and (r + dr, c + dc) not in seen
+            ),
+            None,
+        )
+        if nxt is None:
+            return path
+        path.append(nxt)
+        seen.add(nxt)
+
+
+def _touching(pix: Pixel, cluster: np.ndarray) -> list[int]:
+    """Return the sorted node-cluster ids among the 8 neighbours of a pixel."""
+    r, c = pix
+    h, w = cluster.shape
+    found = {
+        int(cluster[r + dr, c + dc])
+        for dr, dc in NEIGHBOURS
+        if 0 <= r + dr < h and 0 <= c + dc < w and cluster[r + dr, c + dc] > 0
+    }
+    return sorted(found)
+
+
+def skeleton_to_graph(skel: np.ndarray, cell_m: float = CELL_M) -> nx.MultiGraph:
+    """Turn a skeleton into a road graph.
+
+    Nodes are the skeleton pixels with 1 or at least 3 neighbours; touching node pixels are
+    collapsed into one node placed at their centroid. Each pixel chain between nodes is an edge.
+
+    Args:
+        skel: Boolean skeleton.
+        cell_m: Pixel size in metres.
+
+    Returns:
+        MultiGraph. Node attribute ``pos`` (x, y metres). Edge attributes ``a``, ``b`` (the
+        end nodes), ``pts`` (polyline in metres from ``a`` to ``b``, ends included) and ``len``.
+    """
+    degree = classify_pixels(skel)
+    skel = skel & (degree > 0)
+    nodes = node_pixels(skel, degree)
+    cluster, n_nodes = ndimage.label(nodes, structure=EIGHT)
+    graph = nx.MultiGraph()
+    centres = ndimage.center_of_mass(nodes, cluster, range(1, n_nodes + 1))
+    for i, (r, c) in enumerate(centres, start=1):
+        graph.add_node(i, pos=px_to_m(r, c, cell_m))
+    chains, n_chains = ndimage.label(skel & ~nodes, structure=EIGHT)
+    rows, cols = np.nonzero(chains)
+    order = np.argsort(chains[rows, cols], kind="stable")
+    bounds = np.searchsorted(chains[rows, cols][order], np.arange(1, n_chains + 2))
+    for k in range(n_chains):
+        idx = order[bounds[k] : bounds[k + 1]]
+        _add_chain(graph, cluster, [(int(rows[i]), int(cols[i])) for i in idx], cell_m)
+    return graph
+
+
+def _add_chain(
+    graph: nx.MultiGraph, cluster: np.ndarray, chain: list[Pixel], cell_m: float
+) -> None:
+    """Order one chain component, find its two end nodes and add it as an edge."""
+    pixels = set(chain)
+    ends = sorted(p for p in chain if _touching(p, cluster))
+    if not ends:
+        return
+    path = _walk_chain(pixels, ends[0])
+    first, last = _touching(path[0], cluster), _touching(path[-1], cluster)
+    if len(path) == 1:
+        a, b = first[0], first[-1]
+    else:
+        a, b = first[0], last[0] if last else first[0]
+    pts = [graph.nodes[a]["pos"], *(px_to_m(r, c, cell_m) for r, c in path), graph.nodes[b]["pos"]]
+    graph.add_edge(a, b, a=a, b=b, pts=pts, len=polyline_length(pts))
