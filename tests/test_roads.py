@@ -297,3 +297,40 @@ def test_budget_raises_tolerance_step_by_step():
     assert len(payload) <= limit
     assert tol <= 8.0
     assert tol == roads.DP_START_M or sizes[int(tol) - 1] > limit
+
+
+# debug image and command line
+
+
+def test_draw_debug_writes_a_png(tmp_path):
+    doc = roads.encode_roads(curvy_graph(), 6.0)
+    out = tmp_path / "sub" / "debug.png"
+    roads.draw_debug(doc, GRID, out)
+    from PIL import Image
+
+    img = Image.open(out)
+    assert img.size == (GRID.width, GRID.height)
+    assert np.asarray(img).max() == 255
+
+
+def test_main_writes_roads_json(tmp_path, monkeypatch, capsys):
+    trips = thrice([line((80, 480), (880, 480)), line((480, 100), (480, 860))])
+    monkeypatch.setattr(roads, "load_trips", lambda path: trips)
+    monkeypatch.setattr(roads, "map_grid", lambda: GRID)
+    out = tmp_path / "roads.json"
+    debug = tmp_path / "debug.png"
+    argv = ["--week", "unused.csv", "--out", str(out), "--debug", str(debug)]
+    assert roads.main(argv) == 0
+    doc = json.loads(out.read_bytes())
+    assert len(doc["nodes"]) // 2 == 5
+    assert len(doc["edges"]) == 4
+    assert debug.exists()
+    assert "nodes: 5" in capsys.readouterr().out
+
+
+def test_main_reports_empty_map(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(roads, "load_trips", lambda path: [])
+    monkeypatch.setattr(roads, "map_grid", lambda: GRID)
+    argv = ["--out", str(tmp_path / "r.json"), "--debug", str(tmp_path / "d.png")]
+    assert roads.main(argv) == 1
+    assert "no road" in capsys.readouterr().out
