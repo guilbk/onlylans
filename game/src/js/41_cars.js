@@ -4,9 +4,9 @@
 
   const L = 40;            // sprite car length, logical units (the car points to +x)
   const WID = 20;
-  const BOX = 104;         // sprite box side, logical units (room for the glow)
-  const RES = 3;           // sprite pixels per logical unit
-  const GLOW_R = 46;
+  const BOX = 76;          // sprite box side, logical units (room for the glow)
+  const RES = 2;           // sprite pixels per logical unit
+  const GLOW_R = 34;
   const TURN_RATE = 11;    // 1/s: how fast the heading follows the target
   const TAU = Math.PI * 2;
 

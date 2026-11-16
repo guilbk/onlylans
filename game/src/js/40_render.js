@@ -802,7 +802,7 @@
     const w = name.length * 6.4 + 10;
     const x = px - w * 0.5;
     const y = py - 12;
-    if (!labelFree(x, y, w, TAG_H) || !addLabelRect(x, y, w, TAG_H)) return;
+    if (x < 2 || x + w > W - 2 || !labelFree(x, y, w, TAG_H) || !addLabelRect(x, y, w, TAG_H)) return;
     ctx.fillStyle = 'rgba(7,11,20,0.78)';
     ctx.fillRect(x, y, w, TAG_H);
     ctx.fillStyle = color;
@@ -813,7 +813,8 @@
     const rv = G.rivals;
     if (!rv || !rv.length) return;
     const len = carLen('rival');
-    const near = len * 0.8;
+    const near = len * 1.1;
+    const away = (carLen('hero') + len) * 0.5 + 6;   // where a rival goes when it sits on the hero
     const n = Math.min(rv.length, 8);
     ctx.font = FONT_TAG;
     ctx.textAlign = 'center';
@@ -822,12 +823,14 @@
       P(rv[i].x, rv[i].y);
       let x = pOut.x;
       let y = pOut.y;
-      let c = Math.hypot(x - hx0, y - hy0) < near ? 1 : 0;
+      let c = 0;
+      const onHero = Math.hypot(x - hx0, y - hy0) < away;
       for (let j = 0; j < i; j++) if (Math.hypot(x - rx[j], y - ry[j]) < near) c++;
-      if (c) {
-        const a = c * 2.4 + i;
-        x += Math.cos(a) * near * (0.7 + 0.25 * c);
-        y += Math.sin(a) * near * (0.7 + 0.25 * c);
+      if (c || onHero) {
+        const a = (c + 1) * 2.4 + i * 0.7;
+        const d = (onHero ? away : near) + c * 7;
+        x += Math.cos(a) * d;
+        y += Math.sin(a) * d;
       }
       rx[i] = x;
       ry[i] = y;

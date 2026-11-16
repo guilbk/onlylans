@@ -242,6 +242,8 @@
       const cand = [
         [px + gap, py - h / 2], [px - gap - w, py - h / 2],
         [px - w / 2, py + gap], [px - w / 2, py - gap - h - 18],
+        [px + gap, py - h - 10], [px - gap - w, py - h - 10], [px + gap, py + 10], [px - gap - w, py + 10],
+        [px + 2.4 * gap, py - h / 2], [px - 2.4 * gap - w, py - h / 2],
       ];
       let best = -1, bc = Infinity;
       for (let i = 0; i < cand.length; i++) {
