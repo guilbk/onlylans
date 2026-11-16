@@ -59,7 +59,7 @@ function mulberry32(a) {
 
 // ---- the greedy bot ---------------------------------------------------------
 /** Best fare per second among reachable near pins; cruise to the nearest upcoming pin when idle. */
-function botTick(rec) {
+function botTick(rec, delay) {
   const G = E.G, orders = G.sh.orders;
   const riding = G.mode === 'ride';
   if (G.mode === 'pickup' || (riding && G.next)) return;
@@ -68,6 +68,7 @@ function botTick(rec) {
     const o = orders[i];
     if (o.t < G.t) continue;
     if (o.t > G.t + 900) break;
+    if (delay && G.t < o.t - E.leadOf(o) + delay) continue;
     if (!E.reachable(o)) continue;
     const pv = E.preview(o);
     const score = o.fare / (pv.eta + o.d);
@@ -92,9 +93,9 @@ function botTick(rec) {
   }
 }
 
-function runBot(idx, rec, difficulty) {
+function runBot(idx, rec, difficulty, delay) {
   const G = newGame(idx, difficulty);
-  for (let i = 0; i < 1000 && !G.over; i++) { botTick(rec); E.step(7.2); }
+  for (let i = 0; i < 1000 && !G.over; i++) { botTick(rec, delay); E.step(7.2); }
   return G;
 }
 
@@ -281,6 +282,125 @@ check(nShifts > 0, 'data has shifts');
   check(seen.pickup === G.rides, 'pickup events equal rides');
   check(seen.dropoff >= G.rides - 1 && seen.dropoff <= G.rides, 'dropoff events follow rides');
   check(G.sh.thr.legend === 1.25 * G.sh.thr.ghost, 'thr.legend = 1.25 x ghost');
+}
+
+// (6) the 7 rivals: per difficulty, a bot that reacts after 200 game s plays every shift
+const RIV_IDS = PG.ai ? PG.ai.RIVALS.map(r => r.id) : [];
+const rivalTable = {};
+if (PG.ai) {
+  console.log('(6) rivals; greedy bot reacting after 200 game s, all ' + nShifts + ' shifts:');
+  for (const diff of ['easy', 'normal', 'hard']) {
+    const st = {}; for (const id of RIV_IDS) st[id] = { eur: 0, rides: 0, fares: 0, pickups: 0 };
+    let medals = [0, 0, 0, 0, 0], lostToRivals = 0, rivalLost = 0, places = 0, botEur = 0, badPlace = 0, n = 0;
+    const onLost = (p) => { if (p.by !== 'real') lostToRivals++; };
+    const onRL = () => { rivalLost++; };
+    const onRP = (p) => { st[p.rival.id].fares = Math.round((st[p.rival.id].fares + p.fare) * 100) / 100; st[p.rival.id].pickups++; };
+    PG.bus.on('order:lost', onLost); PG.bus.on('rival:lost', onRL); PG.bus.on('rival:pickup', onRP);
+    for (let s = 0; s < nShifts; s++) {
+      const G = runBot(s, [], diff, 200);
+      const res = E.calcResult();
+      n++; medals[res.medal]++; botEur += res.earned; places += res.racePlace;
+      if (res.raceSize !== 8 || res.racePlace < 1 || res.racePlace > 8) badPlace++;
+      check(G.rivals.length === 7, diff + ' shift ' + s + ': 7 rivals drive');
+      for (const rv of G.rivals) {
+        st[rv.id].eur += rv.total; st[rv.id].rides += rv.rides;
+        check(Math.abs(rv.total * 100 - Math.round(rv.total * 100)) < 1e-6, diff + ' ' + rv.id + ' total in cents');
+        check(isFinite(rv.x) && isFinite(rv.y) && rv.x >= -1 && rv.x <= PG.C.MAP.w + 1 && rv.y >= -1 && rv.y <= PG.C.MAP.h + 1, diff + ' ' + rv.id + ' stays on the map');
+      }
+    }
+    PG.bus.off('order:lost', onLost); PG.bus.off('rival:lost', onRL); PG.bus.off('rival:pickup', onRP);
+    check(badPlace === 0, diff + ': racePlace in 1..8 and raceSize 8');
+    let mn = 1e9, mx = -1, weakest = '';
+    for (const id of RIV_IDS) {
+      const avg = st[id].eur / n;
+      check(st[id].rides > 0, diff + ': ' + id + ' drives (rides ' + st[id].rides + ')');
+      check(st[id].pickups === st[id].rides, diff + ': ' + id + ' rival:pickup events equal rides');
+      check(Math.abs(st[id].fares - st[id].eur) < 0.011 * n, diff + ': ' + id + ' totals are the sum of fares at pickup');
+      if (avg < mn) { mn = avg; weakest = id; }
+      if (avg > mx) mx = avg;
+    }
+    check(mx - mn > 1, diff + ': the 7 differ in average € (spread ' + (mx - mn).toFixed(2) + ')');
+    check(weakest === 'nuno', diff + ': Нуну is the weakest (weakest: ' + weakest + ')');
+    if (diff === 'easy') check(lostToRivals === 0, 'easy shields the player: no order lost to a rival (' + lostToRivals + ')');
+    rivalTable[diff] = st;
+    const sh = (k) => (100 * k / n).toFixed(0) + '%';
+    console.log('  ' + diff.padEnd(7) + 'bot avg €' + (botEur / n).toFixed(1) + ' | medals>=bronze ' + sh(n - medals[0]) + ' (none ' + medals[0] + ', bronze ' + medals[1] + ', silver ' + medals[2] + ', gold ' + medals[3] + ', legend ' + medals[4] +
+      ') | orders lost to rivals ' + (lostToRivals / n).toFixed(1) + '/shift | rivals lost target ' + (rivalLost / n).toFixed(1) + '/shift | avg race place ' + (places / n).toFixed(1) + '/8');
+    console.log('     ' + RIV_IDS.map(id => id + ' €' + (st[id].eur / n).toFixed(1) + ' r' + (st[id].rides / n).toFixed(1)).join(' | '));
+  }
+
+  // (7) no input: rivals do not depend on the step size
+  for (const diff of ['easy', 'normal', 'hard']) {
+    E.config.difficulty = diff;
+    const snap = (size) => {
+      const G = newGame(1 % nShifts, diff);
+      for (let i = 0; i < Math.round(SHIFT / size) && !G.over; i++) E.step(size);
+      return JSON.stringify(G.rivals.map(r => [r.id, r.total, r.rides])) + JSON.stringify(Array.from(G.claim, ([i, c]) => [i, c.by, Math.round(c.t1)]));
+    };
+    check(snap(720) === snap(7.2) && snap(7.2) === snap(37.3), diff + ': no input, rivals identical at steps 720 / 7.2 / 37.3');
+  }
+
+  // (8) claims through the hooks: arrival first, the easy shield, a player commit sends the rival back
+  {
+    const G = newGame(3 % nShifts, 'normal');
+    let found = null;
+    for (let i = 0; i < 2000 && !found; i++) { E.step(5); found = G.rivals.find(r => r.mode === 'pickup'); }
+    check(!!found, 'a rival goes to a pickup in a no-input shift');
+    if (found) {
+      const o = found.target, c = G.claim.get(o.i);
+      check(c && c.by === found.id, 'the rival holds the claim on its target');
+      check(PG.ai.claimBlocks(G, o, c.t1 + 1) === true && PG.ai.claimBlocks(G, o, c.t1 - 1) === false, 'normal: the earlier arrival wins');
+      let lost = 0; const onRL = (p) => { if (p.rival === found && p.o === o) lost++; };
+      PG.bus.on('rival:lost', onRL);
+      G.claim.set(o.i, { by: 'player', t1: G.t + 1 }); G.cur = o; G.mode = 'pickup';
+      PG.ai.onPlayerCommit(G, o);
+      PG.bus.off('rival:lost', onRL);
+      check(lost === 1 && found.mode === 'idle' && found.target === null, 'a player commit sends the rival back to idle (rival:lost)');
+      G.cur = null; G.mode = 'idle';
+      const GE = newGame(3 % nShifts, 'easy');
+      GE.claim.set(7, { by: 'ze', t1: 100, boarded: false });
+      check(PG.ai.claimBlocks(GE, GE.sh.orders[7], 5000) === false, 'easy: a rival on its way does not block the player');
+      GE.claim.get(7).boarded = true;
+      check(PG.ai.claimBlocks(GE, GE.sh.orders[7], 5000) === true, 'easy: a rival already on board still blocks');
+    }
+  }
+
+  // (9) Лурдеш: chases a surge from t0 - 240, and camps at hotspots when there are no surges
+  {
+    let si = -1;
+    for (let s = 0; s < nShifts && si < 0; s++) if (PG.data.shifts[s].surgesM && PG.data.shifts[s].surgesM.length) si = s;
+    check(si >= 0, 'some shift has surges for the Лурдеш test');
+    if (si >= 0) {
+      // pickups inside an active surge circle: Лурдеш against the mean of the other six
+      const inside = {}; for (const id of RIV_IDS) inside[id] = 0;
+      const onRP = (p) => {
+        const o = p.o;
+        for (const w of E.G.sh.surgesM) {
+          if (o.t >= w.t0 && o.t <= w.t1 && Math.hypot(o.x0 - w.x, o.y0 - w.y) <= w.r) { inside[p.rival.id]++; break; }
+        }
+      };
+      PG.bus.on('rival:pickup', onRP);
+      for (let s = si; s < Math.min(nShifts, si + 12); s++) {
+        newGame(s, 'normal');
+        while (!E.G.over) E.step(20);
+      }
+      PG.bus.off('rival:pickup', onRP);
+      let others = 0; for (const id of RIV_IDS) if (id !== 'lurdes') others += inside[id] / 6;
+      if (nShifts >= 8) check(inside.lurdes > 1.5 * others, 'Лурдеш takes more surge pickups than the others (' + inside.lurdes + ' vs mean ' + others.toFixed(1) + ')');
+    }
+    const sh0 = PG.data.shifts[0], saved = sh0.surgesM;
+    sh0.surgesM = [];
+    const G0 = newGame(0, 'normal');
+    const hot = (G0.ai && G0.ai.hot) || [];
+    let minH = Infinity, n0 = 0;
+    while (!G0.over) {
+      E.step(10);
+      const L = G0.rivals.find(r => r.id === 'lurdes');
+      if (L.mode === 'idle' || L.mode === 'cruise') { n0++; for (const h of hot) minH = Math.min(minH, Math.hypot(L.x - h.x, L.y - h.y)); }
+    }
+    sh0.surgesM = saved;
+    check(hot.length > 0 && minH < 900, 'no surges: Лурдеш camps at hotspots (closest ' + Math.round(minH) + ' m over ' + n0 + ' idle samples)');
+  }
 }
 
 console.log(failures === 0 ? 'ALL OK (' + checks + ' checks)' : failures + ' FAILED of ' + checks + ' checks');
