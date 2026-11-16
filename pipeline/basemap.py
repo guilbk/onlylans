@@ -82,6 +82,17 @@ DISTRICTS: tuple[tuple[str, tuple[Pt, ...]], ...] = (
                   (-8.5700, 41.1420), (-8.5850, 41.1430), (-8.5930, 41.1460))),
 )  # fmt: skip
 
+# Foz do Douro: the villa quarter at the mouth of the river (the building lots use the same outline)
+FOZ_LONLAT: tuple[Pt, ...] = (
+    (-8.6820, 41.1480), (-8.6650, 41.1470), (-8.6600, 41.1560), (-8.6780, 41.1620),
+    (-8.6830, 41.1550),
+)  # fmt: skip
+# Ukrainian district labels shown on the map
+DISTRICT_UA = {
+    "Ribeira": "Рібейра", "Baixa": "Байша", "Boavista": "Боавішта", "Foz": "Фош",
+    "Matosinhos": "Матозіньюш", "Campanhã": "Кампанья", "Bonfim": "Бонфін",
+}  # fmt: skip
+
 ARCHED = ("Ponte Luís I", "Ponte da Arrábida")  # drawn with an arch hint
 # (name, lon where it crosses the river, extra length beyond the banks in metres)
 BRIDGES: tuple[tuple[str, float, float], ...] = (
@@ -280,12 +291,12 @@ def build(data_path: Path = DATA_DEFAULT) -> dict[str, object]:
         return flat(clip_poly(poly, w, h))
 
     districts = []
-    for name, outline in DISTRICTS:
+    for name, outline in (*DISTRICTS, ("Foz", FOZ_LONLAT)):
         poly = clip_poly([to_m(*q) for q in outline], w, h)
         if poly:
             cx = sum(q[0] for q in poly) / len(poly)
             cy = sum(q[1] for q in poly) / len(poly)
-            districts.append({"name": name, "x": round(cx), "y": round(cy), "poly": flat(poly)})
+            districts.append({"name": name, "ua": DISTRICT_UA[name], "x": round(cx), "y": round(cy), "poly": flat(poly)})
     parks = [{"name": n, "poly": clipped([to_m(*p) for p in poly])} for n, poly in PARKS]
     bridges = [
         {

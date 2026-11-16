@@ -39,7 +39,7 @@ def test_counts():
     layer = basemap.build(DATA)
     assert len(layer["parks"]) >= 4
     assert len(layer["bridges"]) == 5
-    assert len(layer["districts"]) == 6
+    assert len(layer["districts"]) == 7
 
 
 def test_bridges_cross_the_river():

@@ -35,8 +35,7 @@ RIBEIRA, BAIXA, BOAVISTA, FOZ, MATOSINHOS, CAMPANHA, BONFIM, OTHER = range(8)
 FLAT, HIP, COURT, LSHAPE, VILLA, SHED, CRANE = range(7)
 NAMES = {"Ribeira": RIBEIRA, "Baixa": BAIXA, "Boavista": BOAVISTA, "Matosinhos": MATOSINHOS,
          "Campanhã": CAMPANHA, "Bonfim": BONFIM}  # fmt: skip
-FOZ_LONLAT = ((-8.6820, 41.1480), (-8.6650, 41.1470), (-8.6600, 41.1560), (-8.6780, 41.1620),
-              (-8.6830, 41.1550))  # fmt: skip
+FOZ_LONLAT = basemap.FOZ_LONLAT
 # block (rotation cell) size and gap between lots, metres
 BLOCK = {BAIXA: 72, BOAVISTA: 120, FOZ: 90, MATOSINHOS: 110, CAMPANHA: 96, BONFIM: 84, OTHER: 120}
 GAP = {BAIXA: 3, BOAVISTA: 22, FOZ: 34, MATOSINHOS: 14, CAMPANHA: 18, BONFIM: 6, OTHER: 12}
@@ -222,7 +221,7 @@ def build(data_path: Path = DATA_DEFAULT, roads_path: Path = ROADS_DEFAULT) -> d
 
     water = polys([lay["river"], lay["sea"]])  # type: ignore[list-item]
     parks = polys([p["poly"] for p in lay["parks"]])  # type: ignore[index,union-attr]
-    dists = lay["districts"]  # type: ignore[assignment]
+    dists = [d for d in lay["districts"] if d["name"] in NAMES]  # type: ignore[attr-defined,union-attr]
     zones = list(
         zip((NAMES[d["name"]] for d in dists), polys([d["poly"] for d in dists]), strict=True)
     )  # type: ignore[index]
