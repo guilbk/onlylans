@@ -68,7 +68,7 @@
     day: {
       name: 'day', bg: '#e6d4b4', ground: '#eddfc2', blocks: ['#e6d4b4', '#eadabe', '#e0cca8', '#e3cfae'],
       roofs: ['#d9895f', '#e3a679', '#cfae8e', '#c97a52'], park: '#b9d79a', tree: '#9cc47a', azulejo: '#2456c4',
-      street: '255,250,240', streetMinor: 0.07, streetMain: 1, additive: false, widen: false,
+      street: '255,250,240', streetMinor: 0.08, streetMain: 1, additive: false, widen: true,
       ink: '#12234a', card: 'rgba(255,250,240,0.94)', muted: '#55627f', dot: '#8d8a86', faint: 'rgba(18,35,74,0.16)',
       acc: '#0fb98a', ghost: '#6b45d3', ghostRgb: '107,69,211', bad: '#c4263c', blue: '#2456c4', track: 'rgba(36,86,196,0.22)',
       pins: ['#f5b82e', '#3fb8ea', '#f26b82'], pinInk: '#12234a', casing: 'rgba(255,250,240,0.95)',

@@ -336,7 +336,7 @@
         const a = d[i];
         if (a === 0) continue;
         const t = (a - lo) / span;
-        d[i] = Math.round(255 * (pal.streetMinor + (pal.streetMain - pal.streetMinor) * t * t));
+        d[i] = Math.round(255 * (pal.streetMinor + (pal.streetMain - pal.streetMinor) * t * t * t));
       }
       c.putImageData(img, 0, 0);
       c.globalCompositeOperation = 'source-in';       // keep the alpha, paint it in the theme's street colour
@@ -345,9 +345,7 @@
       c.globalCompositeOperation = 'source-over';
       if (pal.widen) {                                  // light streets need body: grow every line by a pixel
         c.drawImage(cv, 1, 0);
-        c.drawImage(cv, -1, 0);
         c.drawImage(cv, 0, 1);
-        c.drawImage(cv, 0, -1);
       }
     } catch (e) {
       return null;      // tainted canvas: the plain picture is drawn at a lower alpha
