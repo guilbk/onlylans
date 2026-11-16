@@ -34,7 +34,7 @@
     master.gain.setTargetAtTime(cfg.muted ? 0 : cfg.master, t, 0.02);
     sfxBus.gain.setTargetAtTime(cfg.sfx, t, 0.02);
     musicBus.gain.setTargetAtTime(cfg.music * 0.5, t, 0.02);
-    ambBus.gain.setTargetAtTime(cfg.amb * 0.3, t, 0.02);
+    ambBus.gain.setTargetAtTime(cfg.amb * 0.11, t, 0.02);
   }
 
   function stopTimer() { if (timer) { root.clearInterval(timer); timer = 0; } }
@@ -57,7 +57,7 @@
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
     engDuck = c.createGain(); engDuck.connect(master);
-    engBus = c.createGain(); engBus.gain.value = 0.6; engBus.connect(engDuck);
+    engBus = c.createGain(); engBus.gain.value = 0.3; engBus.connect(engDuck);
     engGain = c.createGain(); engGain.gain.value = 0;
     engFilt = c.createBiquadFilter(); engFilt.type = 'lowpass'; engFilt.frequency.value = 200;
     engO1 = c.createOscillator(); engO1.type = 'sawtooth'; engO1.frequency.value = 45;
