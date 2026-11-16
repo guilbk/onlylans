@@ -1,0 +1,42 @@
+/* K4: map canvas and the recentre button */
+#map {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #070b14;
+  touch-action: none;
+  outline: none;
+}
+
+#map.over-pin {
+  cursor: pointer;
+}
+
+#map-center {
+  position: absolute;
+  right: 10px;
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(90, 169, 255, 0.35);
+  border-radius: 22px;
+  background: rgba(14, 20, 36, 0.85);
+  color: #e8eefc;
+  font: 600 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#map-center:hover {
+  border-color: #3df5b0;
+  color: #3df5b0;
+}
+
+#map-center[hidden] {
+  display: none;
+}

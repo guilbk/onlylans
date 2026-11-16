@@ -1,0 +1,126 @@
+:root {
+  --bg: #070b14;
+  --panel: rgba(14, 20, 36, 0.85);
+  --panel-solid: #0e1424;
+  --glow: #5aa9ff;
+  --text: #e8eefc;
+  --muted: #8a96b3;
+  --hero: #3df5b0;
+  --ghost: #b48cff;
+  --pin-a: #ffc857;
+  --pin-b: #5ee6ff;
+  --pin-c: #ff7a90;
+  --dot-out: #6b7488;
+  --ahead: #3df5b0;
+  --behind: #ff6b6b;
+  --bronze: #cd7f32;
+  --silver: #c0c8d8;
+  --gold: #ffd700;
+  --legend: #b48cff;
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  min-width: 360px;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+
+#stage > canvas { display: block; width: 100%; height: 100%; }
+
+#hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: calc(var(--sat) + 6px) calc(var(--sar) + 8px) 6px calc(var(--sal) + 8px);
+  pointer-events: none;
+}
+
+#dispatch {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding: 8px calc(var(--sar) + 8px) calc(var(--sab) + 8px) calc(var(--sal) + 8px);
+}
+
+#toast {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--sat) + 90px);
+  transform: translateX(-50%);
+  max-width: 90%;
+  pointer-events: none;
+  z-index: 30;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow-y: auto;
+  padding: calc(var(--sat) + 12px) calc(var(--sar) + 12px) calc(var(--sab) + 12px) calc(var(--sal) + 12px);
+  background: var(--bg);
+  z-index: 20;
+}
+
+.screen.active { display: block; }
+
+.btn {
+  appearance: none;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(90, 169, 255, 0.35);
+  border-radius: 10px;
+  background: var(--panel-solid);
+  color: var(--text);
+  font: 600 15px/1 var(--font);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn:hover { border-color: var(--glow); }
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid var(--hero); outline-offset: 2px; }
+.btn[disabled] { opacity: 0.45; cursor: default; }
+.btn.primary { background: var(--hero); border-color: var(--hero); color: var(--bg); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
