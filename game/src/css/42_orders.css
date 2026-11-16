@@ -25,7 +25,4 @@
 }
 .order-card .oc-btn:active { filter: brightness(0.9); }
 /* Phone portrait: docked, centred; --dock-h / --hud-h may be set on #stage by the HUD. */
-.order-card.dock { width: calc(100% - 16px); max-width: 420px; }
-@media (max-width: 640px) {
-  .order-card { left: 50%; }
-}
+.order-card.dock { width: calc(100% - 16px); max-width: 420px; transform: translateX(-50%); }

@@ -198,7 +198,7 @@
       const botTop = H - h - m - dockH;
       const hidden = cy > botTop - 14 && cy < H;
       mode = hidden ? 'top' : 'bottom';
-      left = Math.round((W - w) / 2);
+      left = 0;
       top = mode === 'top' ? Math.round(m + (parseFloat(st.style.getPropertyValue('--hud-h')) || 0)) : 0;
     } else {
       mode = 'float';
@@ -215,7 +215,7 @@
     const k = mode + left + ':' + top;
     if (k === S.cardMode) return;
     S.cardMode = k;
-    c.style.left = left + 'px';
+    c.style.left = phone ? '50%' : left + 'px';
     if (mode === 'bottom') { c.style.top = ''; c.style.bottom = 'var(--dock-h, 70px)'; }
     else { c.style.top = top + 'px'; c.style.bottom = ''; }
     c.classList.toggle('dock', phone);
