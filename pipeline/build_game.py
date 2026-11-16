@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import os
 import sys
 from pathlib import Path
 
@@ -39,7 +40,10 @@ def default_data(data_path: Path = DATA_DEFAULT, fixture: Path = FIXTURE_DEFAULT
 
 
 def escape_json(text: str) -> str:
-    r"""Escape ``</`` as ``<\\/`` so JSON can sit inside a script element.
+    r"""Escape every ``<`` as ``\u003c`` so JSON can sit inside a script element.
+
+    ``<`` only occurs inside JSON strings, where ``\u003c`` means the same character, so the text
+    stays valid JSON and can never contain ``</script`` or ``<!--``.
 
     Args:
         text: JSON text.
@@ -47,7 +51,7 @@ def escape_json(text: str) -> str:
     Returns:
         The escaped text (still valid JSON).
     """
-    return text.replace("</", "<\\/")
+    return text.replace("<", "\\u003c")
 
 
 def replace_once(template: str, placeholder: str, value: str) -> str:
@@ -194,7 +198,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"build error: {err}", file=sys.stderr)
         return 1
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(html, encoding="utf-8")
+    tmp = args.out.with_name(args.out.name + ".tmp")
+    tmp.write_text(html, encoding="utf-8")
+    os.replace(tmp, args.out)  # atomic: a reader never sees a half-written file
     print(f"built {args.out} ({len(html) // KIB} KB, data: {data})")
     return 0
 
