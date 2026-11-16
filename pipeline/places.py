@@ -40,38 +40,51 @@ PLACES: tuple[tuple[str, float, float], ...] = (
     ("Campo 24 de Agosto", -8.5990, 41.1495),
 )
 
-CELL_M = 500.0
-BLUR_SIGMA = 1.0
-HOT_MIN_SEP_M = 1200.0
-HOT_MAX = 10
-HOT_MIN = 6
-HOT_REL_MIN = 0.15
-HOT_CENTRE_M = 700.0
-NAME_EXACT_M = 900.0
-NAME_AREA_M = 2500.0
-NAME_FAR = "околиця"
+CELL_M = 500.0  # density grid cell size, metres
+BLUR_SIGMA = 1.0  # Gaussian blur of the density grid, cells
+HOT_MIN_SEP_M = 1200.0  # two hotspot peaks are at least this far apart, metres
+HOT_MAX = 10  # at most this many hotspots per shift
+HOT_MIN = 6  # peaks below the relative threshold are kept until this many exist
+HOT_REL_MIN = 0.15  # a later peak must reach this share of the strongest peak
+HOT_CENTRE_M = 700.0  # pickups within this radius of a peak define the hotspot centre, metres
+W_DECIMALS = 3  # decimals of a hotspot's share ``w``
+NAME_EXACT_M = 900.0  # a point this close to a place gets its plain name, metres
+NAME_AREA_M = 2500.0  # ... this close gets "район <place>", metres
+NAME_FAR = "околиця"  # name of a point far from every place
 
-BIN_S = 150
-WINDOW_S = 750
-SHIFT_S = 7200
-T0_MIN_S = 150
-SURGE_R_M = 700.0
-SURGE_MAX = 6
-SURGE_MIN_RATE, SURGE_MIN_N = 2.0, 5
-SURGE_MIN_RATE_RELAXED, SURGE_MIN_N_RELAXED = 1.6, 4
-SURGE_MIN_COUNT = 3
+BIN_S = 150  # time bin of the surge histogram, game seconds
+WINDOW_S = 750  # length of a surge window, game seconds
+SHIFT_S = 7200  # shift length, game seconds
+T0_MIN_S = 150  # no surge starts before this, game seconds
+SURGE_R_M = 700.0  # surge circle radius, metres
+SURGE_MAX = 6  # at most this many surges per shift
+SURGE_MIN_RATE, SURGE_MIN_N = 2.0, 5  # strict: window count >= rate * expected, and >= n
+SURGE_MIN_RATE_RELAXED, SURGE_MIN_N_RELAXED = 1.6, 4  # used if the strict pass finds too few
+SURGE_MIN_COUNT = 3  # fewer surges than this triggers the relaxed pass
 CIRCLE_MIN_TOTAL = 10  # a circle needs this many pickups in the shift to have a stable rate
 
 Point = tuple[float, float]
 
 
 def place_points() -> list[tuple[str, float, float]]:
-    """Return the named places as (name, x_m, y_m) in the map frame."""
+    """List the named places in the map frame.
+
+    Returns:
+        ``(name, x_m, y_m)`` per place, positions in metres.
+    """
     return [(n, *geo.proj(lon, lat)) for n, lon, lat in PLACES]
 
 
 def place_name(x_m: float, y_m: float) -> str:
-    """Name a map point: a place within 900 m, else 'район <nearest>' within 2500 m, else far."""
+    """Name a map point after the nearest place.
+
+    Args:
+        x_m: Map x, metres.
+        y_m: Map y, metres.
+
+    Returns:
+        The place within 900 m, else ``район <nearest>`` within 2500 m, else ``околиця``.
+    """
     best_name, best_d = NAME_FAR, math.inf
     for name, px, py in place_points():
         d = math.hypot(px - x_m, py - y_m)
@@ -85,13 +98,28 @@ def place_name(x_m: float, y_m: float) -> str:
 
 
 def pickups_m(orders: Sequence[Sequence[Any]], unit_m: int) -> np.ndarray:
-    """Return an (n, 3) float array of (x_m, y_m, t_s) from compact orders."""
+    """Extract the pickups of compact orders.
+
+    Args:
+        orders: Compact orders; ``o[0]`` is the time, ``o[1]``/``o[2]`` the pickup in map units.
+        unit_m: Metres per map unit.
+
+    Returns:
+        Float array of shape ``(n, 3)``: x in metres, y in metres, t in game seconds.
+    """
     arr = np.array([(o[1] * unit_m, o[2] * unit_m, o[0]) for o in orders], dtype=float)
     return arr.reshape(-1, 3)
 
 
 def density_grid(xy: np.ndarray) -> np.ndarray:
-    """Return the pickup count per 500 m cell, blurred with sigma = 1 cell; shape (rows, cols)."""
+    """Count pickups per grid cell and blur the counts.
+
+    Args:
+        xy: Pickups ``(n, >=2)``; columns x, y in metres.
+
+    Returns:
+        Array ``(rows, cols)`` of pickups per 500 m cell, blurred with sigma = 1 cell.
+    """
     cols = math.ceil(geo.MAP_W_M / CELL_M)
     rows = math.ceil(geo.MAP_H_M / CELL_M)
     ix = np.clip((xy[:, 0] // CELL_M).astype(int), 0, cols - 1)
@@ -102,9 +130,15 @@ def density_grid(xy: np.ndarray) -> np.ndarray:
 
 
 def find_peaks(grid: np.ndarray) -> list[Point]:
-    """Greedy peaks of the blurred grid (cell centres, metres), at least 1200 m apart.
+    """Pick the strongest peaks of the blurred grid, greedily.
 
     Stops at 10 peaks, or at a peak under 15 % of the maximum once 6 peaks are found.
+
+    Args:
+        grid: Blurred density, shape ``(rows, cols)``, cells of 500 m.
+
+    Returns:
+        Peak positions ``(x, y)`` as cell centres in metres, at least 1200 m apart.
     """
     work = grid.copy()
     top = float(work.max()) if work.size else 0.0
@@ -124,7 +158,16 @@ def find_peaks(grid: np.ndarray) -> list[Point]:
 
 
 def hotspots(xy: np.ndarray, unit_m: int) -> list[dict]:
-    """Return up to 10 hotspots ``{x, y, w, name}`` (units; w = share of the shift's pickups)."""
+    """Build the hotspots of a shift.
+
+    Args:
+        xy: Pickups ``(n, >=2)``; columns x, y in metres.
+        unit_m: Metres per map unit.
+
+    Returns:
+        Up to 10 dicts ``{x, y, w, name}``: centre in map units, ``w`` the share (0..1) of the
+        shift's pickups within 700 m of the peak, ``name`` the nearest place.
+    """
     if len(xy) == 0:
         return []
     out = []
@@ -137,7 +180,7 @@ def hotspots(xy: np.ndarray, unit_m: int) -> list[dict]:
             {
                 "x": round(cx / unit_m),
                 "y": round(cy / unit_m),
-                "w": round(len(near) / len(xy), 3),
+                "w": round(len(near) / len(xy), W_DECIMALS),
                 "name": place_name(cx, cy),
             }
         )
@@ -145,7 +188,14 @@ def hotspots(xy: np.ndarray, unit_m: int) -> list[dict]:
 
 
 def circle_candidates(xy: np.ndarray) -> list[Point]:
-    """Return circle centres (cell centres, metres) with enough pickups to define a rate."""
+    """List the cell centres whose 700 m circle has enough pickups to define a rate.
+
+    Args:
+        xy: Pickups ``(n, >=2)``; columns x, y in metres.
+
+    Returns:
+        Circle centres ``(x, y)`` in metres.
+    """
     cols = math.ceil(geo.MAP_W_M / CELL_M)
     rows = math.ceil(geo.MAP_H_M / CELL_M)
     cells = [((c + 0.5) * CELL_M, (r + 0.5) * CELL_M) for r in range(rows) for c in range(cols)]
@@ -157,10 +207,18 @@ def circle_candidates(xy: np.ndarray) -> list[Point]:
 
 
 def best_window(times: np.ndarray, min_rate: float, min_n: int) -> list[tuple[float, int, int]]:
-    """Return qualifying (z, t0, n) windows of one circle given its pickup times (game s).
+    """Find the surge windows of one circle.
 
     Windows are 750 s long, start on 150 s bins at t0 >= 150 and end at t1 <= 7200. The expected
     count lambda is the circle's average rate over [150, 7200] times 750 s.
+
+    Args:
+        times: Pickup times inside the circle, game seconds.
+        min_rate: A window needs at least ``min_rate * lambda`` pickups.
+        min_n: ... and at least this many pickups.
+
+    Returns:
+        ``(z, t0, n)`` per qualifying window: z-score, start (game seconds), pickup count.
     """
     nbins = SHIFT_S // BIN_S
     hist = np.bincount((times // BIN_S).astype(int).clip(0, nbins - 1), minlength=nbins)
@@ -177,7 +235,16 @@ def best_window(times: np.ndarray, min_rate: float, min_n: int) -> list[tuple[fl
 
 
 def collect_surges(xy: np.ndarray, min_rate: float, min_n: int) -> list[tuple]:
-    """Return all (z, t0, cx, cy) qualifying candidates over all circles, best z first."""
+    """Collect the qualifying surge windows of every circle.
+
+    Args:
+        xy: Pickups ``(n, 3)``: x, y in metres, t in game seconds.
+        min_rate: Rate threshold, see :func:`best_window`.
+        min_n: Count threshold, see :func:`best_window`.
+
+    Returns:
+        Tuples ``(-z, t0, cx, cy, n)`` (t0 in game seconds, centre in metres), best z first.
+    """
     cands = []
     for cx, cy in circle_candidates(xy):
         inside = np.hypot(xy[:, 0] - cx, xy[:, 1] - cy) <= SURGE_R_M
@@ -188,7 +255,18 @@ def collect_surges(xy: np.ndarray, min_rate: float, min_n: int) -> list[tuple]:
 
 
 def pick_surges(xy: np.ndarray, min_rate: float, min_n: int, unit_m: int) -> list[dict]:
-    """Greedy, time-disjoint surges (best z first, max 6) built from qualifying windows."""
+    """Choose time-disjoint surges greedily, best z first, at most 6.
+
+    Args:
+        xy: Pickups ``(n, 3)``: x, y in metres, t in game seconds.
+        min_rate: Rate threshold, see :func:`best_window`.
+        min_n: Count threshold, see :func:`best_window`.
+        unit_m: Metres per map unit.
+
+    Returns:
+        Surge dicts ``{x, y, r, t0, t1, n, name}`` (x, y, r in map units, times in game seconds),
+        sorted by start time.
+    """
     chosen: list[dict] = []
     for _negz, t0, cx, cy, _n in collect_surges(xy, min_rate, min_n):
         t1 = t0 + WINDOW_S
@@ -217,7 +295,15 @@ def pick_surges(xy: np.ndarray, min_rate: float, min_n: int, unit_m: int) -> lis
 
 
 def surges(xy: np.ndarray, unit_m: int) -> list[dict]:
-    """Return demand surges ``{x, y, r, t0, t1, n, name}``; relaxes thresholds if fewer than 3."""
+    """Find the demand surges of a shift, relaxing the thresholds if fewer than 3 are found.
+
+    Args:
+        xy: Pickups ``(n, 3)``: x, y in metres, t in game seconds.
+        unit_m: Metres per map unit.
+
+    Returns:
+        Surge dicts ``{x, y, r, t0, t1, n, name}`` (x, y, r in map units, times in game seconds).
+    """
     if len(xy) == 0:
         return []
     found = pick_surges(xy, SURGE_MIN_RATE, SURGE_MIN_N, unit_m)
@@ -227,6 +313,14 @@ def surges(xy: np.ndarray, unit_m: int) -> list[dict]:
 
 
 def hot_and_surges(orders: Sequence[Sequence[Any]], unit_m: int) -> tuple[list[dict], list[dict]]:
-    """Return (hot, surges) for a shift from its compact orders."""
+    """Compute hotspots and surges of a shift.
+
+    Args:
+        orders: Compact orders of the shift (time in game seconds, pickup in map units).
+        unit_m: Metres per map unit.
+
+    Returns:
+        ``(hot, surges)`` as returned by :func:`hotspots` and :func:`surges`.
+    """
     xy = pickups_m(orders, unit_m)
     return hotspots(xy, unit_m), surges(xy, unit_m)
