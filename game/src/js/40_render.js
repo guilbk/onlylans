@@ -137,6 +137,10 @@
   }
 
   function zoomAt(px, py, factor) {
+    const G = PG.engine && PG.engine.G;
+    // while the camera follows the car, zoom around the car and keep following; a pan lets go
+    const follow = !!G && PG.screen === 'play' && clock() - lastPanClock >= PAN_HOLD_S;
+    if (follow) { const c = P(G.x, G.y); px = c.x; py = c.y; }
     const bx = (px - W * 0.5) / view.scale + view.cx;
     const by = (py - H * 0.5) / view.scale + view.cy;
     view.scale *= factor;
@@ -145,7 +149,7 @@
     view.cx = bx - (px - W * 0.5) / view.scale;
     view.cy = by - (py - H * 0.5) / view.scale;
     clampView();
-    lastPanClock = clock();
+    if (!follow) lastPanClock = clock();
   }
 
   function kick(v) {
@@ -532,6 +536,38 @@
     curBright = t;
   }
 
+  // Pins that would sit on top of each other fan out in a small circle around their middle (screen only,
+  // the orders keep their real spot; a thin leader line joins each pin to it). Hit areas stay separate.
+  function spread(n) {
+    const ringOf = function (q) { return q.reach ? 22 : 6; };
+    for (let i = 0; i < n; i++) pins[i].cl = -1;
+    for (let i = 0; i < n; i++) {
+      const a = pins[i];
+      if (a.cl >= 0 || !a.reach) continue;      // grey dots stay where they are
+      const grp = [a];
+      a.cl = i;
+      for (let g = 0; g < grp.length; g++) {            // everything that touches anything in the group
+        for (let j = 0; j < n; j++) {
+          const b = pins[j];
+          if (b.cl >= 0 || !b.reach) continue;
+          const s = ringOf(grp[g]) + ringOf(b) - 6;
+          if (Math.hypot(grp[g].rx - b.rx, grp[g].ry - b.ry) < s) { b.cl = i; grp.push(b); }
+        }
+      }
+      if (grp.length < 2) continue;
+      grp.sort(function (u, v) { return u.o.i - v.o.i; });
+      let cx = 0, cy = 0;
+      for (let k = 0; k < grp.length; k++) { cx += grp[k].rx; cy += grp[k].ry; }
+      cx /= grp.length; cy /= grp.length;
+      const rad = Math.max(26, 15 * grp.length);
+      for (let k = 0; k < grp.length; k++) {
+        const ang = -1.5708 + TAU * k / grp.length;
+        grp[k].px = cx + Math.cos(ang) * rad;
+        grp[k].py = cy + Math.sin(ang) * rad;
+      }
+    }
+  }
+
   function collectPins(G, tNow) {
     const eng = PG.engine;
     const C = PG.C;
@@ -571,8 +607,8 @@
         const p = pinAt(n++);
         const reach = eng.reachable(o);
         p.o = o;
-        p.px = sx;
-        p.py = sy;
+        p.px = p.rx = sx;
+        p.py = p.ry = sy;
         p.reach = reach;
         p.fare = o.fare;
         p.r = reach ? 15 : 5;
@@ -590,6 +626,7 @@
       }
     }
     pins.length = n;
+    spread(n);
     noteExpired(G, tNow);
     // reachable first, then nearest to the car (the quickest to take; labels are given out in this order)
     for (let i = 0; i < n; i++) {
@@ -714,6 +751,16 @@
   function drawPinDots(G, tReal) {
     const eng = PG.engine;
     const pal = T();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = pal.ink;
+    ctx.globalAlpha = 0.5;
+    for (let i = pins.length - 1; i >= 0; i--) {       // leader lines of fanned-out pins
+      const q = pins[i];
+      if (q.px === q.rx && q.py === q.ry) continue;
+      ctx.beginPath(); ctx.moveTo(q.rx, q.ry); ctx.lineTo(q.px, q.py); ctx.stroke();
+      ctx.beginPath(); ctx.arc(q.rx, q.ry, 2, 0, TAU); ctx.fillStyle = pal.ink; ctx.fill();
+    }
+    ctx.globalAlpha = 1;
     for (let i = pins.length - 1; i >= 0; i--) {
       const p = pins[i];
       const o = p.o;

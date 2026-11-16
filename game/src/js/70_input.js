@@ -142,7 +142,10 @@
         PG.render.zoomAt((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, f);
         gesture.pinchD = d;
       }
-      PG.render.panBy(dx * 0.5, dy * 0.5);
+      const cx = (a.x + b.x) * 0.5, cy = (a.y + b.y) * 0.5;
+      if (gesture.c0 === undefined) { gesture.c0 = cx; gesture.c1 = cy; }
+      if (Math.hypot(cx - gesture.c0, cy - gesture.c1) > DRAG_PX) gesture.pan = true;   // a clear two-finger pan lets go of the car
+      if (gesture.pan) PG.render.panBy(dx * 0.5, dy * 0.5);
       return;
     }
     if (!gesture.moved && Math.hypot(p.x - gesture.x0, p.y - gesture.y0) > DRAG_PX) {
