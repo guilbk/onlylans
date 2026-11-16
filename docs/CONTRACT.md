@@ -711,3 +711,36 @@ pickup points on `pickup`; on `ui:screen` `result` inserts `#story` just above t
 `65_screens.js` is edited). One canvas, both paths over the same bounds: the player's trail mint, the ghost's
 (`sh.ghostOrders`, 15 s per point) lilac, pickups as dots, replayed over 6 s of real time; the «Повтор» button
 (≥ 44 px) plays it again. No story in party mode (`PG.engine.party`).
+
+## §18 Досягнення (achievements)
+
+Twelve badges whose goals come from the real data. Python decides the numbers; JS (`63_achievements.js`,
+`63_achievements.css`) only counts the player's progress.
+
+**`game/achievements.json`** (`python -m pipeline.achievements`, deterministic, sorted keys, one line):
+`{"version":1,"weekend":["sat","sun"],"badges":[badge × 12]}`. A badge: `id`, `icon`, `title`, `desc`
+(Ukrainian), `n` (goal) and the fields of its kind. The build (§6) inlines the file as
+`<script type="application/json" id="achievements-data">` when it exists (`--achievements PATH`, default
+`game/achievements.json`); without it the game has no badges and no menu button.
+
+| id | Counts | Goal `n` (data source) |
+|---|---|---|
+| `night` | finished shifts whose id ends in `-night` | half of the night shifts of the week, rounded up (4) |
+| `airport` | drop-offs of trips starting or ending within `r` of the airport (`x, y, r` metres) | median of airport trips per shift, at least 3 |
+| `long` | a trip with `km` ≥ `km` | 1; `km` = 95th percentile of all trips of the week, rounded to 0.5 |
+| `ghost` | finished shifts with medal ≥ 3 (beat the ghost) | 5 |
+| `rivals` | finished shifts with race place 1 of 8 (all 7 rivals beaten) | 1 |
+| `pax` | drop-offs | 100 |
+| `districts` | distinct hotspots (`spots`: name, x, y metres) with a pickup or drop-off within `r` (600 m) | number of distinct hotspots of the week (22) |
+| `legend` | finished shifts with medal 4 and a day in `weekend` | 1 |
+| `top10` | finished shifts with medal ≥ 2 | 3 |
+| `week` | distinct days (id prefix) with a finished shift | number of days (7) |
+| `money` | total € earned over all finished shifts | 10 median shifts rounded to €50 |
+| `combo` | best `combo` event `n` | 5 |
+
+**JS**: listens to `dropoff`, `combo`, `shift:end`, `ui:screen`; no progress in party mode. Unlock: the `note`
+toast «🏅 Досягнення: <title>» (queued, one per 3 s). On `ui:screen` `menu` it injects the button
+`#ach-open` «🏅 Досягнення» before the shift list; it opens `#ach-panel`, a grid of cards (icon, title, goal,
+progress bar, `n / goal`, locked or unlocked). Storage: localStorage `porto-lanosiv-achievements-v1` =
+`{v:1, p:{<id>:progress}, done:{<id>:1}, seen:[district names], days:[day prefixes]}` (memory only if blocked).
+Colours follow the theme variables of `00_base.css`. Test: `node tools/achievements_test.mjs`.
