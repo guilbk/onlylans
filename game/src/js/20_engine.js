@@ -12,7 +12,10 @@
 
   const DIFF_K = C.DIFF_K;
   // E.party = { clock() -> game seconds } in party mode (80_party.js): server clock, no pause or x3, no AI rivals
-  const E = PG.engine = { config: { difficulty: 'normal' }, G: null, DIFF_K: DIFF_K, party: null };
+  const E = PG.engine = { config: { difficulty: 'normal' }, G: null, DIFF_K: DIFF_K, party: null, tune: { speed: 1, radar: 1, tips: 1 } };
+  // §22: the shop's performance upgrades (player only, multipliers, 1 = none); off in party mode (a fair battle)
+  function tn(k) { return E.party ? 1 : E.tune[k] || 1; }
+  E.tuneK = tn;
   let G = null;
 
   // reused scratch objects (no per-call allocation)
@@ -38,7 +41,7 @@
   /** Speed (km/h) of the shift at game second t (§11). */
   function speedAt(t) {
     const sh = G.sh;
-    return sh.speedByHour[(sh.startHour + Math.floor(t / 3600)) % 24];
+    return sh.speedByHour[(sh.startHour + Math.floor(t / 3600)) % 24] * tn('speed');
   }
 
   /** Seconds to drive from (fx, fy) to the pickup of o when leaving at game second t, boarding included. */
@@ -397,6 +400,7 @@
       const o = sh.orders[i];
       G.lead[i] = C.LEAD[o.c] * G.diffK * (PG.rules && PG.rules.leadK ? PG.rules.leadK(o) : 1);
     }
+    G.diffK *= tn('radar');   // radar upgrade: the pin radius (render and spawn read diffK); the leads above are unchanged
     // spawn schedule sorted by spawn time (lead differs per order)
     const idxs = new Array(n);
     for (let i = 0; i < n; i++) idxs[i] = i;

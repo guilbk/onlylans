@@ -74,7 +74,7 @@ function fresh(saved, store) {
   assert.equal(S.ITEMS[0].title, 'Ланос 2007, 1500 $, торг, не бита (майже)');
   assert.equal(S.ITEMS[0].price, 0);
   assert.ok(S.ITEMS.some((i) => i.torg));
-  assert.equal(S.listings({ cat: 'all', max: 500, can: false, q: '' }).length, S.ITEMS.length + S.MODS.length);
+  assert.equal(S.listings({ cat: 'all', max: 500, can: false, q: '' }).length, S.ITEMS.length + S.MODS.length + S.TUNES.length);
 }
 
 { // one listing per catalog mod: priced from the catalog, dated May 2014, with a seller and a joke, cosmetic only
@@ -145,13 +145,73 @@ function fresh(saved, store) {
   assert.deepEqual(fresh({ owned: { lanos: 1 }, mods: { rims_gold: 1 }, fit: { glow: 'rims_gold' } }).S.selection(), {});
 }
 
+{ // tuning: 3 levels each, in order, bought with the wallet, saved, multipliers for the engine, off in party mode
+  const { S, PG, end, mem } = fresh();
+  assert.equal(S.TUNES.length, 9);
+  assert.deepEqual(S.TUNES.filter((t) => t.key === 'speed').map((t) => [t.price, t.pct]), [[40, 5], [90, 10], [160, 15]]);
+  assert.deepEqual(S.TUNES.filter((t) => t.key === 'radar').map((t) => t.pct), [15, 30, 45]);
+  assert.deepEqual(S.TUNES.filter((t) => t.key === 'tips').map((t) => t.pct), [10, 20, 30]);
+  assert.deepEqual(S.tuneK(), { speed: 1, radar: 1, tips: 1 });
+  PG.engine = { tune: { speed: 1, radar: 1, tips: 1 }, party: null };
+  assert.equal(S.buyTune('tune_speed_1'), false);          // empty wallet
+  end(500);
+  assert.equal(S.buyTune('tune_speed_2'), false);          // level 2 needs level 1
+  assert.equal(S.buyTune('tune_speed_1'), true);
+  assert.equal(S.wallet(), 460);
+  assert.equal(S.buyTune('tune_speed_1'), false);          // already there
+  assert.ok(S.ownedTune('tune_speed_1') && !S.ownedTune('tune_speed_2'));
+  assert.equal(PG.engine.tune.speed, 1.05);
+  assert.equal(S.buyTune('tune_speed_2'), true);
+  assert.equal(PG.engine.tune.speed, 1.1);
+  assert.ok(S.ownedTune('tune_speed_1') && S.ownedTune('tune_speed_2'));   // lower levels count as owned
+  assert.equal(S.buyTune('tune_radar_1'), true);
+  assert.equal(PG.engine.tune.radar, 1.15);
+  assert.equal(PG.engine.tune.tips, 1);
+  assert.equal(S.tuneLevel('speed'), 2);
+  assert.ok(JSON.parse(mem.get('porto-lanosiv-shop-v1')).tune.speed === 2);
+  PG.engine.party = { clock() { return 0; } };             // party: a fair battle, all 1
+  S.setTune();
+  assert.deepEqual(PG.engine.tune, { speed: 1, radar: 1, tips: 1 });
+  PG.engine.party = null; S.setTune();
+  assert.equal(PG.engine.tune.speed, 1.1);
+  const again = fresh(JSON.parse(mem.get('porto-lanosiv-shop-v1')));   // the levels survive a reload
+  assert.equal(again.S.tuneLevel('speed'), 2);
+  assert.equal(again.S.tuneLevel('radar'), 1);
+  assert.equal(fresh({ owned: { lanos: 1 }, tune: { speed: 9, radar: -2, taxi: 1 } }).S.tuneLevel('speed'), 3);
+  assert.equal(fresh({ owned: { lanos: 1 }, tune: { speed: 9, radar: -2 } }).S.tuneLevel('radar'), 0);
+  const un = fresh(); un.S.unlockAll();
+  assert.ok(['speed', 'radar', 'tips'].every((k) => un.S.tuneLevel(k) === 3));
+}
+
+{ // sort and compare
+  const { S } = fresh();
+  const F = (o) => S.listings(Object.assign({ cat: 'all', max: 500, can: false, q: '' }, o)).map((r) => r.it);
+  const asc = F({ sort: 'asc' }).map((i) => i.price);
+  assert.deepEqual(asc, [...asc].sort((a, b) => a - b));
+  const desc = F({ sort: 'desc' }).map((i) => i.price);
+  assert.deepEqual(desc, [...desc].sort((a, b) => b - a));
+  assert.equal(F({ sort: 'eff' })[0].pct, 45);
+  assert.ok(F({ sort: 'new' })[0].date.startsWith('19'));
+  assert.equal(F({ cat: 'tune', sort: 'new' }).length, 9);
+  const C = S.compare;
+  assert.equal(C.toggle('car:matiz'), true);
+  assert.equal(C.toggle('tune:tune_radar_1'), true);
+  assert.equal(C.toggle('mod:paint_red'), true);
+  assert.equal(C.toggle('car:golf'), false);               // a 4th is refused
+  assert.deepEqual(C.list(), ['car:matiz', 'tune:tune_radar_1', 'mod:paint_red']);
+  C.toggle('car:matiz', false);
+  assert.equal(C.list().length, 2);
+  C.clear();
+  assert.equal(C.list().length, 0);
+}
+
 { // no PG.cars.MODS (old build): no mod listings, the shop loads
   globalThis.localStorage = { getItem: () => null, setItem() {} };
   globalThis.PG = {};
   for (const f of ['00_core', '68_shop']) vm.runInThisContext(fs.readFileSync(new URL(`../game/src/js/${f}.js`, import.meta.url), 'utf8'));
   assert.equal(PG.shop.MODS.length, 0);
-  assert.equal(PG.shop.listings({ cat: 'all', max: 500, can: false, q: '' }).length, PG.shop.ITEMS.length);
-  assert.equal(PG.shop.listings({ cat: 'tune', max: 500, can: false, q: '' }).length, 0);
+  assert.equal(PG.shop.listings({ cat: 'all', max: 500, can: false, q: '' }).length, PG.shop.ITEMS.length + PG.shop.TUNES.length);
+  assert.equal(PG.shop.listings({ cat: 'look', max: 500, can: false, q: '' }).length, 0);
   assert.equal(PG.shop.buyMod('paint_red'), false);
 }
 
@@ -166,13 +226,14 @@ function fresh(saved, store) {
   const { S, end } = fresh();
   const F = (o) => S.listings(Object.assign({ cat: 'all', max: 500, can: false, q: '' }, o));
   assert.equal(F({ cat: 'car' }).length, 9);
-  assert.equal(F({ cat: 'tune' }).length, S.MODS.length);
+  assert.equal(F({ cat: 'look' }).length, S.MODS.length);
+  assert.equal(F({ cat: 'tune' }).length, 9);
   assert.ok(F({ cat: 'car' }).every((r) => r.kind === 'car'));
   assert.ok(F({ max: 100 }).every((r) => r.it.price <= 100));
   assert.ok(F({ max: 100 }).some((r) => r.it.id === 'lanos'));
   assert.equal(F({ can: true }).length, 0);                // empty wallet, the Lanos is owned
   end(40);
-  assert.deepEqual(F({ can: true }).map((r) => r.it.id).sort(), ['matiz', ...S.MODS.filter((m) => m.price <= 40).map((m) => m.id)].sort());
+  assert.deepEqual(F({ can: true }).map((r) => r.it.id).sort(), ['matiz', 'tune_radar_1', 'tune_speed_1', 'tune_tips_1', ...S.MODS.filter((m) => m.price <= 40).map((m) => m.id)].sort());
   assert.ok(F({ q: 'Неон' }).length >= 4 && F({ q: 'Неон' }).every((r) => r.kind === 'mod'));
   assert.deepEqual(F({ q: 'ЕЛЕКТРО' }).map((r) => r.it.id), ['electro']);
   assert.equal(F({ q: 'x-no-such-listing' }).length, 0);
@@ -189,6 +250,9 @@ function fresh(saved, store) {
       addEventListener(ev, fn) { (e.listeners[ev] = e.listeners[ev] || []).push(fn); },
       getContext() { return null; },
       querySelector() { return null; },
+      getAttribute(k) { return e.attrs[k] ?? null; },
+      querySelectorAll(sel) { const c = sel.slice(1); const out = []; const walk = (n) => n.children.forEach((k) => { if (` ${k.className} `.includes(` ${c} `)) out.push(k); walk(k); }); walk(e); return out; },
+      classList: { toggle(c, on) { const l = e.className.split(' ').filter((x) => x && x !== c); if (on) l.push(c); e.className = l.join(' '); } },
       get textContent() { return e._t + kids.map((k) => k.textContent).join(''); },
       set textContent(v) { e._t = v; kids.length = 0; }
     };
@@ -206,10 +270,10 @@ function fresh(saved, store) {
   assert.equal(shop.hidden, false);
   assert.equal(has(shop, 'olx-bar').length, 1);            // sticky search and chips (phone)
   assert.equal(has(shop, 'olx-chips').length, 1);
-  assert.equal(has(shop, 'olx-chip').length, 5);
+  assert.equal(has(shop, 'olx-chip').length, 6);
   assert.equal(has(shop, 'olx-side').length, 1);           // filter sidebar (PC)
   assert.equal(has(shop, 'olx-ads').length, 1);
-  assert.equal(has(shop, 'olx-ad').length, S.ITEMS.length + S.MODS.length);
+  assert.equal(has(shop, 'olx-ad').length, S.ITEMS.length + S.MODS.length + S.TUNES.length);
   const labels = () => has(shop, 'olx-btn').map((b) => b.textContent);
   assert.ok(labels().includes('Обрано'));
   assert.ok(labels().includes('Купити'));
@@ -219,14 +283,14 @@ function fresh(saved, store) {
   btn(card('matiz')).listeners.click[0]();                 // press «Купити» on the Matiz
   assert.ok(S.owned('matiz') && S.skin() === 'matiz');
   assert.equal(btn(card('matiz')).textContent, 'Обрано');
-  S.filter.cat = 'tune';                                   // the phone and the PC filters write the same state
+  S.filter.cat = 'look';                                   // the phone and the PC filters write the same state
   S.close();
   S.open();
   assert.equal(has(shop, 'olx-ad').length, S.MODS.length);
   // sections: the cars, then one heading per mod category
   S.filter.cat = 'all'; S.close(); S.open();
   const secs = has(shop, 'olx-sec').map((h) => h.attrs['data-sec']);
-  assert.deepEqual(secs, ['car', 'paint', 'decal', 'spoiler', 'rims', 'glow', 'roof', 'exhaust', 'lights']);
+  assert.deepEqual(secs, ['car', 'paint', 'decal', 'spoiler', 'rims', 'glow', 'roof', 'exhaust', 'lights', 'tune']);
   assert.equal(has(shop, 'olx-sheet').length, 1);
   assert.equal(has(shop, 'olx-sheet')[0].hidden, true);
   // phone gallery: tiles in the grid, a tap opens the full listing in the sheet, the buy button lives there
