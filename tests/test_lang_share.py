@@ -70,8 +70,8 @@ def test_format_table_lists_each_language_and_the_share() -> None:
     text = ls.format_table({"Python": 75, "JavaScript": 25, "CSS": 0, "HTML": 0})
     lines = text.splitlines()
     assert [ln.split()[0] for ln in lines[1:5]] == ["Python", "JavaScript", "CSS", "HTML"]
-    assert "75.0%" in lines[1]
-    assert lines[-1] == "Python share: 75.0%"
+    assert "75.00%" in lines[1]
+    assert lines[-1] == "Python share: 75.00%"
 
 
 def test_file_sizes_ignores_missing_files(tmp_path: Path) -> None:
@@ -111,9 +111,7 @@ REPO_FILES = {
     "README.md": 5000,
 }
 REPO_ATTRS = (
-    "dist/** linguist-generated=true\n"
-    "vendor/** linguist-vendored\n"
-    "docs/** linguist-documentation\n"
+    "dist/** linguist-generated=true\nvendor/** linguist-vendored\ndocs/** linguist-documentation\n"
 )
 
 
@@ -126,7 +124,7 @@ def test_measure_on_temp_git_repo(tmp_path: Path) -> None:
 def test_main_exit_codes_and_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     make_repo(tmp_path, REPO_FILES, REPO_ATTRS)
     assert ls.main(["--root", str(tmp_path), "--min", "60"]) == 0
-    assert "Python share: 60.0%" in capsys.readouterr().out
+    assert "Python share: 60.00%" in capsys.readouterr().out
     assert ls.main(["--root", str(tmp_path), "--min", "60.1"]) == 1
     assert "FAIL" in capsys.readouterr().out
 

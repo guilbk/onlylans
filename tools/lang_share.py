@@ -182,9 +182,9 @@ def format_table(totals: Mapping[str, int]) -> str:
     rows = [f"{'language':<12}{'bytes':>10}{'share':>9}"]
     for lang in LANGUAGE_ORDER:
         share = 100.0 * totals.get(lang, 0) / whole if whole else 0.0
-        rows.append(f"{lang:<12}{totals.get(lang, 0):>10}{share:>8.1f}%")
+        rows.append(f"{lang:<12}{totals.get(lang, 0):>10}{share:>8.2f}%")
     rows.append(f"{'total':<12}{whole:>10}")
-    rows.append(f"Python share: {python_percent(totals):.1f}%")
+    rows.append(f"Python share: {python_percent(totals):.2f}%")
     return "\n".join(rows)
 
 
@@ -242,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     print(format_table(totals))
     share = python_percent(totals)
     if share < args.min:
-        print(f"FAIL: Python share {share:.1f}% is below {args.min:g}%")
+        print(f"FAIL: Python share {share:.2f}% is below {args.min:g}%")
         return EXIT_BELOW_MIN
     return EXIT_OK
 
