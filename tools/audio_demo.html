@@ -15,7 +15,15 @@
 <h3>Music</h3><div id="mus"></div>
 <label>intensity <input id="int" type="range" min="0" max="1" step="0.05" value="0.2"></label>
 <label>engine <input id="eng" type="range" min="0" max="1" step="0.05" value="0"></label>
+<h3>Ambience</h3><div id="amb"></div>
+<label>rain <input id="rain" type="range" min="0" max="1" step="0.05" value="0"></label>
+<label>traffic <input id="trf" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+<h3>Motor</h3><div id="mot"></div>
+<label>speed <input id="spd" type="range" min="0" max="1" step="0.05" value="0"></label>
+<h3>Fast x3</h3><div id="fst"></div>
+<h3>Scene (music + ambience + motor)</h3><div id="scn"></div>
 <h3>Volume</h3>
+<label>ambience <input data-v="amb" type="range" min="0" max="1" step="0.05" value="0.8"></label>
 <label>master <input data-v="master" type="range" min="0" max="1" step="0.05" value="0.8"></label>
 <label>music <input data-v="music" type="range" min="0" max="1" step="0.05" value="0.7"></label>
 <label>sfx <input data-v="sfx" type="range" min="0" max="1" step="0.05" value="0.9"></label>
@@ -40,6 +48,27 @@
   btn('mus', 'stop', () => A.music.stop());
   btn('mus', 'duck on', () => A.music.duck(true));
   btn('mus', 'duck off', () => A.music.duck(false));
+  const amb = (o) => { A.ambience.set(Object.assign({ rain: +$('rain').value, traffic: +$('trf').value, speed: +$('spd').value }, o)); };
+  btn('amb', 'day street', () => amb({ night: 0, hour: 12 }));
+  btn('amb', 'night street', () => amb({ night: 1, hour: 23 }));
+  btn('amb', 'rush hour', () => amb({ night: 0, hour: 18 }));
+  btn('amb', 'stop ambience', () => A.ambience.stop());
+  $('rain').oninput = (e) => { A.unlock(); amb({ rain: +e.target.value }); };
+  $('trf').oninput = (e) => { A.unlock(); amb({ traffic: +e.target.value }); };
+  btn('mot', 'idle (shift running)', () => { $('spd').value = 0; A.engine.set(0, { run: true }); });
+  btn('mot', 'engine off', () => A.engine.set(0));
+  $('spd').oninput = (e) => { A.unlock(); A.engine.set(+e.target.value, { run: true }); A.ambience.set({ speed: +e.target.value }); };
+  btn('fst', 'fast x3 on', () => A.fast.set(true));
+  btn('fst', 'fast x3 off', () => A.fast.set(false));
+  const scene = (mood, night, rain, h) => () => {
+    $('rain').value = rain; $('spd').value = 0.5; A.music.start(mood); A.music.setIntensity(0.4);
+    A.engine.set(0.5, { run: true }); A.fast.set(false); amb({ night, rain, hour: h, speed: 0.5 });
+  };
+  btn('scn', 'Day', scene('day', 0, 0, 12));
+  btn('scn', 'Night', scene('night', 1, 0, 23));
+  btn('scn', 'Rain (day)', scene('day', 0, 0.8, 12));
+  btn('scn', 'Rain (night)', scene('night', 1, 0.8, 23));
+  btn('scn', 'stop all', () => { A.ambience.stop(); A.music.stop(); A.engine.set(0); A.fast.set(false); });
   $('int').oninput = (e) => A.music.setIntensity(+e.target.value);
   $('eng').oninput = (e) => { A.unlock(); A.engine.set(+e.target.value); };
   document.querySelectorAll('[data-v]').forEach((el) => {
@@ -59,6 +88,15 @@
       const d = buf.getChannelData(0); let pk = 0, ss = 0;
       for (let i = 0; i < d.length; i++) { pk = Math.max(pk, Math.abs(d[i])); ss += d[i] * d[i]; }
       out.push(n.padEnd(14) + 'peak ' + db(pk).padStart(6) + '   rms(active) ' + db(Math.sqrt(ss / d.length)));
+    }
+    for (const sc of [['amb day', 0, 0], ['amb night', 1, 0], ['amb rain', 0, 0.9]]) {
+      const oc = new OfflineAudioContext(1, 44100 * 12, 44100);
+      A._attach(oc); A.setMuted(false);
+      A.ambience.set({ night: sc[1], rain: sc[2], traffic: 0.8, speed: 0.6, hour: 18 });
+      A.ambience._tick(11);
+      const d = (await oc.startRendering()).getChannelData(0); let pk = 0, ss = 0;
+      for (let i = 44100 * 2; i < d.length; i++) { pk = Math.max(pk, Math.abs(d[i])); ss += d[i] * d[i]; }
+      out.push(sc[0].padEnd(14) + 'peak ' + db(pk).padStart(6) + '   rms ' + db(Math.sqrt(ss / (d.length - 88200))));
     }
     $('out').textContent = out.join('\n');
     A.setMuted(live.muted);
