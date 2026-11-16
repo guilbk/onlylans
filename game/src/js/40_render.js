@@ -17,7 +17,7 @@
   const PIN_COL = ['#ffc857', '#5ee6ff', '#ff7a90'];
   const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
-  const PIN_GLOW = ['rgba(255,200,87,0.20)', 'rgba(94,230,255,0.20)', 'rgba(255,122,144,0.20)'];
+  const PIN_GLOW = ['rgba(255,200,87,0.10)', 'rgba(94,230,255,0.10)', 'rgba(255,122,144,0.10)'];
   const PIN_TRACK = ['rgba(255,200,87,0.25)', 'rgba(94,230,255,0.25)', 'rgba(255,122,144,0.25)'];
   const FONT_LABEL = '700 13px ' + FONT;
   const FONT_TAG = '700 11px ' + FONT;
@@ -30,15 +30,21 @@
 
   const MAX_LABELS = 96;
   const MAX_FAINT = 900;
+  const EDGE_MAX = 6;             // off-screen takeable pins shown as edge arrows while riding
+  const edge = [];
   const POP_S = 0.4;              // real s of the pin pop-in
   const EXPIRE_S = 0.35;          // real s of the pin expiry fade
   const EXPIRE_N = 16;
   const PAN_HOLD_S = 4;           // camera stays put this long after a manual pan
-  const MIN_SCALE_PHONE_M = 6000; // metres across on a phone at start
-  const DESKTOP_VIEW_H_M = 8000;  // metres of height on desktop at start
-  const MAX_SCALE = 0.4;          // px per metre
+  const VIEW_PHONE_M = 2800;      // metres across on a phone at start
+  const VIEW_WIDE_M = 5000;       // metres across on a wide screen at start
+  const VIEW_MIN_M = 1000;        // closest zoom: this many metres across
+  const ZOOM_STEP = 1.45;         // one press of + or -
+  const PEEK_S = 2.5;             // a tapped or hovered rival shows its name this long
+  const NEAR_M = 1500;            // rivals this close to the hero (metres) always show a name
   const GHOST_TRAIL_DT = 12;      // game s between ghost trail samples
-  const CAR_LEN = { hero: 40, rival: 30, ghost: 32 };   // screen px at the default zoom
+  const CAR_M = 150;              // a car is about one city block long, in metres
+  const CAR_K = { hero: 1, ghost: 0.92, rival: 0.85 };
   const TAG_H = 14;
 
   // ---- state ----
@@ -46,6 +52,10 @@
   let canvas = null;
   let ctx = null;
   let centerBtn = null;
+  let zoomBox = null;
+  let peekX = -1e9;
+  let peekY = -1e9;
+  let peekAt = -1e9;
   let W = 0;
   let H = 0;
   let dpr = 1;
@@ -106,7 +116,8 @@
   function clampView() {
     const lo = Math.max(minScale(), 0.0001);
     if (view.scale < lo) view.scale = lo;
-    if (view.scale > MAX_SCALE) view.scale = MAX_SCALE;
+    const hi = Math.max(lo, W / VIEW_MIN_M);
+    if (view.scale > hi) view.scale = hi;
     if (view.cx < 0) view.cx = 0;
     if (view.cx > MAP_W) view.cx = MAP_W;
     if (view.cy < 0) view.cy = 0;
@@ -114,8 +125,7 @@
   }
 
   function defaultScale() {
-    if (W < 700) return W / MIN_SCALE_PHONE_M;
-    return Math.min(H / DESKTOP_VIEW_H_M, W / 11000);
+    return W / (W < 700 ? VIEW_PHONE_M : VIEW_WIDE_M);
   }
 
   function resetCamera(x, y) {
@@ -136,6 +146,7 @@
     const bx = (px - W * 0.5) / view.scale + view.cx;
     const by = (py - H * 0.5) / view.scale + view.cy;
     view.scale *= factor;
+    zoomEaseUntil = 0;
     clampView();
     view.cx = bx - (px - W * 0.5) / view.scale;
     view.cy = by - (py - H * 0.5) / view.scale;
@@ -147,10 +158,26 @@
     if (!PG.REDUCED && punch < 0.09) punch += v;
   }
 
-  // car length in screen px: grows gently with zoom, never below 80 % of the base size
+  // Car length in screen px: fixed in map metres (about one block), clamped so it stays readable
+  // when zoomed out and does not swallow the street when zoomed in.
   function carLen(kind) {
-    const z = view.scale / defaultScale();
-    return CAR_LEN[kind] * Math.min(1.5, Math.max(0.8, Math.pow(z, 0.35))) * (W >= 700 ? 1.15 : 1);
+    const phone = W < 700;
+    const px = Math.min(phone ? 30 : 38, Math.max(phone ? 16 : 22, CAR_M * view.scale));
+    return px * (CAR_K[kind] || 1);
+  }
+
+  // + / - buttons: ease to a nearby zoom level around the middle of the screen
+  function zoomStep(f) {
+    const base = clock() < zoomEaseUntil ? zoomEaseTo : view.scale;   // quick presses add up
+    zoomEaseTo = Math.min(Math.max(base * f, minScale()), Math.max(minScale(), W / VIEW_MIN_M));
+    zoomEaseUntil = clock() + 0.9;
+  }
+
+  // a tap or hover at (px, py) lets the rival under it show its name for a moment
+  function peek(px, py) {
+    peekX = px;
+    peekY = py;
+    peekAt = clock();
   }
 
   function recenter() {
@@ -181,10 +208,11 @@
     }
     if (centerBtn) {
       const r = centerBtn.getBoundingClientRect();
-      zone.bx0 = r.left - sr.left - 12;
-      zone.bx1 = r.right - sr.left + 12;
-      zone.by0 = r.top - sr.top - 12;
-      zone.by1 = r.bottom - sr.top + 12;
+      const q = zoomBox && !zoomBox.hidden ? zoomBox.getBoundingClientRect() : r;
+      zone.bx0 = Math.min(r.left, q.left) - sr.left - 12;
+      zone.bx1 = Math.max(r.right, q.right) - sr.left + 12;
+      zone.by0 = Math.min(r.top, q.top) - sr.top - 12;
+      zone.by1 = Math.max(r.bottom, q.bottom) - sr.top + 12;
     }
   }
 
@@ -218,7 +246,10 @@
   // ---- street glow ----
   const BUCKETS = [40, 20, 10];  // metres per texture pixel
   const STREET_RGB = '90,169,255';
-  const STREET_CAP = 0.18;
+  const STREET_CAP = 0.1;
+  const STREET_MINOR = 0.008;     // alpha of the faintest street in the picture
+  const STREET_MAIN = 0.32;      // alpha of the busiest road
+  let dimCv = null;
   const caches = {};
   let streetImg = null;
   let alphaLut = null;
@@ -291,12 +322,47 @@
     finishCache(k);
   }
 
+  // One pass over the street picture: minor streets nearly vanish, busy roads keep a clear line.
+  function dimStreets() {
+    const cv = document.createElement('canvas');
+    cv.width = streetImg.naturalWidth;
+    cv.height = streetImg.naturalHeight;
+    const c = cv.getContext('2d');
+    c.drawImage(streetImg, 0, 0);
+    try {
+      const img = c.getImageData(0, 0, cv.width, cv.height);
+      const d = img.data;
+      let lo = 255;
+      let hi = 0;
+      for (let i = 3; i < d.length; i += 4) {
+        const a = d[i];
+        if (a === 0) continue;
+        if (a < lo) lo = a;
+        if (a > hi) hi = a;
+      }
+      const span = Math.max(1, hi - lo);
+      for (let i = 3; i < d.length; i += 4) {
+        const a = d[i];
+        if (a === 0) continue;
+        const t = (a - lo) / span;
+        d[i] = Math.round(255 * (STREET_MINOR + (STREET_MAIN - STREET_MINOR) * t * t));
+      }
+      c.putImageData(img, 0, 0);
+    } catch (e) {
+      return null;      // tainted canvas: the plain picture is drawn at a lower alpha
+    }
+    return cv;
+  }
+
   function drawStreets() {
     if (streetsReady()) {
+      if (dimCv === null) dimCv = dimStreets() || false;
       ctx.globalCompositeOperation = 'lighter';
       ctx.imageSmoothingEnabled = true;
+      ctx.globalAlpha = dimCv ? 1 : 0.4;
       P(0, 0);
-      ctx.drawImage(streetImg, pOut.x, pOut.y, MAP_W * view.scale, MAP_H * view.scale);
+      ctx.drawImage(dimCv || streetImg, pOut.x, pOut.y, MAP_W * view.scale, MAP_H * view.scale);
+      ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
       return;
     }
@@ -344,16 +410,21 @@
   // ---- camera update ----
   function updateCamera(dt, G, play) {
     const t = clock();
-    if (t < zoomEaseUntil) view.scale += (zoomEaseTo - view.scale) * (1 - Math.exp(-dt * 3));
+    const frozen = !!(PG.orders && (PG.orders.selected || PG.orders.hovered));   // a pin under the finger or mouse must not slide away
+    if (frozen) {
+      zoomEaseUntil += dt;           // the zoom ease waits
+    } else if (t < zoomEaseUntil) view.scale += (zoomEaseTo - view.scale) * (1 - Math.exp(-dt * 5));
     if (punch !== 0) {                     // kick decays back; applied as a ratio so user zoom is kept
       const next = Math.abs(punch) < 0.002 ? 0 : punch * Math.exp(-dt * 6);
       view.scale *= (1 + next) / (1 + punch);
       punch = next;
     }
-    if (play && G) {
+    if (frozen && play) {
+      // camera stays put while a pin is selected
+    } else if (play && G) {
       const held = t - lastPanClock < PAN_HOLD_S;
       const forced = t < recenterUntil;
-      if ((G.mode !== 'idle' && !held) || forced) {
+      if (!held || forced) {
         const k = 1 - Math.exp(-dt * (forced ? 6 : 2.5));
         view.cx += (G.x - view.cx) * k;
         view.cy += (G.y - view.cy) * k;
@@ -416,6 +487,7 @@
     const horizon = G.t + maxLead + 1800;
     let n = 0;
     faintN = 0;
+    edge.length = 0;
     curPins.clear();
     const margin = 24;
     for (let i = firstAfter(orders, G.t); i < orders.length; i++) {
@@ -427,7 +499,12 @@
       if (cl && cl.by !== 'player' && cl.t1 <= G.t) continue;
       const sx = (o.x0 - view.cx) * view.scale + W * 0.5;
       const sy = (o.y0 - view.cy) * view.scale + H * 0.5;
-      if (sx < -margin || sy < -margin || sx > W + margin || sy > H + margin) continue;
+      if (sx < -margin || sy < -margin || sx > W + margin || sy > H + margin) {
+        // while riding, takeable pins are counted from the drop-off and often lie off screen: point to them
+        if (G.mode === 'ride' && edge.length < EDGE_MAX && o.t - eng.leadOf(o) <= G.t &&
+            Math.hypot(o.x0 - G.x, o.y0 - G.y) <= C.RADIUS[o.c] * dk && eng.reachable(o)) edge.push(o, sx, sy);
+        continue;
+      }
       let isPin = false;
       if (o.t - eng.leadOf(o) <= G.t) {
         const dx = o.x0 - G.x;
@@ -443,7 +520,7 @@
         p.py = sy;
         p.reach = reach;
         p.fare = o.fare;
-        p.r = reach ? 13 + Math.min(4, o.fare / 6) : 4;
+        p.r = reach ? 13 + Math.min(4, o.fare / 6) : 6;
         p.lw = 0;
         let b = born.get(o);
         if (b === undefined) { b = tNow; born.set(o, b); }
@@ -562,7 +639,7 @@
   }
 
   function drawFaint(G) {
-    ctx.fillStyle = 'rgba(138,150,179,0.22)';
+    ctx.fillStyle = 'rgba(138,150,179,0.14)';
     for (let i = 0; i < faintN; i++) {
       ctx.fillRect(faint[i * 2] - 1, faint[i * 2 + 1] - 1, 2, 2);
     }
@@ -585,8 +662,8 @@
       const o = p.o;
       const k = p.k;
       if (!p.reach) {
-        ctx.fillStyle = COL_MUTED;
-        ctx.globalAlpha = 0.85 * Math.min(1, k);
+        ctx.fillStyle = PIN_COL[o.c] || COL_MUTED;
+        ctx.globalAlpha = 0.4 * Math.min(1, k);
         ctx.beginPath();
         ctx.arc(p.px, p.py, p.r, 0, TAU);
         ctx.fill();
@@ -603,7 +680,7 @@
       if (k !== 1) { ctx.save(); ctx.translate(p.px, p.py); ctx.scale(k, k); ctx.translate(-p.px, -p.py); }
       ctx.fillStyle = PIN_GLOW[c];
       ctx.beginPath();
-      ctx.arc(p.px, p.py, p.r + 6, 0, TAU);
+      ctx.arc(p.px, p.py, p.r + 4, 0, TAU);
       ctx.fill();
       ctx.fillStyle = PIN_COL[c];
       ctx.beginPath();
@@ -670,36 +747,34 @@
     }
   }
 
+  // the route the car is driving now: a dark casing and a bright thick line
+  function activeLine(xs, ys, n, col) {
+    ctx.setLineDash(NO_DASH);
+    ctx.strokeStyle = 'rgba(7,11,20,0.7)';
+    ctx.lineWidth = 8;
+    strokePts(xs, ys, n);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 4.5;
+    strokePts(xs, ys, n);
+  }
+
   function drawRoutes(G) {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     if (G.mode === 'pickup' && G.leg) {
-      ctx.setLineDash(DASH);
-      ctx.strokeStyle = 'rgba(61,245,176,0.75)';
-      ctx.lineWidth = 2.5;
-      if (G.leg.path && G.leg.path.n > 1) strokePts(G.leg.path.xs, G.leg.path.ys, G.leg.path.n);
-      else dashedLine(G.x, G.y, G.leg.x1, G.leg.y1);
-      ctx.setLineDash(NO_DASH);
-      if (G.cur) {
-        P(G.cur.x0, G.cur.y0);
-        ctx.strokeStyle = COL_MINT;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(pOut.x, pOut.y, 13, 0, TAU);
-        ctx.stroke();
+      if (G.leg.path && G.leg.path.n > 1) activeLine(G.leg.path.xs, G.leg.path.ys, G.leg.path.n, 'rgba(61,245,176,0.95)');
+      else {
+        ctx.setLineDash(DASH);
+        ctx.strokeStyle = 'rgba(61,245,176,0.85)';
+        ctx.lineWidth = 3.5;
+        dashedLine(G.x, G.y, G.leg.x1, G.leg.y1);
+        ctx.setLineDash(NO_DASH);
       }
     } else if (G.mode === 'ride' && G.cur && G.cur.pts) {
-      const pts = G.cur.pts;
-      ctx.strokeStyle = 'rgba(61,245,176,0.30)';
-      ctx.lineWidth = 6;
-      strokePts(pts.xs, pts.ys, pts.n);
-      ctx.strokeStyle = 'rgba(61,245,176,0.9)';
-      ctx.lineWidth = 2.5;
-      strokePts(pts.xs, pts.ys, pts.n);
-      drawFlag(G.cur.x1, G.cur.y1);
+      activeLine(G.cur.pts.xs, G.cur.pts.ys, G.cur.pts.n, 'rgba(61,245,176,0.95)');
     } else if (G.mode === 'cruise' && G.leg) {
       ctx.setLineDash(DASH);
-      ctx.strokeStyle = 'rgba(138,150,179,0.55)';
+      ctx.strokeStyle = 'rgba(138,150,179,0.4)';
       ctx.lineWidth = 2;
       if (G.leg.path && G.leg.path.n > 1) strokePts(G.leg.path.xs, G.leg.path.ys, G.leg.path.n);
       else dashedLine(G.x, G.y, G.leg.x1, G.leg.y1);
@@ -707,16 +782,112 @@
     }
     if (G.next && G.cur) {
       ctx.setLineDash(DASH);
-      ctx.strokeStyle = 'rgba(255,200,87,0.7)';
+      ctx.strokeStyle = 'rgba(255,200,87,0.6)';
       ctx.lineWidth = 2;
       dashedLine(G.cur.x1, G.cur.y1, G.next.x0, G.next.y0);
       ctx.setLineDash(NO_DASH);
-      P(G.next.x0, G.next.y0);
-      ctx.strokeStyle = '#ffc857';
-      ctx.beginPath();
-      ctx.arc(pOut.x, pOut.y, 13, 0, TAU);
-      ctx.stroke();
     }
+  }
+
+  // ---- targets: the booked pickup and drop-off stay on the map ----
+  function fareTag(txt, px, py, col) {
+    const w = txt.length * 8 + 12;
+    const h = 16;
+    const x = Math.min(W - w - 2, Math.max(2, px - w * 0.5));
+    const y = Math.max(zone.top + 2, py);
+    addLabelRect(x, y, w, h);
+    ctx.fillStyle = 'rgba(7,11,20,0.85)';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = col;
+    ctx.font = FONT_LABEL;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(txt, x + w * 0.5, y + h * 0.5 + 0.5);
+  }
+
+  // when a target is off screen: an arrow on the edge that points to it
+  function edgeArrow(px, py, col) {
+    const m = 18;
+    const x = Math.min(W - m, Math.max(m, px));
+    const y = Math.min(zone.bottom - m, Math.max(zone.top + m, py));
+    if (x === px && y === py) return false;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.atan2(py - H * 0.5, px - W * 0.5));
+    ctx.fillStyle = col;
+    ctx.strokeStyle = 'rgba(7,11,20,0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(11, 0);
+    ctx.lineTo(-7, -8);
+    ctx.lineTo(-7, 8);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fill();
+    ctx.restore();
+    return true;
+  }
+
+  function drawPassenger(o, tReal, strong) {
+    const col = PIN_COL[o.c] || PIN_COL[0];
+    P(o.x0, o.y0);
+    const px = pOut.x;
+    const py = pOut.y;
+    if (edgeArrow(px, py, col)) return;
+    const r = strong ? 13 : 11;
+    const ph = PG.REDUCED ? 0 : (tReal * 1.1) % 1;
+    ring(px, py, r + 4 + ph * 12, 2.5, col, 0.7 * (1 - ph));
+    ring(px, py, r + 4, 2.5, col, strong ? 0.95 : 0.6);
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(7,11,20,0.85)';          // a person: head and shoulders
+    ctx.beginPath();
+    ctx.arc(px, py - r * 0.28, r * 0.26, 0, TAU);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(px, py + r * 0.72, r * 0.52, Math.PI, 0);
+    ctx.fill();
+    const fr = Math.round(o.fare);
+    fareTag(LABELS[fr] || (LABELS[fr] = '€' + fr), px, py - r - 24, col);
+  }
+
+  function drawDropoff(o, col, strong, tReal) {
+    P(o.x1, o.y1);
+    const px = pOut.x;
+    const py = pOut.y;
+    if (strong && edgeArrow(px, py, col)) return;
+    if (strong) {
+      const ph = PG.REDUCED ? 0 : (tReal * 1.1) % 1;
+      ring(px, py, 8 + ph * 14, 2.5, col, 0.7 * (1 - ph));
+    }
+    ctx.globalAlpha = strong ? 1 : 0.6;
+    drawFlag(o.x1, o.y1);
+    ctx.globalAlpha = 1;
+    if (strong) {
+      const fr = Math.round(o.fare);
+      fareTag(LABELS[fr] || (LABELS[fr] = '€' + fr), px - 6, py - 42, col);
+    }
+  }
+
+  function drawEdgePins() {
+    for (let i = 0; i < edge.length; i += 3) {
+      const o = edge[i];
+      const col = PIN_COL[o.c] || PIN_COL[0];
+      if (!edgeArrow(edge[i + 1], edge[i + 2], col)) continue;
+    }
+  }
+
+  function drawTargets(G, tReal) {
+    const cur = G.cur;
+    if (G.mode === 'pickup' && cur) {
+      drawDropoff(cur, COL_MINT, false, tReal);
+      drawPassenger(cur, tReal, true);
+    } else if (G.mode === 'ride' && cur) {
+      drawDropoff(cur, COL_MINT, true, tReal);
+    }
+    if (G.next) drawPassenger(G.next, tReal, false);
   }
 
   function drawTrail(G) {
@@ -843,9 +1014,12 @@
       if (px < -40 || py < -40 || px > W + 40 || py > H + 40) continue;
       PG.cars.draw(ctx, px, py, a, len, r.color || '#ffffff', 1, 'rival');
     }
-    for (let i = 0; i < n; i++) {
+    const peeking = clock() - peekAt < PEEK_S;
+    for (let i = 0; i < n; i++) {         // names: rivals near the hero, or the one just tapped or hovered
       const r = rv[i];
       if (rx[i] < -40 || ry[i] < -40 || rx[i] > W + 40 || ry[i] > H + 40) continue;
+      const near = Math.hypot(r.x - G.x, r.y - G.y) <= NEAR_M;
+      if (!near && !(peeking && Math.hypot(rx[i] - peekX, ry[i] - peekY) <= Math.max(26, len))) continue;
       tag(r.name || r.id || '', rx[i], ry[i] - len * 0.5 - 2, r.color || '#ffffff', ry[i] - len * 0.5 - 14 > zone.top);
     }
   }
@@ -856,16 +1030,19 @@
     const py = pOut.y;
     const len = carLen('hero');
     const a = PG.cars.turn(9, G.hx, G.hy, dtNow, false);
-    const moving = G.mode !== 'idle' && !G.paused;
-    const pulse = PG.REDUCED ? 0 : 0.5 + 0.5 * Math.sin(tReal * 4);
-    ring(px, py, len * 0.62 + pulse * 3, 2, COL_MINT, moving ? 0.5 : 0.3 + 0.3 * pulse);
+    ring(px, py, len * 0.62, 2, COL_MINT, 0.3);
     PG.cars.draw(ctx, px, py, a, len, COL_MINT, 1, 'hero');
+    ctx.font = FONT_TAG;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    tag('Ти', px, py - len * 0.8 - 3, COL_MINT, py - len * 0.8 - 3 - 12 > zone.top);
   }
 
   function updateCenterBtn(show) {
     if (!centerBtn || centerShown === show) return;
     centerShown = show;
     centerBtn.hidden = !show;
+    if (zoomBox) zoomBox.hidden = !show || document.body.classList.contains('party-host');
     measureZones();
   }
 
@@ -915,6 +1092,8 @@
     drawFaint(G);
     drawRoutes(G);
     drawPinDots(G, t);
+    drawTargets(G, t);
+    drawEdgePins();
     drawTrail(G);
     drawGhost(G);
     P(G.x, G.y);
@@ -948,6 +1127,20 @@
     centerBtn.hidden = true;
     centerBtn.addEventListener('click', recenter);
     stage.appendChild(centerBtn);
+
+    zoomBox = document.createElement('div');
+    zoomBox.id = 'map-zoom';
+    zoomBox.hidden = true;
+    zoomBox.setAttribute('data-no-map', '');
+    [['+', ZOOM_STEP, 'Збільшити мапу'], ['−', 1 / ZOOM_STEP, 'Зменшити мапу']].forEach(function (d) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = d[0];
+      b.setAttribute('aria-label', d[2]);
+      b.addEventListener('click', function () { zoomStep(d[1]); });
+      zoomBox.appendChild(b);
+    });
+    stage.appendChild(zoomBox);
 
     resize();
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(resize).observe(stage);
@@ -994,6 +1187,8 @@
     nearestPin: nearestPin,
     panBy: panBy,
     zoomAt: zoomAt,
+    zoomStep: zoomStep,
+    peek: peek,
     recenter: recenter,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

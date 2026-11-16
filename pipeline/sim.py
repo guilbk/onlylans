@@ -49,9 +49,9 @@ LEGEND_K = 1.25  # legend medal at 1.25 x the ghost total
 DEFAULT_DELAY_S = 200.0
 
 DIFFICULTIES = ("easy", "normal", "hard")
-DEFAULT_LEAD = (310.0, 310.0, 310.0)  # game s, call types A, B, C
-DEFAULT_RADIUS = (5000.0, 3500.0, 2500.0)  # metres, call types A, B, C
-DEFAULT_DIFF_K = {"easy": 1.0, "normal": 1.0, "hard": 0.9}
+DEFAULT_LEAD = (1200.0, 1200.0, 900.0)  # game s, call types A, B, C
+DEFAULT_RADIUS = (6000.0, 4500.0, 3000.0)  # metres, call types A, B, C
+DEFAULT_DIFF_K = {"easy": 1.3, "normal": 1.0, "hard": 0.8}
 
 # ---- constants of the rivals (25_ai.js) ------------------------------------------------------
 GRID_S = 5.0  # game s between decision points of a free rival

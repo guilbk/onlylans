@@ -83,7 +83,7 @@ def test_json_end_tag_is_escaped(tmp_path: Path) -> None:
     data = write_data(tmp_path, json.dumps({"s": "</script>"}))
     html = bg.build(make_src(tmp_path), data, tmp_path / "r.json", tmp_path / "s.png")
     assert '</script>"' not in html.split('id="game-data">')[1].split("</script>")[0]
-    assert "<\\/script>" in html
+    assert "\\u003c/script>" in html
 
 
 def test_duplicate_placeholder_fails(tmp_path: Path) -> None:
@@ -101,10 +101,21 @@ def test_default_data_rule(tmp_path: Path) -> None:
     assert bg.default_data(real, fixture) == real
 
 
-def test_escape_json_only_touches_close_tags() -> None:
-    assert bg.escape_json('{"a":"</script>"}') == '{"a":"<\\/script>"}'
-    assert bg.escape_json('{"a":"<b>"}') == '{"a":"<b>"}'
-    assert json.loads(bg.escape_json('["</x>"]')) == ["</x>"]  # still valid JSON
+def test_escape_json_escapes_every_open_angle_bracket() -> None:
+    assert bg.escape_json('{"a":"</script>"}') == '{"a":"\\u003c/script>"}'
+    assert bg.escape_json('{"a":"<!-- <b>"}') == '{"a":"\\u003c!-- \\u003cb>"}'
+    assert "<" not in bg.escape_json('["<", "<!--", "<script"]')
+    assert json.loads(bg.escape_json('["</x>", "<!--"]')) == ["</x>", "<!--"]  # still valid JSON
+
+
+def test_main_writes_atomically_without_leftover(tmp_path: Path) -> None:
+    src, data, out = make_src(tmp_path), write_data(tmp_path), tmp_path / "o" / "index.html"
+    args = ["--src", str(src), "--data", str(data), "--roads", str(tmp_path / "r.json"),
+            "--streets", str(tmp_path / "s.png"), "--missions", str(tmp_path / "m.json"),
+            "--out", str(out)]  # fmt: skip
+    assert bg.main(args) == 0
+    assert bg.main(args) == 0  # replaces an existing file
+    assert out.is_file() and [p.name for p in out.parent.iterdir()] == ["index.html"]
 
 
 def test_replace_once_requires_exactly_one_occurrence() -> None:
@@ -140,7 +151,7 @@ def test_build_data_block_parts(tmp_path: Path) -> None:
     roads = tmp_path / "roads.json"
     streets = tmp_path / "streets.png"
     only_data = bg.build_data_block(data, roads, streets)
-    assert only_data == '<script type="application/json" id="game-data">{"x":"<\\/p>"}</script>'
+    assert only_data == '<script type="application/json" id="game-data">{"x":"\\u003c/p>"}</script>'
     roads.write_text('{"v":1}', encoding="utf-8")
     streets.write_bytes(b"\x89PNG")
     block = bg.build_data_block(data, roads, streets)
@@ -149,3 +160,17 @@ def test_build_data_block_parts(tmp_path: Path) -> None:
     assert "data:image/png;base64,iVBORw==" in block
     with pytest.raises(bg.BuildError):
         bg.build_data_block(tmp_path / "missing.json", roads, streets)
+
+
+def test_missions_inlined_when_present_and_skipped_when_absent(tmp_path: Path) -> None:
+    src, data = make_src(tmp_path), write_data(tmp_path)
+    roads, streets = tmp_path / "r.json", tmp_path / "s.png"
+    missions = tmp_path / "missions.json"
+    assert "missions-data" not in bg.build(src, data, roads, streets)
+    assert "missions-data" not in bg.build(src, data, roads, streets, missions)
+    missions.write_text('{"version":1,"x":"</p>"}', encoding="utf-8")
+    html = bg.build(src, data, roads, streets, missions)
+    assert html.index("game-data") < html.index("missions-data")
+    assert (
+        '<script type="application/json" id="missions-data">{"version":1,"x":"\\u003c/p>"}' in html
+    )

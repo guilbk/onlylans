@@ -26,7 +26,8 @@
     tap: tap,
     clear: clear,
     blocks: blocks,
-    selected: null
+    selected: null,
+    hovered: null   // order under the mouse: the camera holds still while it is set
   };
 
   function G() { return PG.engine && PG.engine.G; }
@@ -41,7 +42,7 @@
 
   function clear() {
     setSelected(null);
-    S.hovered = null;
+    S.hovered = null; orders.hovered = null;
     S.route = null; S.routeOrd = null;
     if (S.card) S.card.className = 'order-card hidden';
     S.cardKey = '';
@@ -53,6 +54,7 @@
     if (S.touch && o) return;           // touch has no hover
     if (S.selected) return;             // a selection wins over hover
     S.hovered = o || null;
+    orders.hovered = S.hovered;
     if (o) markHint();
   }
 
@@ -73,7 +75,7 @@
     if (!S.touch) { take(o); return; }      // mouse: one click takes at once
     if (S.selected === o) { take(o); return; }
     setSelected(o);
-    S.hovered = null;
+    S.hovered = null; orders.hovered = null;
     S.route = null; S.routeOrd = null;
     markHint();
   }
@@ -104,7 +106,7 @@
     const g = G();
     const o = S.selected || S.hovered;
     if (!g || !o || !PG.render || !PG.engine) return;
-    if (g.over || o.t <= g.t) { if (S.selected === o) clear(); else S.hovered = null; return; }
+    if (g.over || o.t <= g.t) { if (S.selected === o) clear(); else { S.hovered = null; orders.hovered = null; } return; }
     const pv = PG.engine.preview(o);
     if (!pv) return;
     const hoverOnly = !S.selected;
@@ -129,18 +131,22 @@
     p = P(o.x0, o.y0);
     const px = p.x, py = p.y;
     ctx.lineTo(px, py);
-    ctx.setLineDash(r ? DASH_NONE : DASH_ROUTE);
-    ctx.lineDashOffset = r ? 0 : shift;
-    ctx.strokeStyle = '#e8eefc'; ctx.lineWidth = 2.5;
+    ctx.setLineDash(DASH_ROUTE);
+    ctx.lineDashOffset = shift;
+    ctx.strokeStyle = 'rgba(232,238,252,0.6)'; ctx.lineWidth = 2;
     ctx.stroke();
 
     // 2) passenger's trip along the real GPS points
     const pts = o.pts;
     ctx.beginPath(); ctx.moveTo(px, py);
     for (let i = 1; i < pts.n; i++) { p = P(pts.xs[i], pts.ys[i]); ctx.lineTo(p.x, p.y); }
-    ctx.setLineDash(DASH_NONE);
-    ctx.strokeStyle = col; ctx.lineWidth = 4;
+    ctx.setLineDash(DASH_ROUTE);
+    ctx.lineDashOffset = shift;
+    ctx.globalAlpha = pv.ok ? 0.6 : 0.3;
+    ctx.strokeStyle = col; ctx.lineWidth = 2.5;
     ctx.stroke();
+    ctx.globalAlpha = pv.ok ? 1 : 0.5;
+    ctx.setLineDash(DASH_NONE);
 
     // 3) pickup ring and drop-off flag
     ctx.beginPath(); ctx.arc(px, py, 12, 0, 6.2832);

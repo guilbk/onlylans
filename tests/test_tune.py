@@ -53,7 +53,7 @@ def test_change_cost_is_zero_for_the_current_design() -> None:
 
 def test_reach_floor() -> None:
     base = sim.Settings()
-    assert tune.reach_floor(base) == pytest.approx(310 * 0.9 - 200 - 30)
+    assert tune.reach_floor(base) == pytest.approx(900 * 0.8 - 200 - 30)
     assert tune.obeys_floor(base)
     cliff = replace(base, lead=(600.0, 210.0, 210.0))
     assert tune.reach_floor(cliff) < 0 and not tune.obeys_floor(cliff)
@@ -114,4 +114,4 @@ def test_evaluate_and_report_on_a_tiny_file(tmp_path: Path) -> None:
     lines = tune.report("easy", "easy", cands, 1)
     assert lines[0].startswith("== easy") and any("any #1" in x for x in lines)
     row = tune.format_row("x", "easy", cands[0])
-    assert "lead 310/310/310" in row and "rad 5000/3500/2500" in row and "rivals near" in row
+    assert "lead 1200/1200/900" in row and "rad 6000/4500/3000" in row and "rivals near" in row
