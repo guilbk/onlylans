@@ -341,7 +341,7 @@
       PG.cars.draw(ctx, x, y, a, len, p.color, alpha, 'rival');
       const w = ctx.measureText(p.name).width + fs * 0.7, h = fs * 1.3, ty = y - len * 0.9;
       ctx.globalAlpha = alpha;
-      ctx.fillStyle = 'rgba(7,11,20,0.78)';
+      ctx.fillStyle = PG.theme.pal.card;
       ctx.fillRect(x - w / 2, ty - h, w, h);
       ctx.fillStyle = p.color;
       ctx.fillText(p.name, x, ty - h * 0.25);

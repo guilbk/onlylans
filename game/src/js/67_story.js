@@ -7,8 +7,7 @@
   const REPLAY_MS = 6000;
   const SHIFT_S = 7200;
   const PAD = 8;
-  const MINT = '#3df5b0';
-  const LILAC = '#b48cff';
+  const pal = function () { return (PG.theme && PG.theme.pal) || PG.C.THEMES.night; };
 
   let facts = null;         // parsed facts.json (null = no facts in this build)
   let loaded = false;
@@ -112,10 +111,10 @@
     const fit = { b: b, k: k, ox: (w - b.w * k) / 2, oy: (h - b.h * k) / 2 };
     const T = f * SHIFT_S;
     ctx.lineWidth = 2; ctx.lineJoin = 'round';
-    trail(ctx, ghost.pts, T, LILAC, fit);
-    trail(ctx, you.pts, T, MINT, fit);
-    pins(ctx, ghost.dots, T, LILAC, fit, ghost.times);
-    pins(ctx, you.dots, T, MINT, fit, you.times);
+    trail(ctx, ghost.pts, T, pal().ghost, fit);
+    trail(ctx, you.pts, T, pal().acc, fit);
+    pins(ctx, ghost.dots, T, pal().ghost, fit, ghost.times);
+    pins(ctx, you.dots, T, pal().acc, fit, you.times);
   }
 
   function play(cv, you, ghost) {
