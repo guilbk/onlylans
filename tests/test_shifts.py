@@ -91,6 +91,20 @@ def test_parse_row_filters():
     assert shifts.parse_row(dict(zip(HEADER, broken, strict=True))) is None
 
 
+def test_parse_row_rejects_unknown_call_type_and_na_taxi():
+    for col, value in ((1, "Z"), (1, ""), (4, "NA"), (4, ""), (5, "soon")):
+        bad = row(1, 7, 1399878010)
+        bad[col] = value
+        assert shifts.parse_row(dict(zip(HEADER, bad, strict=True))) is None
+
+
+def test_load_trips_skips_rows_with_bad_call_type(tmp_path):
+    bad = row(1, 7, 1399878010)
+    bad[1] = "Z"
+    week = write_csv(tmp_path / "w.csv", [bad, row(2, 7, 1399878020)])
+    assert [t.trip_id for t in shifts.load_trips(week)] == ["1002"]
+
+
 def test_build_shift_ranking_ghost_and_orders(tmp_path):
     trips = shifts.load_trips(write_csv(tmp_path / "w.csv", sample_rows()))
     assert len(trips) == 8  # missing-data and 3-point trips dropped
@@ -223,6 +237,15 @@ def test_size_fallback_to_10m(tmp_path, monkeypatch):
     monkeypatch.setattr(shifts, "MAX_BYTES", 10)
     data = json.loads(shifts.build_text(trips))
     assert data["unit_m"] == 10 and data["bounds"] == [0, 0, 1500, 1900]
+
+
+def test_main_exits_1_and_writes_nothing_when_still_over_budget(tmp_path, monkeypatch, capsys):
+    week = write_csv(tmp_path / "w.csv", sample_rows())
+    monkeypatch.setattr(shifts, "MAX_BYTES", 10)
+    out = tmp_path / "game_data.json"
+    assert shifts.main(["--week", str(week), "--out", str(out)]) == 1
+    assert not out.exists()
+    assert "over the 10 budget" in capsys.readouterr().err
 
 
 def make_trip(taxi, hour=10, km_pts=12, ts=1_400_000_000, lat=41.15, lon=-8.61):

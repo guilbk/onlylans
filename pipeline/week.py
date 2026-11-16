@@ -70,7 +70,8 @@ def filter_week(rows: Iterable[list[str]], out: Path, w0: int, w1: int) -> tuple
     missing_col = header.index(MISSING_COLUMN)
     out.parent.mkdir(parents=True, exist_ok=True)
     read = kept = 0
-    with out.open("w", encoding="utf-8", newline="") as handle:
+    tmp = out.with_name(out.name + ".tmp")
+    with tmp.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(header)
         for row in iterator:
@@ -78,6 +79,7 @@ def filter_week(rows: Iterable[list[str]], out: Path, w0: int, w1: int) -> tuple
             if keep_row(row, ts_col, missing_col, w0, w1):
                 writer.writerow(row)
                 kept += 1
+    tmp.replace(out)
     return read, kept
 
 

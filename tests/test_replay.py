@@ -4,7 +4,7 @@ import json
 import pytest
 from PIL import Image, ImageDraw
 
-from pipeline import replay
+from pipeline import geo, replay
 
 UNIT = 5.0
 I_T = replay.I_T
@@ -92,7 +92,7 @@ def test_frame_times():
 
 
 def test_ride_points_decode_to_metres_and_end_at_drop_off():
-    pts = replay.ride_points_m(A, UNIT)
+    pts = geo.decode_path(A, UNIT)
     assert pts[0] == (500.0, 500.0)
     assert len(pts) == 5
     assert pts[-1] == (A[3] * UNIT, A[4] * UNIT)
