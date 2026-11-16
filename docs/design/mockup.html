@@ -252,39 +252,47 @@ const f1=n=>Math.round(n*10)/10;
 const WHEELS=(a=44,b=78,y1=40,y2=52)=>[{k:'wheel',d:rr(-b,y1,-a,y2,4),m:1},{k:'wheel',d:rr(a,y1,b,y2,4),m:1}];
 const checker=(x0,y0,cw,ch,cols,rows)=>{let d='';for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)if((r+c)%2==0)d+=`M${x0+c*cw} ${y0+r*ch}h${cw}v${ch}h${-cw}z`;return d};
 
+const W2=(xs,len=28,y1=38,y2=50)=>xs.map(x=>({k:'wheel',d:rr(x-len/2,y1,x+len/2,y2,4),m:1}));
+
+/* three-box 90s sedan: short bonnet, glass cabin, stubby boot; battered on purpose */
 function lanosShapes(o){
   const R=o.rival,S=[];
-  const body=R||'#9fc0b0',roof=R?light(R,.28):'#bcd6c9',hood=R?dark(R,.07):'#93b5a4';
+  const body=R||'#9fc0b0',roof=R?light(R,.28):'#bcd6c9',hood=R?dark(R,.07):'#93b5a4',boot=R?dark(R,.1):'#a9b99d';
   const dc=R?Array(4).fill(dark(R,.14)):['#e0883e','#b9503f','#5b86b9','#dfc874'];
-  S.push(...WHEELS());
+  S.push(...W2([62,-58]));
   if(!R){
-    S.push({k:'part',c:'#3a3d42',d:rr(-104,20,-96,26,2),w:3});
-    S.push({k:'puff',c:'#8e97a6',d:el(-113,23,5,5),o:.75,cls:'puff p1'});
-    S.push({k:'puff',c:'#8e97a6',d:el(-126,21,8,8),o:.55,cls:'puff p2'});
-    S.push({k:'puff',c:'#8e97a6',d:el(-139,18,10,10),o:.35,cls:'puff p3'});
+    S.push({k:'part',c:'#3a3d42',d:rr(-104,18,-96,24,2),w:3});
+    S.push({k:'puff',c:'#8e97a6',d:el(-112,21,5,5),o:.75,cls:'puff p1'});
+    S.push({k:'puff',c:'#8e97a6',d:el(-125,19,8,8),o:.55,cls:'puff p2'});
+    S.push({k:'puff',c:'#8e97a6',d:el(-139,16,10,10),o:.35,cls:'puff p3'});
   }
-  S.push({k:'body',c:body,d:'M-98 -32Q-98 -45 -84 -45L60 -45Q86 -44 96 -26Q101 0 96 26Q86 44 60 45L-84 45Q-98 45 -98 32Z'});
-  S.push({k:'mark',c:hood,d:rr(30,-34,90,34,13)});
-  S.push({k:'part',c:R?hood:'#8d9b94',d:rr(-95,-31,-68,31,6),w:3});
-  S.push({k:'part',c:dc[0],d:rr(-16,-45,24,-32,3),w:3});
-  S.push({k:'part',c:dc[1],d:rr(-56,-45,-18,-32,3),w:3});
-  S.push({k:'part',c:dc[2],d:rr(-16,32,24,45,3),w:3});
-  S.push({k:'part',c:dc[3],d:rr(-56,32,-18,45,3),w:3});
-  S.push({k:'part',c:roof,d:rr(-56,-31,22,31,10),w:4});
-  S.push({k:'glass',d:'M22 -30L42 -25Q46 0 42 25L22 30Z'});
-  S.push({k:'glass',d:'M-56 -27L-67 -23Q-69 0 -67 23L-56 27Z'});
+  S.push({k:'body',c:body,d:'M-97 -26Q-97 -35 -86 -37L-52 -41Q-20 -45 18 -44Q58 -43 80 -35Q98 -28 99 -15L99 15Q98 28 80 35Q58 43 18 44Q-20 45 -52 41L-86 37Q-97 35 -97 26Z'});
+  S.push({k:'mark',c:hood,d:'M38 -36L78 -32Q92 -27 94 -14L94 14Q92 27 78 32L38 36Q35 0 38 -36Z'});
+  S.push({k:'part',c:boot,d:'M-54 -30L-86 -33Q-93 -31 -93 -24L-93 24Q-93 31 -86 33L-54 30Q-57 0 -54 -30Z',w:3});
+  S.push({k:'part',c:dc[0],d:rr(-12,-42,22,-29,3),w:3});
+  S.push({k:'part',c:dc[1],d:rr(-48,-42,-14,-29,3),w:3});
+  S.push({k:'part',c:dc[2],d:rr(-12,29,22,42,3),w:3});
+  S.push({k:'part',c:dc[3],d:rr(-48,29,-14,42,3),w:3});
+  S.push({k:'part',c:roof,d:rr(-34,-26,24,26,10),w:4});
+  S.push({k:'glass',d:'M44 -30L24 -26L24 26L44 30Q47 0 44 -30Z'});
+  S.push({k:'glass',d:'M-34 -25L-50 -29Q-55 0 -50 29L-34 25Z'});
+  S.push({k:'part',c:R?hood:'#7d8a84',d:rr(94,-9,99,9,2),w:2});
+  S.push({k:'part',c:R?dark(R,.3):'#6f7c76',d:el(26,-46,5.5,3.2),w:2});
   if(R){
-    S.push({k:'lamp',c:'#ffe58a',d:el(90,-27,6,9),m:1});
+    S.push({k:'part',c:dark(R,.3),d:el(26,46,5.5,3.2),w:2});
+    S.push({k:'lamp',c:'#ffe58a',d:el(90,-25,5,8),m:1});
   }else{
-    S.push({k:'mark',c:'#9a5430',d:el(70,-12,7,4),o:.9});
+    S.push({k:'mark',c:'#9a5430',d:el(66,-14,7,4),o:.9});
     S.push({k:'mark',c:'#9a5430',d:el(52,21,5,3.5),o:.9});
-    S.push({k:'mark',c:'#9a5430',d:el(-82,-14,6,4),o:.9});
-    S.push({k:'mark',c:'#9a5430',d:el(-20,12,5,3),o:.8});
-    S.push({k:'line',c:'#ffffff',w:2.6,o:.95,d:'M33 6L22 -16M33 6L41 24M33 6L25 27M33 6L43 -9M33 6L31 -24'});
-    S.push({k:'lamp',c:'#ffe58a',d:el(90,-27,6,9)});
-    S.push({k:'part',c:'#343936',d:el(90,27,6,9),w:2.5});
+    S.push({k:'mark',c:'#9a5430',d:el(-78,-16,6,4),o:.9});
+    S.push({k:'mark',c:'#9a5430',d:el(-30,-36,6,2.8),o:.9});
+    S.push({k:'mark',c:'#9a5430',d:el(-8,17,5,3),o:.8});
+    S.push({k:'part',c:'#343936',d:el(26,46,4,2.4),w:2});
+    S.push({k:'line',c:'#ffffff',w:2,o:.95,d:'M34 6L25 -18M34 6L42 24M34 6L26 27M34 6L43 -9M34 6L32 -26'});
+    S.push({k:'lamp',c:'#ffe58a',d:el(90,-25,5,8)});
+    S.push({k:'part',c:'#343936',d:el(90,25,5,8),w:2.5});
   }
-  S.push({k:'lamp',c:'#e0463f',d:rr(-101,-36,-95,-24,2),m:1});
+  S.push({k:'lamp',c:'#e0463f',d:rr(-97,-30,-91,-17,2),m:1});
   return S;
 }
 
