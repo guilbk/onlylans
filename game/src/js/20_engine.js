@@ -73,7 +73,11 @@
     sc.eta = eta(sc.x, sc.y, sc.t, o);
     if (G.over || G.taken.has(o.i)) return GONE;
     const cl = G.claim.get(o.i);
-    if (cl && cl.by !== 'player' && cl.t1 <= sc.t + sc.eta) return GONE;
+    if (cl && cl.by !== 'player') {
+      // rival claims: arrival first; the AI owns the rule (the easy shield, rivals already on board)
+      if (PG.ai && PG.ai.claimBlocks) { if (PG.ai.claimBlocks(G, o, sc.t + sc.eta)) return GONE; }
+      else if (cl.t1 <= sc.t + sc.eta) return GONE;
+    }
     if (relaxed) {
       if (G.t >= o.t) return LATE;
     } else if (!visible(o)) return LATE;
@@ -138,18 +142,16 @@
     }
   }
 
-  /** Drops the claim and the taken mark of an order the player gives up. */
+  /** Drops the claim of an order the player gives up, so rivals can take it. */
   function release(o) {
     if (!o) return;
-    G.taken.delete(o.i);
     const cl = G.claim.get(o.i);
     if (cl && cl.by === 'player') G.claim.delete(o.i);
   }
 
-  /** Records a player commitment on o (claim, taken mark, rival hook). */
+  /** Records a player commitment on o (claim, rival hook). `taken` is set at the pickup. */
   function commit(o, t1) {
     G.claim.set(o.i, { by: 'player', t1: t1 });
-    G.taken.add(o.i);
     if (PG.ai && PG.ai.onPlayerCommit) PG.ai.onPlayerCommit(G, o);
   }
 
@@ -229,6 +231,7 @@
     G.x = o.x0; G.y = o.y0;
     G.tot = r2(G.tot + o.fare);
     G.rides++;
+    G.taken.add(o.i);
     G.leg.t0 = tev; G.leg.t1 = tev + o.d;
     G.leg.x0 = o.x0; G.leg.y0 = o.y0; G.leg.x1 = o.x1; G.leg.y1 = o.y1; G.leg.path = null;
     G.mode = 'ride';
@@ -303,7 +306,22 @@
       G.t = te;
     }
     updatePos();
-    if (te > t0 && PG.ai && PG.ai.tick) PG.ai.tick(G, t0, te);
+    if (te > t0 && PG.ai && PG.ai.tick) { PG.ai.tick(G, t0, te); dropStolen(); }
+  }
+
+  /** A rival that arrives first takes the claim (K6 AI): the player's pickup or booked order falls back. */
+  function dropStolen() {
+    let cl;
+    if (G.mode === 'pickup' && G.cur) {
+      cl = G.claim.get(G.cur.i);
+      if (cl && cl.by !== 'player') {
+        G.cur = null; G.mode = 'idle'; G.leg.t0 = G.leg.t1 = G.t;
+      }
+    }
+    if (G.next) {
+      cl = G.claim.get(G.next.i);
+      if (cl && cl.by !== 'player') G.next = null;
+    }
   }
 
   /** Advances the game by dt game seconds (clamped to the shift end); events are processed in time order. */

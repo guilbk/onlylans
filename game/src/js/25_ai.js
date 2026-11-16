@@ -157,7 +157,6 @@
       BOARD: C('BOARD_S', 30),
       RAD: C('RADIUS', [5000, 3500, 2500]),
       MAP: C('MAP', { w: 15000, h: 19000 }),
-      sBase: 0,
     };
     const K = (PG.engine && PG.engine.DIFF_K ? PG.engine.DIFF_K : C('DIFF_K', { easy: 1.25, normal: 1, hard: 0.85 }))[dn];
     for (let i = 0; i < sh.orders.length; i++) {
@@ -187,8 +186,7 @@
       };
       const W = CYCLE * A.D.duty;
       rv.p.nextBreak = A.D.duty >= 1 ? 1e9 : W * (0.3 + 0.7 * mix(seed, 2));
-      const t0 = 0;
-      destination(G, A, rv, t0);
+      destination(G, A, rv, 0);
       rv.x = scratchPos.x; rv.y = scratchPos.y;
       rv.p.next = gridUp(rv.p, rv.p.freeAt = reactTime(A, rv) * mix(seed, 3));
       G.rivals.push(rv);
@@ -208,10 +206,10 @@
     return sh.speedByHour[h] * A.D.speed;
   }
 
-  function etaFor(A, rv, T, x, y, tx, ty, boarding) {
+  function driveTime(A, rv, T, x, y, tx, ty) {
     const dx = tx - x, dy = ty - y;
     const km = Math.sqrt(dx * dx + dy * dy) / 1000;
-    return km * A.sh.detour / speedAt(A, T) * 3600 * rv.p.pers.travel + (boarding ? A.BOARD : 0);
+    return km * A.sh.detour / speedAt(A, T) * 3600 * rv.p.pers.travel;
   }
 
   function startLeg(A, rv, T, tx, ty, dur) {
@@ -510,7 +508,11 @@
           if (sg) {
             for (let j = 0; j < sg.length; j++) {
               if (sg[j].t1 > T && T >= sg[j].t0 - 240) {
-                if (p.surgeGo !== j) { p.surgeGo = j; go = true; }
+                const dx = sg[j].x - rv.x, dy = sg[j].y - rv.y;
+                if (p.surgeGo !== j || dx * dx + dy * dy > sg[j].r * sg[j].r * 0.25) {
+                  if (rv.mode !== 'cruise' || p.surgeGo !== j) go = true;
+                  p.surgeGo = j;
+                }
                 break;
               }
             }
@@ -522,7 +524,7 @@
           p.lastRepos = T;
           const dx = tx - rv.x, dy = ty - rv.y;
           if (dx * dx + dy * dy > 40000) {
-            startLeg(A, rv, T, tx, ty, Math.max(1, etaFor(A, rv, T, rv.x, rv.y, tx, ty, false)));
+            startLeg(A, rv, T, tx, ty, Math.max(1, driveTime(A, rv, T, rv.x, rv.y, tx, ty)));
             rv.mode = 'cruise';
           }
         }
@@ -582,17 +584,9 @@
     }
   }
 
-  // Place among the player and the rivals (1 = best); ties go to the player.
-  function racePlace(G) {
-    let place = 1;
-    const rs = G.rivals || [];
-    for (let i = 0; i < rs.length; i++) if (rs[i].total > G.tot) place++;
-    return place;
-  }
-
   PG.ai = {
     RIVALS: RIVALS, DIFF: DIFF, PERS: PERS,
     init: init, tick: tick, onPlayerCommit: onPlayerCommit,
-    claimBlocks: claimBlocks, racePlace: racePlace,
+    claimBlocks: claimBlocks,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
