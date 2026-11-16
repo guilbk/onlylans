@@ -4,7 +4,7 @@
   const DIFFS = ['easy', 'normal', 'hard'];
   const DIFF_LABEL = { easy: 'Легко', normal: 'Нормально', hard: 'Важко' };
   const MEDAL_NAME = ['без медалі', 'бронза', 'срібло', 'золото', 'легенда'];
-  const PLAYER = { id: 'player', name: 'Ріїн Гіслінг', nick: 'Ти', color: '#35e0a1' };
+  const PLAYER = { id: 'player', name: 'Ріїн Гіслінг', nick: 'Ти', color: '#3df5b0' };
 
   const HINTS = [
     'Торкнись світлої точки — побачиш маршрут; торкнись ще раз — береш.',
