@@ -110,3 +110,10 @@ body:not([data-screen="play"]) .pty-mini { display: none; }
   background: var(--bad); color: #fff; font: 700 13px var(--font); pointer-events: none; }
 .pty-lost[hidden] { display: none; }
 .pty-myrank { margin: 0 0 6px; font-weight: 800; color: var(--amber); }
+
+/* Phone, party player: keep the map clear — the mini board sits small at the bottom left, the reconnect pill at the bottom */
+@media (max-width: 700px) {
+  .pty-mini { top: auto; bottom: 14px; width: min(150px, 42%); font-size: 11px; opacity: .88;
+    background: color-mix(in srgb, var(--panel) 80%, transparent); }
+  .pty-lost { top: auto; bottom: 14px; font-size: 12px; }
+}
