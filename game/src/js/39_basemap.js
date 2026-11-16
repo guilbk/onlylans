@@ -18,12 +18,12 @@
       ['#e0775a', '#e8a94a', '#5b86c6', '#e993ab'], ['#8b93a0', '#b5694a', '#d29b5e'],
       ['#8fb2d0', '#a7b5c4', '#5f86ad'], ['#f6f2ea', '#fffdf8', '#e6d3b3'],
       ['#9aa0a8', '#b39d86', '#d0743a'], ['#cdb590', '#bf8a68', '#a8573c'],
-      ['#d6bd9c', '#c48a66', '#9fb0a0'], ['#d6c4a6', '#c9a98a', '#b8805e']],
+      ['#d6bd9c', '#c48a66', '#9fb0a0'], ['#d6c4a6', '#c9a98a', '#b8805e'], ['#c4623f', '#d27a4e']],
     night: [
       ['#6b3a3a', '#6b4d2a', '#2c4570', '#6b3a52'], ['#2c3342', '#5a3428', '#363d4d'],
       ['#34506f', '#3d4b63', '#2e4560'], ['#7d8aa6', '#98a4be', '#6e7a96'],
       ['#3a4150', '#47443f', '#343e54'], ['#5a4d3d', '#573326', '#6a5f4a'],
-      ['#66503c', '#563022', '#5f574c'], ['#5c5040', '#583a2c', '#625a4a']],
+      ['#66503c', '#563022', '#5f574c'], ['#5c5040', '#583a2c', '#625a4a'], ['#5a3226', '#66402e']],
     garden: ['rgba(140,200,130,0.8)', 'rgba(24,62,52,0.8)'],
     tree: ['#5a9a5a', '#1d4a40'], ridge: ['rgba(255,255,255,0.45)', 'rgba(255,255,255,0.12)'],
     lit: 'rgba(255,208,120,0.9)', crane: ['#e8742a', '#b86030'],
@@ -69,61 +69,45 @@
     }
     p.closePath();
   }
-  const R4 = [-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5], R_IN = [-0.25, -0.25, 0.25, -0.25, 0.25, 0.25, -0.25, 0.25];
-  const R_L = [-0.5, -0.5, 0.5, -0.5, 0.5, 0, 0, 0, 0, 0.5, -0.5, 0.5];
+  const R4 = [-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5];
+  const LOD_K = 0.12;                // below this zoom (px per metre) every 3rd building is drawn at 1.7x
 
-  function buildBuildings(Bd) {       // once: per tile, one Path2D per colour (+ridges, windows, gardens)
+  function buildBuildings(Bd) {      // once: per tile one Path2D per colour, plain filled rectangles
     const tiles = {}, b = Bd.b;
     const tile = function (x, y) {
       const key = Math.floor(x / TILE) + ',' + Math.floor(y / TILE);
       return tiles[key] || (tiles[key] = {
-        x0: Math.floor(x / TILE) * TILE - 80, y0: Math.floor(y / TILE) * TILE - 80, fills: {},
-        ridge: new Path2D(), lit: new Path2D(), garden: new Path2D(), trees: new Path2D(), crane: new Path2D(),
+        x0: Math.floor(x / TILE) * TILE - 80, y0: Math.floor(y / TILE) * TILE - 80,
+        fills: {}, lod: {}, trees: new Path2D(),
       });
     };
-    for (let i = 0; i < b.length; i += 8) {
-      const x = b[i], y = b[i + 1], w = b[i + 2], h = b[i + 3], a = b[i + 4], d = b[i + 5], c = b[i + 6], r = b[i + 7];
+    let x = 0, y = 0;
+    for (let i = 0, n = 0; i < b.length; i += 6, n++) {
+      x += b[i]; y += b[i + 1];
+      const w = b[i + 2], h = b[i + 3], a = b[i + 4], key = b[i + 5] >> 3;     // district * 8 + colour
       const t = tile(x, y);
-      if (r === 6) { quad(t.crane, x, y, w, h, a, R4); continue; }
-      const key = d * 8 + c;
-      const p = t.fills[key] || (t.fills[key] = new Path2D());
-      if (r === 4) quad(t.garden, x, y, w + 14, h + 14, a, R4);
-      quad(p, x, y, w, h, a, r === 3 ? R_L : R4);
-      if (r === 2) quad(p, x, y, w, h, a, R_IN);                 // courtyard hole (evenodd)
-      if (r === 1 || r === 4) {                                   // hip roof: ridge along the long side
-        const lw = w >= h;
-        const c2 = Math.cos(a * Math.PI / 180), s2 = Math.sin(a * Math.PI / 180), L = (lw ? w : h) * 0.3;
-        const ux = lw ? c2 : -s2, uy = lw ? s2 : c2;
-        t.ridge.moveTo(x - ux * L, y - uy * L); t.ridge.lineTo(x + ux * L, y + uy * L);
-      }
-      if (d !== 3 && d !== 4 && d !== 7 && (i / 8) % 3 === 0) {   // a lit window at night in dense districts
-        t.lit.moveTo(x + 2.5, y); t.lit.arc(x, y, 2.5, 0, Math.PI * 2);
-      }
+      quad(t.fills[key] || (t.fills[key] = new Path2D()), x, y, w, h, a, R4);
+      if (n % 3 === 0) quad(t.lod[key] || (t.lod[key] = new Path2D()), x, y, w * 1.7, h * 1.7, a, R4);
     }
     const tr = Bd.trees;
     for (let i = 0; i < tr.length; i += 2) { const t = tile(tr[i], tr[i + 1]); t.trees.moveTo(tr[i] + 4, tr[i + 1]); t.trees.arc(tr[i], tr[i + 1], 4, 0, Math.PI * 2); }
-    const out = [];
-    Object.keys(tiles).forEach(function (k) { out.push(tiles[k]); });
-    return out;
+    return Object.keys(tiles).map(function (k) { return tiles[k]; });
   }
 
   function drawBuildings(ctx, p, night, k, x0, y0) {
     if (!PG.buildings) return;
     if (!bld) bld = buildBuildings(PG.buildings);
     const W = ctx.canvas.clientWidth || 800, H = ctx.canvas.clientHeight || 800, th = night ? 1 : 0;
-    const pal = night ? BP.night : BP.day, size = (TILE + 160) * k;
+    const pal = night ? BP.night : BP.day, size = (TILE + 160) * k, lod = k < LOD_K;
     ctx.save();
     ctx.translate(x0, y0);
     ctx.scale(k, k);
     for (let i = 0; i < bld.length; i++) {
       const t = bld[i], sx = x0 + t.x0 * k, sy = y0 + t.y0 * k;
       if (sx > W || sy > H || sx + size < 0 || sy + size < 0) continue;
-      ctx.fillStyle = BP.garden[th]; ctx.fill(t.garden);
       ctx.fillStyle = BP.tree[th]; ctx.fill(t.trees);
-      for (const key in t.fills) { ctx.fillStyle = pal[key >> 3][key & 7]; ctx.fill(t.fills[key], 'evenodd'); }
-      ctx.fillStyle = BP.crane[th]; ctx.fill(t.crane);
-      if (k > 0.1) { ctx.strokeStyle = BP.ridge[th]; ctx.lineWidth = 1.2; ctx.stroke(t.ridge); }
-      if (night && k > 0.05) { ctx.fillStyle = BP.lit; ctx.fill(t.lit); }
+      const set = lod ? t.lod : t.fills;
+      for (const key in set) { ctx.fillStyle = pal[key >> 3][key & 7]; ctx.fill(set[key]); }
     }
     ctx.restore();
   }

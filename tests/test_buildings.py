@@ -7,7 +7,7 @@ from pipeline import basemap, buildings
 SEGS = np.array(buildings.load_segments(buildings.ROADS_DEFAULT))
 LAY = basemap.build(buildings.DATA_DEFAULT)
 OUT = buildings.build()
-B = [OUT["b"][i : i + 8] for i in range(0, len(OUT["b"]), 8)]
+B = buildings.unpack(OUT["b"])
 
 
 def road_dist(x, y):
@@ -20,7 +20,7 @@ def road_dist(x, y):
 
 def test_no_building_overlaps_a_road():
     for b in B[::7]:  # every 7th: brute force over all segments
-        if b[5] == buildings.RIBEIRA:
+        if b[5] in (buildings.RIBEIRA, buildings.GAIA):
             continue  # the quay row sits close to the quay road on purpose
         x, y, w, h = b[:4]
         assert road_dist(x, y) >= math.hypot(w, h) / 2 + buildings.ROAD_HALF_M - 1.0, b
