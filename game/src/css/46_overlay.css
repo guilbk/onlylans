@@ -1,0 +1,2 @@
+/* 46_overlay: the loser of the one-overlay-at-a-time rule is hidden at once */
+.ov-off { opacity: 0 !important; visibility: hidden !important; transition: none !important; }
