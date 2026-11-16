@@ -102,6 +102,13 @@ const nShifts = PG.data.shifts.length;
 console.log('data: ' + dataPath + ', ' + nShifts + ' shifts');
 check(nShifts > 0, 'data has shifts');
 
+// (0a) wave-4 constants: pins live long enough for a person, and easy gives more than hard
+{
+  const C = PG.C;
+  check(C.LEAD[0] >= 540 && C.LEAD.every(l => l * C.DIFF_K.hard / C.BASE_SCALE >= 13), 'a pin is takeable at least 13 real s on hard (LEAD ' + C.LEAD.join('/') + ')');
+  check(C.DIFF_K.easy > C.DIFF_K.normal && C.DIFF_K.normal > C.DIFF_K.hard, 'DIFF_K: easy > normal > hard');
+}
+
 // (0) data checks
 {
   const sh = PG.data.shifts[0];
