@@ -223,3 +223,81 @@ def test_size_fallback_to_10m(tmp_path, monkeypatch):
     monkeypatch.setattr(shifts, "MAX_BYTES", 10)
     data = json.loads(shifts.build_text(trips))
     assert data["unit_m"] == 10 and data["bounds"] == [0, 0, 1500, 1900]
+
+
+def make_trip(taxi, hour=10, km_pts=12, ts=1_400_000_000, lat=41.15, lon=-8.61):
+    """A Trip parsed from a synthetic polyline (about (km_pts - 1) * 100 m long)."""
+    parsed = shifts.parse_row(
+        {
+            "TRIP_ID": f"t{taxi}-{ts}",
+            "TAXI_ID": str(taxi),
+            "TIMESTAMP": str(ts),
+            "CALL_TYPE": "C",
+            "ORIGIN_STAND": "",
+            "MISSING_DATA": "False",
+            "POLYLINE": json.dumps(polyline(km_pts, lat=lat, lon=lon)),
+        }
+    )
+    assert parsed is not None
+    return parsed._replace(hour=hour)
+
+
+def test_local_hour_is_lisbon_time():
+    assert shifts.local_hour(ID["mon-am"].start) == 8  # 07:00 UTC in May
+    assert shifts.local_hour(ID["mon-night"].start) == 22
+
+
+def test_to_units_rounds_to_whole_units():
+    assert shifts.to_units(12.4, 12.6, 5) == (2, 3)
+    assert shifts.to_units(0.0, 7.5, 5) == (0, 2)  # banker's rounding of 1.5
+
+
+def test_rank_drivers_sorts_by_total_then_taxi_id():
+    trips = [make_trip(9, km_pts=12), make_trip(4, km_pts=12), make_trip(7, km_pts=30)]
+    taxis, totals = shifts.rank_drivers(trips)
+    assert taxis == [7, 4, 9]  # longest trip first, equal totals by TAXI_ID
+    assert totals[0] > totals[1] == totals[2]
+    assert all(isinstance(v, float) for v in totals)
+    assert shifts.rank_drivers([]) == ([], [])
+
+
+def test_rank_drivers_sums_a_drivers_trips():
+    one = make_trip(1, ts=1_400_000_000)
+    two = make_trip(1, ts=1_400_000_100)
+    _, totals = shifts.rank_drivers([one, two])
+    km = round(one.km, 2)
+    assert totals == [pytest.approx(2 * geo.fare(km, geo.night_hour(one.hour)))]
+
+
+def test_pickup_spread_in_metres():
+    assert shifts.pickup_spread([]) == 0.0
+    same = [make_trip(1), make_trip(2)]
+    assert shifts.pickup_spread(same) == pytest.approx(0.0, abs=1e-6)
+    dlon = 1000.0 / geo.M_LON  # two pickups 1 km apart: each 500 m from the centroid
+    apart = [make_trip(1), make_trip(2, lon=-8.61 + dlon)]
+    assert shifts.pickup_spread(apart) == pytest.approx(500.0, rel=1e-3)
+
+
+def test_dump_json_is_compact_sorted_and_keeps_unicode():
+    text = shifts.dump_json({"b": [1, 2], "a": "Обід"})
+    assert text == '{"a":"Обід","b":[1,2]}'
+
+
+def test_build_data_structure_and_cleanup(tmp_path):
+    trips = shifts.load_trips(write_csv(tmp_path / "w.csv", sample_rows()))
+    data = shifts.build_data(trips)
+    assert data["version"] == 1 and data["unit_m"] == shifts.UNIT_M
+    assert data["bounds"] == [0, 0, geo.MAP_W_M // shifts.UNIT_M, geo.MAP_H_M // shifts.UNIT_M]
+    assert data["generated"] == shifts.GENERATED
+    assert [s["id"] for s in data["shifts"]] == [d.id for d in DEFS]
+    assert all("_trips" not in s for s in data["shifts"])
+    assert all(1 <= s["difficulty"] <= 5 for s in data["shifts"])
+    assert len(data["shifts"][0]["orders"]) == 5  # the sample's mon-am trips
+
+
+def test_table_rows_one_line_per_shift(tmp_path):
+    trips = shifts.load_trips(write_csv(tmp_path / "w.csv", sample_rows()))
+    lines = shifts.table_rows(shifts.build_data(trips))
+    assert len(lines) == 29
+    assert lines[0].startswith("id") and lines[0].rstrip().endswith("diff")
+    assert lines[1].startswith("mon-am") and "Понеділковий ранок" in lines[1]
