@@ -122,9 +122,26 @@ def build(data_path: Path = DATA_DEFAULT) -> dict[str, object]:
     segs: list[dict[str, object]] = []
 
     def add(line: list[Pt], levels: tuple[int, ...]) -> None:
+        """Append one traffic segment to ``segs``.
+
+        Args:
+            line: Polyline vertices as (x, y) pairs in metres.
+            levels: Traffic level per time window (dimensionless index).
+
+        Returns:
+            None; ``segs`` is extended in place.
+        """
         segs.append({"l": list(levels), "p": flat_m(line)})
 
     def poly(name: str) -> list[Pt]:
+        """Look up a district polygon by name.
+
+        Args:
+            name: District name as listed in the basemap layer.
+
+        Returns:
+            Polygon vertices as (x, y) pairs in metres.
+        """
         d = next(d for d in layer["districts"] if d["name"] == name)  # type: ignore[attr-defined,union-attr]
         p = d["poly"]  # type: ignore[index]
         return [(p[i], p[i + 1]) for i in range(0, len(p), 2)]
