@@ -217,7 +217,7 @@ def test_sync_stamps_the_position_time() -> None:
 def test_room_codes() -> None:
     assert party.clean_code(" bc d ") == "BCD"
     assert party.clean_code("ВКМН") == "BKMH"  # Cyrillic lookalikes
-    assert party.clean_code("abcdefg") == "BCDE"
+    assert party.clean_code("bcdfghj") == "BCDF"
     assert party.clean_code(5) == ""
     assert not set(party.CODE_ALPHABET) & set("AEIOUQ01")
 
