@@ -314,7 +314,7 @@
     const hero = el('div', 'hero-icon small');
     hero.innerHTML = HERO_SVG;
     res.appendChild(hero);
-    const title = el('h1', 'res-title', PG.util.playerName() + ' заробив ' + U.eur(r.earned));
+    const title = el('h1', 'res-title', PG.util.playerName() + ': ' + U.eur(r.earned) + ' за зміну');
     title.id = 'res-earned';
     res.appendChild(title);
     res.appendChild(el('div', 'res-rank', '#' + Math.min(r.rank, r.nDrivers) + ' з ' + r.nDrivers + ' ' +
