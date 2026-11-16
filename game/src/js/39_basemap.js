@@ -4,28 +4,26 @@
 (function (root) {
   const PG = root.PG = root.PG || {};
   const DAY = {
-    sea: 'rgba(122,178,226,0.9)', river: 'rgba(143,192,232,0.9)', park: 'rgba(159,211,160,0.75)',
-    d0: 'rgba(236,223,198,0.5)', d1: 'rgba(232,196,160,0.45)', bridge: '#c4552f', text: 'rgba(85,98,127,0.75)',
+    land: 'rgba(238,234,226,0.7)', sea: 'rgba(104,168,226,0.95)', river: 'rgba(112,176,232,0.95)', park: 'rgba(142,206,138,0.95)',
+    d0: 'rgba(226,218,200,0.25)', d1: 'rgba(230,208,180,0.25)', bridge: '#fffaf0', arch: '#8a7f70', text: 'rgba(85,98,127,0.75)',
   };
   const NIGHT = {
     sea: 'rgba(12,32,80,0.92)', river: 'rgba(16,40,90,0.92)', park: 'rgba(18,58,58,0.8)',
-    d0: 'rgba(22,36,77,0.55)', d1: 'rgba(27,44,94,0.5)', bridge: '#8fb8ff', text: 'rgba(147,163,204,0.8)',
+    land: null, d0: 'rgba(22,36,77,0.55)', d1: 'rgba(27,44,94,0.5)', bridge: '#b9cdf0', arch: '#5f86c6', text: 'rgba(147,163,204,0.8)',
   };
   const LABEL_LO = 0.03, LABEL_FADE = 0.09;      // px per metre: district names fade out when zoomed in
   // buildings: per district id (see pipeline/buildings.py) colours [day..., night...]; roofs 0 flat 1 hip 2 court 3 L 4 villa 5 shed 6 crane
   const BP = {
     day: [
-      ['#d9694a', '#e0953f', '#4f7fc4', '#e58aa6', '#c2542f', '#e7b24a'],
-      ['#6f7886', '#c2603f', '#8a919c'], ['#7fa6c9', '#9aa8b8', '#6d8aa8', '#b4c4d2'],
-      ['#f4efe6', '#ffffff', '#efe3d0'], ['#8a8f96', '#a39a8c', '#7d8794'],
-      ['#c9b08a', '#b5654a', '#d4c3a1', '#a8806a'], ['#d8b894', '#b8714f', '#cdbfae', '#a9856b'],
-      ['#cdb99b', '#b77a58', '#d6c8b0', '#9d8b7a']],
+      ['#e0775a', '#e8a94a', '#5b86c6', '#e993ab'], ['#8b93a0', '#b5694a', '#d29b5e'],
+      ['#8fb2d0', '#a7b5c4', '#5f86ad'], ['#f6f2ea', '#fffdf8', '#e6d3b3'],
+      ['#9aa0a8', '#b39d86', '#d0743a'], ['#cdb590', '#bf8a68', '#a8573c'],
+      ['#d6bd9c', '#c48a66', '#9fb0a0'], ['#d6c4a6', '#c9a98a', '#b8805e']],
     night: [
-      ['#6b3a3a', '#6b4d2a', '#2c4570', '#6b3a52', '#5e2e24', '#6b5a30'],
-      ['#2c3342', '#5a3428', '#363d4d'], ['#34506f', '#3d4b63', '#2e4560', '#475a72'],
-      ['#7d8aa6', '#98a4be', '#6e7a96'], ['#3a4150', '#47443f', '#343e54'],
-      ['#5a4d3d', '#573326', '#6a5f4a', '#4b3a35'], ['#66503c', '#563022', '#5f574c', '#4a3a33'],
-      ['#5c5040', '#583a2c', '#625a4a', '#473f38']],
+      ['#6b3a3a', '#6b4d2a', '#2c4570', '#6b3a52'], ['#2c3342', '#5a3428', '#363d4d'],
+      ['#34506f', '#3d4b63', '#2e4560'], ['#7d8aa6', '#98a4be', '#6e7a96'],
+      ['#3a4150', '#47443f', '#343e54'], ['#5a4d3d', '#573326', '#6a5f4a'],
+      ['#66503c', '#563022', '#5f574c'], ['#5c5040', '#583a2c', '#625a4a']],
     garden: ['rgba(140,200,130,0.8)', 'rgba(24,62,52,0.8)'],
     tree: ['#5a9a5a', '#1d4a40'], ridge: ['rgba(255,255,255,0.45)', 'rgba(255,255,255,0.12)'],
     lit: 'rgba(255,208,120,0.9)', crane: ['#e8742a', '#b86030'],
@@ -55,6 +53,11 @@
       parks: B.parks.map(function (q) { return path(q.poly, true); }),
       districts: B.districts.map(function (q) { return path(q.poly, true); }),
       bridges: B.bridges.map(function (q) { return path(q.line, false); }),
+      arches: B.bridges.map(function (q) {          // small arch hint: a bow across the deck
+        const l = q.line, a = new Path2D(), mx = (l[0] + l[2]) / 2, my = (l[1] + l[3]) / 2;
+        if (q.arch) { a.moveTo(l[0], l[1]); a.quadraticCurveTo(mx - (l[3] - l[1]) * 0.14, my + (l[2] - l[0]) * 0.14, l[2], l[3]); }
+        return a;
+      }),
     };
   }
 
@@ -135,6 +138,7 @@
     ctx.save();
     ctx.translate(x0, y0);
     ctx.scale(k, k);
+    if (p.land) { ctx.fillStyle = p.land; ctx.fillRect(-4000, -4000, 40000, 40000); }
     for (let i = 0; i < built.districts.length; i++) {
       ctx.fillStyle = i % 2 ? p.d1 : p.d0;
       ctx.fill(built.districts[i]);
@@ -145,10 +149,13 @@
     ctx.fill(built.sea);
     ctx.fillStyle = p.river;
     ctx.fill(built.river);
-    ctx.strokeStyle = p.bridge;
-    ctx.lineWidth = 4 / k;
     ctx.lineCap = 'butt';
+    ctx.strokeStyle = p.arch; ctx.lineWidth = 8 / k;               // dark casing under the light deck
     for (let i = 0; i < built.bridges.length; i++) ctx.stroke(built.bridges[i]);
+    ctx.strokeStyle = p.bridge; ctx.lineWidth = 5.5 / k;
+    for (let i = 0; i < built.bridges.length; i++) ctx.stroke(built.bridges[i]);
+    ctx.strokeStyle = p.arch; ctx.lineWidth = 2 / k;
+    for (let i = 0; i < built.arches.length; i++) ctx.stroke(built.arches[i]);
     ctx.restore();
     drawBuildings(ctx, p, p === NIGHT, k, x0, y0);
     const f = Math.max(0, Math.min(1, (LABEL_FADE - k) / (LABEL_FADE - LABEL_LO)));

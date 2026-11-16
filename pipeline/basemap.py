@@ -82,14 +82,39 @@ DISTRICTS: tuple[tuple[str, tuple[Pt, ...]], ...] = (
                   (-8.5700, 41.1420), (-8.5850, 41.1430), (-8.5930, 41.1460))),
 )  # fmt: skip
 
+ARCHED = ("Ponte Luís I", "Ponte da Arrábida")  # drawn with an arch hint
 # (name, lon where it crosses the river, extra length beyond the banks in metres)
 BRIDGES: tuple[tuple[str, float, float], ...] = (
-    ("Ponte da Arrábida", -8.6290, 40),
-    ("Ponte do Infante", -8.6155, 40),
-    ("Ponte Luís I", -8.6093, 40),
-    ("Ponte de São João", -8.5950, 40),
-    ("Ponte do Freixo", -8.5645, 40),
+    ("Ponte da Arrábida", -8.6290, 8),
+    ("Ponte do Infante", -8.6155, 8),
+    ("Ponte Luís I", -8.6093, 8),
+    ("Ponte de São João", -8.5950, 8),
+    ("Ponte do Freixo", -8.5645, 8),
 )
+
+
+def smooth(pts: list[tuple[float, ...]], n: int = 8) -> list[tuple[float, ...]]:
+    """Catmull-Rom subdivision of a polyline (passes through every input point).
+
+    Args:
+        pts: Input points, any equal tuple length.
+        n: Pieces per input span.
+
+    Returns:
+        The denser, smooth polyline.
+    """
+    out: list[tuple[float, ...]] = []
+    for i in range(len(pts) - 1):
+        p0, p1, p2, p3 = pts[max(i - 1, 0)], pts[i], pts[i + 1], pts[min(i + 2, len(pts) - 1)]
+        for k in range(n):
+            t = k / n
+            out.append(tuple(
+                0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t
+                       + (-a + 3 * b - 3 * c + d) * t**3)
+                for a, b, c, d in zip(p0, p1, p2, p3, strict=True)
+            ))  # fmt: skip
+    out.append(pts[-1])
+    return out
 
 
 def to_m(lon: float, lat: float) -> Pt:
@@ -153,7 +178,7 @@ def river_polygon() -> list[Pt]:
     Returns:
         Polygon in metres (north bank west-to-east is reversed: south bank first), unclipped.
     """
-    c = [(*to_m(lon, lat), wd / 2) for lon, lat, wd in DOURO]
+    c = [(*to_m(lon, lat), min(max(wd, 200), 290) / 2) for lon, lat, wd in smooth(list(DOURO))]
     north: list[Pt] = []
     south: list[Pt] = []
     for i, (x, y, hw) in enumerate(c):
@@ -161,8 +186,9 @@ def river_polygon() -> list[Pt]:
         bx, by, _ = c[min(i + 1, len(c) - 1)]
         d = math.hypot(bx - ax, by - ay) or 1.0
         nx, ny = (by - ay) / d, -(bx - ax) / d  # unit normal
-        north.append((x + nx * hw, y + ny * hw))
-        south.append((x - nx * hw, y - ny * hw))
+        wob = 1 + 0.07 * math.sin(i * 1.3), 1 + 0.07 * math.sin(i * 1.9 + 2)  # irregular banks
+        north.append((x + nx * hw * wob[0], y + ny * hw * wob[0]))
+        south.append((x - nx * hw * wob[1], y - ny * hw * wob[1]))
     if north[0][1] > south[0][1]:  # make "north" the bank with the smaller y
         north, south = south, north
     return geo.rdp(north, SIMPLIFY_M) + geo.rdp(south, SIMPLIFY_M)[::-1]
@@ -177,12 +203,12 @@ def sea_polygon(h: float) -> list[Pt]:
     Returns:
         Polygon in metres, unclipped (its west edge lies far outside the map).
     """
-    coast = geo.rdp([to_m(*p) for p in COAST], SIMPLIFY_M)
+    coast = geo.rdp([to_m(*p) for p in smooth(list(COAST))], SIMPLIFY_M)
     return [(-500.0, -500.0), *coast, (-500.0, h + 500.0)][::1]
 
 
 def river_at(lon: float) -> tuple[float, float, float]:
-    """Interpolate the river centre line at a longitude.
+    """Interpolate the (smoothed) river centre line at a longitude.
 
     Args:
         lon: Longitude, degrees (inside the line's range).
@@ -190,17 +216,17 @@ def river_at(lon: float) -> tuple[float, float, float]:
     Returns:
         ``(x, y, half width)`` in metres.
     """
-    pts = DOURO[::-1]  # west to east, increasing lon
+    pts = smooth(list(DOURO))[::-1]  # west to east, increasing lon
     for a, b in zip(pts, pts[1:], strict=False):
         if a[0] <= lon <= b[0]:
             t = (lon - a[0]) / (b[0] - a[0])
             x, y = to_m(lon, a[1] + t * (b[1] - a[1]))
-            return x, y, (a[2] + t * (b[2] - a[2])) / 2
+            return x, y, (min(max(a[2] + t * (b[2] - a[2]), 200), 290)) / 2
     raise ValueError(f"longitude {lon} is outside the river")
 
 
 def bridge_line(lon: float, extra: float) -> list[Pt]:
-    """Make a straight north-south bridge over the river at a longitude.
+    """Make a short deck across the river at a longitude, square to the river.
 
     Args:
         lon: Longitude where the bridge crosses the centre line.
@@ -210,7 +236,12 @@ def bridge_line(lon: float, extra: float) -> list[Pt]:
         Two end points in metres.
     """
     x, y, hw = river_at(lon)
-    return [(x, y - hw - extra), (x, y + hw + extra)]
+    ax, ay, _ = river_at(lon - 0.0006)
+    bx, by, _ = river_at(lon + 0.0006)
+    d = math.hypot(bx - ax, by - ay) or 1.0
+    nx, ny = -(by - ay) / d, (bx - ax) / d
+    r = hw * 1.07 + extra
+    return [(x - nx * r, y - ny * r), (x + nx * r, y + ny * r)]
 
 
 def inside_poly(p: Pt, poly: list[Pt]) -> bool:
@@ -257,7 +288,11 @@ def build(data_path: Path = DATA_DEFAULT) -> dict[str, object]:
             districts.append({"name": name, "x": round(cx), "y": round(cy), "poly": flat(poly)})
     parks = [{"name": n, "poly": clipped([to_m(*p) for p in poly])} for n, poly in PARKS]
     bridges = [
-        {"name": n, "line": flat(clip_poly_line(bridge_line(lon, ex), w, h))}
+        {
+            "name": n,
+            "arch": int(n in ARCHED),
+            "line": flat(clip_poly_line(bridge_line(lon, ex), w, h)),
+        }
         for n, lon, ex in BRIDGES
     ]
     return {

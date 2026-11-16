@@ -144,9 +144,11 @@
         ctx.textAlign = it.align === 'l' ? 'left' : it.align === 'r' ? 'right' : 'center';
         ctx.lineWidth = 4;
         ctx.strokeStyle = night ? 'rgba(8,15,36,0.85)' : 'rgba(255,250,240,0.9)';
-        ctx.strokeText(it.label, sx + it.lx, sy + it.ly);
+        const lx = it.align === 'l' ? Math.min(it.lx, -(16 * grow + 4)) : it.align === 'r' ? Math.max(it.lx, 16 * grow + 4) : it.lx;
+        const ly = it.align === 'l' || it.align === 'r' ? it.ly : it.ly >= 0 ? Math.max(it.ly, 14) : Math.min(it.ly, -(36 * grow + 4));   // clear of the icon
+        ctx.strokeText(it.label, sx + lx, sy + ly);
         ctx.fillStyle = p.text;
-        ctx.fillText(it.label, sx + it.lx, sy + it.ly);
+        ctx.fillText(it.label, sx + lx, sy + ly);
       }
     }
     ctx.restore();

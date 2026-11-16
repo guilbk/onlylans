@@ -37,6 +37,9 @@ NAMES = {"Ribeira": RIBEIRA, "Baixa": BAIXA, "Boavista": BOAVISTA, "Matosinhos":
          "Campanhã": CAMPANHA, "Bonfim": BONFIM}  # fmt: skip
 FOZ_LONLAT = ((-8.6820, 41.1480), (-8.6650, 41.1470), (-8.6600, 41.1560), (-8.6780, 41.1620),
               (-8.6830, 41.1550))  # fmt: skip
+# block (rotation cell) size and gap between lots, metres
+BLOCK = {BAIXA: 72, BOAVISTA: 120, FOZ: 90, MATOSINHOS: 110, CAMPANHA: 96, BONFIM: 84, OTHER: 120}
+GAP = {BAIXA: 3, BOAVISTA: 22, FOZ: 34, MATOSINHOS: 14, CAMPANHA: 18, BONFIM: 6, OTHER: 12}
 # grid step per district, metres
 STEP = {RIBEIRA: 10, BAIXA: 22, BOAVISTA: 62, FOZ: 40, MATOSINHOS: 40, CAMPANHA: 56, BONFIM: 36,
         OTHER: 90}  # fmt: skip
@@ -58,6 +61,24 @@ def hsh(ix: int, iy: int, salt: int = 0) -> float:
     h = ((h ^ (h >> 15)) * 2246822519) & 0xFFFFFFFF
     h = ((h ^ (h >> 13)) * 3266489917) & 0xFFFFFFFF
     return (h ^ (h >> 16)) / 4294967296.0
+
+
+def bank_y(poly: list[Pt], x: float) -> float | None:
+    """Northern (smallest y) crossing of a polygon with the vertical line at ``x``.
+
+    Args:
+        poly: Polygon vertices.
+        x: Line position.
+
+    Returns:
+        The y of the crossing, or None when the line misses the polygon.
+    """
+    ys = [
+        a[1] + (x - a[0]) / (b[0] - a[0]) * (b[1] - a[1])
+        for a, b in zip(poly, poly[-1:] + poly[:-1], strict=True)
+        if (a[0] <= x) != (b[0] <= x)
+    ]
+    return min(ys) if ys else None
 
 
 def load_segments(path: Path) -> list[Seg]:
@@ -207,48 +228,89 @@ def build(data_path: Path = DATA_DEFAULT, roads_path: Path = ROADS_DEFAULT) -> d
     )  # type: ignore[index]
     zones.insert(0, (FOZ, basemap.clip_poly([to_m(*q) for q in FOZ_LONLAT], w, h)))
     mat = next(pl for d, pl in zones if d == MATOSINHOS)
-    mx = [p[0] for p in mat]
-    port_x = min(mx) + 0.45 * (max(mx) - min(mx))
-
     out: list[tuple[int, ...]] = []
     trees: list[int] = []
-    for d in (*sorted({z for z, _ in zones}), OTHER):
-        step = STEP[d]
-        polys_d = [pl for z, pl in zones if z == d] or [[(0, 0), (w, 0), (w, h), (0, h)]]
-        xs = [p[0] for pl in polys_d for p in pl]
-        ys = [p[1] for pl in polys_d for p in pl]
-        for iy in range(int(min(ys) // step), int(max(ys) // step) + 1):
-            for ix in range(int(min(xs) // step), int(max(xs) // step) + 1):
-                x = (ix + 0.5 + (hsh(ix, iy, 1) - 0.5) * 0.3) * step
-                y = (iy + 0.5 + (hsh(ix, iy, 2) - 0.5) * 0.3) * step
-                if not (0 <= x <= w and 0 <= y <= h):
+    rib = next(pl for d, pl in zones if d == RIBEIRA)
+    riv = water[0]
+
+    def ok_spot(x: float, y: float, need: float, polys_d: list[list[Pt]], other: bool) -> bool:
+        """Lot centre is on land, in its district, off the parks and clear of roads."""
+        if not (0 <= x <= w and 0 <= y <= h):
+            return False
+        if other and any(inside_poly((x, y), pl) for _, pl in zones):
+            return False
+        if not other and polys_d and not any(inside_poly((x, y), pl) for pl in polys_d):
+            return False
+        if any(inside_poly((x, y), pl) for pl in water):
+            return False
+        if any(inside_poly((x, y), pl) for pl in parks):
+            return False
+        dist, si = nearest(x, y, segs, grid)
+        return si >= 0 and dist >= need and not (other and dist > GENERIC_REACH_M)
+
+    # Ribeira: one tidy row of narrow facades on the quay (two rows deep), along the river bank
+    xs = [p[0] for p in rib]
+    for n, x in enumerate(range(int(min(xs)), int(max(xs)), 7)):
+        ya, yb = bank_y(riv, x - 4), bank_y(riv, x + 4)
+        if ya is None or yb is None:
+            continue
+        ang = round(math.degrees(math.atan2(yb - ya, 8))) % 180
+        for row, (off, bh) in enumerate(((15, 11), (32, 14))):
+            y = (ya + yb) / 2 - off
+            if not ok_spot(x, y, 4.0, [], False) or any(inside_poly((x, y), pl) for pl in parks):
+                continue
+            col = (n * 3 + row + int(hsh(x, row, 8) * 2)) % 4
+            out.append((x, round(y), 6, bh, ang, RIBEIRA, col, HIP))
+    mat_xs = [p[0] for p in mat]
+    port_x = min(mat_xs) + 0.45 * (max(mat_xs) - min(mat_xs))
+    for d in (BAIXA, BOAVISTA, FOZ, MATOSINHOS, CAMPANHA, BONFIM, OTHER):
+        s = BLOCK[d]
+        polys_d = [] if d == OTHER else [pl for z, pl in zones if z == d]
+        if d != OTHER and not polys_d:
+            continue
+        bx = [p[0] for pl in polys_d for p in pl] or [0, w]
+        by = [p[1] for pl in polys_d for p in pl] or [0, h]
+        for cy in range(int(min(by) // s), int(max(by) // s) + 1):
+            for cx in range(int(min(bx) // s), int(max(bx) // s) + 1):
+                px, py = (cx + 0.5) * s, (cy + 0.5) * s
+                dist, si = nearest(px, py, segs, grid)
+                if si < 0:
                     continue
-                if d == OTHER and any(inside_poly((x, y), pl) for _, pl in zones):
-                    continue
-                if d != OTHER and not any(inside_poly((x, y), pl) for pl in polys_d):
-                    continue
-                if any(inside_poly((x, y), pl) for pl in water):
-                    continue
-                if any(inside_poly((x, y), pl) for pl in parks):
-                    if hsh(ix, iy, 3) < 0.25:
-                        trees += [round(x), round(y)]
-                    continue
-                dist, si = nearest(x, y, segs, grid)
-                if si < 0 or (d == OTHER and dist > GENERIC_REACH_M):
-                    continue
-                kind, r1, r2 = hsh(ix, iy, 4), hsh(ix, iy, 5), hsh(ix, iy, 6)
-                if d == FOZ and kind < 0.4:
-                    continue  # sparse villas
-                bw, bh, col, roof = size_for(d, kind, r1, r2)
-                if d == MATOSINHOS and x > port_x:
-                    bw, bh, roof = 13 + 5 * r1, 16 + 6 * r2, HIP  # town houses east of the port
-                elif d == MATOSINHOS and kind > 0.9:
-                    bw, bh, roof = 3, 28, CRANE  # cranes by the water
-                if dist < math.hypot(bw, bh) / 2 + ROAD_HALF_M + MARGIN_M:
-                    continue
+                kind, r1, r2 = hsh(cx, cy, 4), hsh(cx, cy, 5), hsh(cx, cy, 6)
+                bw, bh, _, roof0 = size_for(d, kind, r1, r2)
+                if d == MATOSINHOS and px > port_x:
+                    bw, bh, roof0 = 13 + 5 * r1, 16 + 6 * r2, HIP  # town houses east of the port
+                bw, bh = round(bw), round(bh)
                 x0, y0, x1, y1 = segs[si]
                 ang = round(math.degrees(math.atan2(y1 - y0, x1 - x0))) % 180
-                out.append((round(x), round(y), round(bw), round(bh), ang, d, col, roof))
+                ca, sa = math.cos(math.radians(ang)), math.sin(math.radians(ang))
+                pu, pv = bw + GAP[d], bh + GAP[d]
+                r = math.hypot(bw, bh) / 2
+                c0 = int(hsh(cx, cy, 7) * 2)
+                nu, nv = int(s / pu) + 1, int(s / pv) + 1
+                for i in range(-nu, nu + 1):
+                    for j in range(-nv, nv + 1):
+                        lx, ly = i * pu, j * pv
+                        x, y = px + lx * ca - ly * sa, py + lx * sa + ly * ca
+                        if abs(x - px) > s / 2 - r * 0.5 or abs(y - py) > s / 2 - r * 0.5:
+                            continue
+                        if not ok_spot(x, y, r + ROAD_HALF_M + MARGIN_M, polys_d, d == OTHER):
+                            continue
+                        hl = hsh(round(x), round(y), 3)
+                        if d == FOZ and hl < 0.35:
+                            continue  # sparse villas
+                        col = 2 if hl < 0.12 else c0
+                        roof = roof0
+                        if roof0 in (HIP, FLAT) and hl > 0.8:
+                            roof = FLAT if roof0 == HIP else HIP
+                        out.append((round(x), round(y), bw, bh, ang, d, col, roof))
+    for p in lay["parks"]:  # type: ignore[union-attr]
+        pl = [(p["poly"][i], p["poly"][i + 1]) for i in range(0, len(p["poly"]), 2)]  # type: ignore[index]
+        for ty in range(int(min(q[1] for q in pl) // 22), int(max(q[1] for q in pl) // 22) + 1):
+            for tx in range(int(min(q[0] for q in pl) // 22), int(max(q[0] for q in pl) // 22) + 1):
+                x, y = (tx + hsh(tx, ty, 1)) * 22, (ty + hsh(tx, ty, 2)) * 22
+                if hsh(tx, ty, 3) < 0.3 and inside_poly((x, y), pl):
+                    trees += [round(x), round(y)]
     if len(out) > CAP:  # keep the named districts, thin the rest by hash
         keep = [b for b in out if b[5] != OTHER]
         rest = sorted((b for b in out if b[5] == OTHER), key=lambda b: hsh(b[0], b[1], 9))
