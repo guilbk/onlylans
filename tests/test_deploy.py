@@ -57,3 +57,66 @@ def test_main_without_cloudflared_fails(monkeypatch, capsys) -> None:
     monkeypatch.setattr(deploy.shutil, "which", lambda name: None)
     assert deploy.main([]) == deploy.EXIT_FAIL
     assert "brew install cloudflared" in capsys.readouterr().err
+
+
+def test_caffeinate_only_on_macos() -> None:
+    assert deploy.caffeinate_command(42, "darwin") == ["caffeinate", "-dimsu", "-w", "42"]
+    assert deploy.caffeinate_command(42, "linux") is None
+
+
+def test_watch_tunnel_restarts_once_and_reports_the_new_url(monkeypatch) -> None:
+    import threading
+    import types
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"], text=True)
+    dead.wait()
+    new = object()
+    monkeypatch.setattr(
+        deploy, "start_tunnel", lambda port, binary: (new, "https://n-n.trycloudflare.com")
+    )
+    server = types.SimpleNamespace(public_url="https://old.trycloudflare.com")
+    state = {"proc": dead, "server": server, "stop": threading.Event()}
+    shown: list[str] = []
+    deploy.watch_tunnel(state, 1, "x", shown.append)
+    assert shown == ["https://n-n.trycloudflare.com"]
+    assert server.public_url == "https://n-n.trycloudflare.com"
+    assert state["proc"] is new
+
+
+def test_watch_tunnel_stops_quietly_when_asked(monkeypatch) -> None:
+    import threading
+    import types
+
+    live = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], text=True)
+    stop = threading.Event()
+    stop.set()
+    monkeypatch.setattr(deploy, "start_tunnel", lambda *a: 1 / 0)
+    state = {"proc": live, "server": types.SimpleNamespace(), "stop": stop}
+    try:
+        deploy.watch_tunnel(state, 1, "x", lambda url: None)
+    finally:
+        deploy.stop_process(live)
+
+
+def test_main_via_lan_needs_no_cloudflared(monkeypatch, tmp_path, capsys) -> None:
+    (tmp_path / "index.html").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(deploy.shutil, "which", lambda name: None)
+    monkeypatch.setattr(deploy, "detect_lan_ip", lambda: "10.1.2.3")
+
+    def boom(self) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("socketserver.BaseServer.serve_forever", boom)
+    code = deploy.main(["--via", "lan", "--port", "18731", "--dir", str(tmp_path), "--plain"])
+    out = capsys.readouterr().out
+    assert code == deploy.EXIT_OK
+    assert "http://10.1.2.3:18731/" in out
+
+
+def test_main_tunnel_failure_suggests_lan(monkeypatch, tmp_path, capsys) -> None:
+    (tmp_path / "index.html").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(deploy.shutil, "which", lambda name: "/bin/cf")
+    dead = subprocess.Popen([sys.executable, "-c", "pass"], text=True)
+    monkeypatch.setattr(deploy, "start_tunnel", lambda port, binary: (dead, None))
+    assert deploy.main(["--dir", str(tmp_path)]) == deploy.EXIT_FAIL
+    assert "--via lan" in capsys.readouterr().err

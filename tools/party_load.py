@@ -1,8 +1,9 @@
 """Load test for party mode: N virtual players in one room, like a battle of cars.
 
 ``python tools/party_load.py --url http://127.0.0.1:8123 [--players 30] [--seconds 180]`` works
-against a local server or a public tunnel URL. Every virtual phone keeps one connection, polls
-``/api/sync`` every 200 ms with its position, and books (and sometimes gives back) orders.
+against a local server or a public tunnel URL. Every virtual phone keeps one connection and
+polls ``/api/sync`` with its position at the interval the server asks for (``poll_ms``, 200 ms
+at first); it also books (and sometimes gives back) orders.
 Prints p50/p95/max latency, errors, reply bytes and requests per second. Standard library only.
 """
 
@@ -212,18 +213,23 @@ def player_loop(
     held: list[int] = []
     begin = time.monotonic()
     next_claim = begin + CLAIM_EVERY_S * rng.random()
-    next_poll = begin + POLL_S * rng.random()
+    poll = POLL_S
+    next_poll = begin + poll * rng.random()
     while (now := time.monotonic()) < stop_at:
         if now < next_poll:
             time.sleep(min(next_poll - now, 0.05))
             continue
-        next_poll += POLL_S
-        client.call("POST", "/api/sync", {"room": room, "key": key, **position(index, now - begin)})
+        reply = client.call(
+            "POST", "/api/sync", {"room": room, "key": key, **position(index, now - begin)}
+        )
+        if reply and isinstance(reply.get("poll_ms"), int | float):
+            poll = max(0.05, reply["poll_ms"] / 1000)  # the interval the server asks for
+        next_poll += poll
         if now >= next_claim:
             next_claim = now + CLAIM_EVERY_S
             kind, order = next_action(rng, held, size)
-            reply = client.call("POST", f"/api/{kind}", {"room": room, "key": key, "order": order})
-            if kind == "claim" and reply and reply.get("ok"):
+            got = client.call("POST", f"/api/{kind}", {"room": room, "key": key, "order": order})
+            if kind == "claim" and got and got.get("ok"):
                 held.append(order)
                 held[:] = held[-3:]
     client.close()

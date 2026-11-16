@@ -705,3 +705,52 @@ def test_keep_alive_serves_many_requests_on_one_connection(tmp_path: Path) -> No
             assert resp.status == 200
             resp.read()
         conn.close()
+
+
+def test_skin_and_mods_are_cleaned_and_shown() -> None:
+    p, _ = make()
+    a, _ = p.join("A", None, "neon", {"wheels": "rim2", "x" * 40: "y" * 40, "": "q", "n": 5})
+    state = p.state()["players"][0]
+    assert state["skin"] == "neon"
+    assert state["mods"] == {"wheels": "rim2", "x" * 24: "y" * 24}
+    b, _ = p.join("B")
+    assert "skin" not in p.state()["players"][1] and "mods" not in p.state()["players"][1]
+    p.sync(b.key, {"skin": "a b\n" + "z" * 50, "mods": {f"k{i}": "v" for i in range(30)}})
+    s2 = p.state()["players"][1]
+    assert len(s2["skin"]) == 24 and " " not in s2["skin"]
+    assert len(s2["mods"]) == party.MAX_MODS
+    p.sync(b.key, {"skin": 7, "mods": ["x"]})
+    assert "skin" not in p.state()["players"][1] and "mods" not in p.state()["players"][1]
+    assert a.skin == "neon"
+
+
+def test_route_passes_skin_and_mods() -> None:
+    rooms = party.Rooms()
+    made = party.route(rooms, "/api/create", {"name": "A", "skin": "gold", "mods": {"a": "b"}})
+    assert made["state"]["players"][0]["skin"] == "gold"
+    j = party.route(rooms, "/api/join", {"room": made["room"], "name": "B", "mods": {"c": "d"}})
+    assert j["state"]["players"][1]["mods"] == {"c": "d"}
+
+
+def test_poll_ms_follows_the_room_size_and_the_server_load() -> None:
+    assert [party.poll_ms(n) for n in (1, 10, 11, 30, 31)] == [200, 200, 350, 350, 500]
+    assert party.poll_ms(5, party.SLOW_MS + 1) == 300
+    assert party.poll_ms(20, party.SLOW_MS + 1) == 525
+    assert party.poll_ms(20, party.SLOW_MS) == 350
+
+
+def test_every_state_carries_poll_ms() -> None:
+    p, _ = make()
+    for i in range(11):
+        p.join(f"n{i}")
+    assert p.state()["poll_ms"] == 350
+    load = party.Load()
+    for _ in range(200):
+        load.add(100.0)
+    assert load.ms > party.SLOW_MS
+    slow = party.Party(load=load)
+    slow.join("A")
+    assert slow.state()["poll_ms"] == 300
+    rooms = party.Rooms()
+    made = party.route(rooms, "/api/create", {"name": "A"})
+    assert made["state"]["poll_ms"] == 200

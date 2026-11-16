@@ -603,7 +603,7 @@ Friends play one shift together on one map, each on their own phone, in a **room
 `80_party.js` starts only on `?party=1`, `?room=CODE`, `&screen=1` or the bus event `party:open` (emitted by the
 menu button «Гра разом»); otherwise `PG.engine.party` stays `null` and nothing is added to the page.
 
-**Run**: `python tools/party.py [--port 8090] [--build] [--dir game] [--host IP]` (stdlib only; reuses `tools/serve.py`
+**Run**: `python tools/party.py [--port 8090] [--build] [--dir game] [--host IP] [--public-url URL]` (stdlib only; reuses `tools/serve.py`
 and `tools/qr.py`). It prints the QR of `http://<LAN-IP>:<port>/`. Anyone opens the game, taps «Гра разом» and
 creates a room; there is no host machine and no `--open-host`.
 
@@ -612,7 +612,7 @@ from `BCDFGHJKLMNPRSTVWXZ` (typed codes are upper-cased, spaces dropped, Cyrilli
 200 rooms, an untouched room is forgotten after 4 h. The creator is the **host** and plays like everybody; `create`
 returns the **host token**, which `start` and `reset` require (403 `host_only`). Phase `lobby` → `running` → `done`
 (`done` at `start_at + duration + 2 s`; `running` includes the countdown). Players
-`{id, key (secret), name ≤ 20, colour, x, y (null until the first sync), hx, hy, money, trips, at, seen}`; at most 60
+`{id, key (secret), name ≤ 20, colour, x, y (null until the first sync), hx, hy, money, trips, at, seen}`; at most 40
 per room; guests silent for 25 s leave the lobby (the host stays). `claims`: order index → player id. Server time is
 `time.time()`.
 
@@ -632,7 +632,21 @@ state, never keys or the token; unknown room → 404 `no_room`):
 | `POST /api/reset` | `{room, token}` | state; back to `lobby`, claims and money cleared, offline phones dropped |
 
 The server reads the order count of each shift from `game_data.json` in the served folder. Replies are HTTP/1.1
-keep-alive with `TCP_NODELAY`.
+keep-alive with `TCP_NODELAY`, compact JSON (no spaces; `hx`, `hy` to 2 decimals, `now`, `start_at` and `at` to
+milliseconds), plus `poll_ms` in every state: the poll interval the phones should use (200 up to 10 players, 350 up to
+30, 500 above; ×1.5 when the average service time is above 40 ms); a client that ignores it keeps working, built under the room lock and serialised after it is released. State holds no history: its size
+depends only on the players and the claims. An idle connection is closed after 60 s; the listen backlog is 128.
+
+**Cosmetics**: `create`, `join` and `sync` accept optional `skin` (id, no spaces, ≤ 24 chars) and `mods` (flat object of category → id, ≤ 10 pairs, each part ≤ 24 chars); invalid values are cleaned or dropped, never refused. Each player in the state carries `skin` and `mods` only when set, so other phones draw the car with them.
+
+**Public URL** (deploy, no API change in the calls above): `--public-url https://….trycloudflare.com` (or
+`make_party_server(public_url=…)`) makes `/api/qr` and every join link use that address. Without it, the scheme comes
+from `X-Forwarded-Proto` (`https` behind a tunnel) and the address from `Host`. `python tools/deploy.py [--build]
+[--port 8123]` starts `cloudflared tunnel --url http://localhost:PORT`, reads the `https://….trycloudflare.com` address
+from its output, starts the party server with it and prints the QR. On macOS it runs under `caffeinate -dimsu` and restarts a dead cloudflared once (new URL and QR
+printed, join links follow). `--via lan` skips the tunnel and shows the QR of the LAN address. `python tools/party_load.py --url URL [--players 30]
+[--seconds 180]` is the load test (p50/p95/max latency, errors, bytes, requests per second). Room cap: 40 players
+(was 60), 409 `full` beyond it.
 
 **Clock**: each reply has `now`; the client keeps the offset of the lowest-latency sample. Game time
 `t = (server now − start_at) × SHIFT / duration` (×40 for the default 180 s); every phone builds the same shift at

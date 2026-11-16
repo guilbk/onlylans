@@ -23,7 +23,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -47,9 +47,17 @@ from serve import (
 DEFAULT_PORT = 8090
 MAX_PLAYERS = 40  # per room; the 30-car battle fits with a margin
 MAX_NAME = 20
+MAX_ID = 24  # skin and mod ids
+MAX_MODS = 10
 MAX_BODY = 4096
 MAX_TRIPS = 100_000
 MAX_ACTIVE = 3  # booked, not yet picked up: the pickup, the next one, one release in flight
+POLL_MS_SMALL = 200  # poll interval up to 10 players
+POLL_MS_MEDIUM = 350  # 11 to 30 players
+POLL_MS_LARGE = 500  # more than 30
+SLOW_MS = 40.0  # average service time above this: the server asks the phones to poll less often
+SLOW_FACTOR = 1.5
+EWMA_ALPHA = 0.05
 IDLE_TIMEOUT_S = 60.0  # a keep-alive connection silent this long is closed (no leaked threads)
 BACKLOG = 128  # pending connections: 30 phones reconnecting at once must not be refused
 DEFAULT_SIZES = (700,) * 28  # orders per shift when no game data is given; real shifts have ~500
@@ -119,6 +127,8 @@ class Player:
     trips: int = 0
     seen: float = 0.0
     at: float = 0.0  # server time of the last position, for smooth cars on the other phones
+    skin: str = ""  # cosmetic ids the phone sends; other phones draw the car with them
+    mods: dict[str, str] = field(default_factory=dict)
 
 
 def _number(value: object, lo: float, hi: float) -> float:
@@ -174,6 +184,39 @@ def load_sizes(path: Path) -> tuple[int, ...]:
         return DEFAULT_SIZES
 
 
+def clean_id(raw: object) -> str:
+    """Make a safe short id (a skin or a mod): printable, no spaces, at most ``MAX_ID`` characters.
+
+    Args:
+        raw: The value from the request (any type; non-strings give an empty id).
+
+    Returns:
+        The id, possibly empty.
+    """
+    if not isinstance(raw, str):
+        return ""
+    return "".join(ch for ch in raw if ch.isprintable() and not ch.isspace())[:MAX_ID]
+
+
+def clean_mods(raw: object) -> dict[str, str]:
+    """Make a safe flat ``category -> id`` map: at most ``MAX_MODS`` pairs, both parts cleaned.
+
+    Args:
+        raw: The value from the request (any type; anything but an object gives ``{}``).
+
+    Returns:
+        The cleaned map; pairs with an empty key or id are dropped.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for k, v in raw.items():
+        key, val = clean_id(k), clean_id(v)
+        if key and val and len(out) < MAX_MODS:
+            out[key] = val
+    return out
+
+
 def clean_code(raw: object) -> str:
     """Normalise a typed room code: upper case, spaces dropped, Cyrillic lookalikes turned Latin.
 
@@ -203,6 +246,37 @@ def clean_name(raw: object) -> str:
     return " ".join(text.split())[:MAX_NAME].strip()
 
 
+def poll_ms(players: int, slow_ms: float = 0.0) -> int:
+    """The poll interval the server asks the phones to use.
+
+    Args:
+        players: Players in the room.
+        slow_ms: Recent average service time of a request in milliseconds.
+
+    Returns:
+        200 up to 10 players, 350 up to 30, 500 above; times 1.5 when the server is slow
+        (``slow_ms`` above ``SLOW_MS``).
+    """
+    base = POLL_MS_SMALL if players <= 10 else POLL_MS_MEDIUM if players <= 30 else POLL_MS_LARGE
+    return round(base * SLOW_FACTOR) if slow_ms > SLOW_MS else base
+
+
+class Load:
+    """A moving average of how long the server takes to answer (shared by all rooms)."""
+
+    def __init__(self) -> None:
+        """Start at zero."""
+        self.ms = 0.0
+
+    def add(self, ms: float) -> None:
+        """Fold in one request time (a lost update under threads is harmless).
+
+        Args:
+            ms: Service time in milliseconds.
+        """
+        self.ms += EWMA_ALPHA * (ms - self.ms)
+
+
 class Party:
     """The whole game state, without any network code. Every method takes the lock."""
 
@@ -211,6 +285,7 @@ class Party:
         now: Callable[[], float] = time.time,
         code: str = "",
         sizes: Sequence[int] = DEFAULT_SIZES,
+        load: Load | None = None,
     ) -> None:
         """Create an empty lobby.
 
@@ -218,7 +293,9 @@ class Party:
             now: Clock in seconds (injected for tests).
             code: The room code (shown in every state).
             sizes: Number of orders in each shift (the shifts that can be started).
+            load: Service-time average shared with the other rooms (for ``poll_ms``).
         """
+        self._load = load or Load()
         self._now = now
         self._sizes = tuple(sizes)
         self.code = code
@@ -301,11 +378,17 @@ class Party:
             }
             for p in self._players.values()
         ]
+        for entry, p in zip(players, self._players.values(), strict=True):
+            if p.skin:
+                entry["skin"] = p.skin
+            if p.mods:
+                entry["mods"] = dict(p.mods)
         return {
             "room": self.code,
             "host": self._host_id,
             "phase": self._phase(),
             "now": round(now, 3),
+            "poll_ms": poll_ms(len(self._players), self._load.ms),
             "start_at": None if self._start_at is None else round(self._start_at, 3),
             "duration": self._duration,
             "shift": self._shift,
@@ -326,12 +409,16 @@ class Party:
             self._prune()
             return self._state()
 
-    def join(self, name: object, key: object = None) -> tuple[Player, dict[str, Any]]:
+    def join(
+        self, name: object, key: object = None, skin: object = None, mods: object = None
+    ) -> tuple[Player, dict[str, Any]]:
         """Add a player, or welcome back a known one (same secret key).
 
         Args:
             name: Wanted name; empty gives ``Таксист N``; a taken name gets a number.
             key: Secret key of an earlier join of this phone, if any.
+            skin: Optional skin id (cleaned, at most 24 characters).
+            mods: Optional ``category -> id`` map (cleaned, at most 10 pairs).
 
         Returns:
             The player and the new state.
@@ -355,6 +442,8 @@ class Party:
                 name=self._unique_name(clean_name(name)),
                 color=COLORS[(self._next_id - 1) % len(COLORS)],
                 seen=self._now(),
+                skin=clean_id(skin),
+                mods=clean_mods(mods),
             )
             self._next_id += 1
             if self._host_id is None:
@@ -368,7 +457,8 @@ class Party:
 
         Args:
             key: Secret key of the player.
-            body: ``x``, ``y``, ``hx``, ``hy``, ``money``, ``trips`` (all optional).
+            body: ``x``, ``y``, ``hx``, ``hy``, ``money``, ``trips``, ``skin``, ``mods``
+                (all optional).
 
         Returns:
             The new state.
@@ -390,6 +480,10 @@ class Party:
                 p.hy = _number(body["hy"], -1.0, 1.0)
             if "money" in body:
                 p.money = _number(body["money"], 0.0, MAX_MONEY)
+            if "skin" in body:
+                p.skin = clean_id(body["skin"])
+            if "mods" in body:
+                p.mods = clean_mods(body["mods"])
             if "trips" in body:
                 p.trips = int(_number(body["trips"], 0, MAX_TRIPS))
             return self._state()
@@ -546,12 +640,17 @@ class Rooms:
         self._rng = rng or random.Random()
         self._lock = threading.Lock()
         self._rooms: dict[str, Party] = {}
+        self.load = Load()
 
-    def create(self, name: object) -> tuple[Party, Player, dict[str, Any]]:
+    def create(
+        self, name: object, skin: object = None, mods: object = None
+    ) -> tuple[Party, Player, dict[str, Any]]:
         """Open a room; its creator joins it as the first player and holds the host token.
 
         Args:
             name: The creator's wanted name.
+            skin: Optional skin id.
+            mods: Optional ``category -> id`` map.
 
         Returns:
             The room, the creator and the new state.
@@ -568,9 +667,9 @@ class Rooms:
             code = ""
             while not code or code in self._rooms:
                 code = "".join(self._rng.choice(CODE_ALPHABET) for _ in range(CODE_LEN))
-            room = Party(self._now, code, self._sizes)
+            room = Party(self._now, code, self._sizes, self.load)
             self._rooms[code] = room
-        player, state = room.join(name)
+        player, state = room.join(name, None, skin, mods)
         return room, player, state
 
     def get(self, code: object) -> Party:
@@ -645,7 +744,7 @@ def route_create(rooms: Rooms, body: dict[str, Any]) -> dict[str, Any]:
     Returns:
         ``{room, token, id, key, state}``.
     """
-    room, player, state = rooms.create(body.get("name"))
+    room, player, state = rooms.create(body.get("name"), body.get("skin"), body.get("mods"))
     return {
         "room": room.code,
         "token": room.token,
@@ -674,7 +773,7 @@ def route(rooms: Rooms, path: str, body: dict[str, Any]) -> dict[str, Any]:
     room = rooms.get(body.get("room"))
     key = body.get("key")
     if path == "/api/join":
-        player, state = room.join(body.get("name"), key)
+        player, state = room.join(body.get("name"), key, body.get("skin"), body.get("mods"))
         return {"id": player.id, "key": player.key, "state": state}
     if path == "/api/sync":
         return room.sync(key, body)
@@ -761,7 +860,7 @@ class PartyHandler(NoCacheHandler):
                 self.headers.get("Host", ""),
                 room.code,
                 self.lan_base,
-                self.public_url,
+                getattr(self.server, "public_url", "") or self.public_url,
                 self.headers.get("X-Forwarded-Proto", ""),
             )
             return qr_payload(link)
@@ -773,18 +872,22 @@ class PartyHandler(NoCacheHandler):
         if not path.startswith("/api/"):
             super().do_GET()
             return
+        t0 = time.perf_counter()
         try:
             self._reply(HTTPStatus.OK, self._get_api(path, parse_qs(query).get("room", [""])[0]))
         except PartyError as err:
             self._reply(err.status, {"error": err.code})
+        self.rooms.load.add((time.perf_counter() - t0) * 1000)
 
     def do_POST(self) -> None:
         """Run one API action."""
+        t0 = time.perf_counter()
         try:
             body = self._body()
             self._reply(HTTPStatus.OK, route(self.rooms, self.path.split("?", 1)[0], body))
         except PartyError as err:
             self._reply(err.status, {"error": err.code})
+        self.rooms.load.add((time.perf_counter() - t0) * 1000)
 
 
 def make_party_server(
@@ -816,7 +919,9 @@ def make_party_server(
         return handler(*args, directory=str(directory), **kwargs)
 
     server_class = type("PartyServer", (LanServer,), {"request_queue_size": BACKLOG})
-    return server_class((host, port), build)
+    server = server_class((host, port), build)
+    server.public_url = public_url  # type: ignore[attr-defined]  # a tunnel restart changes it
+    return server
 
 
 def main(argv: list[str] | None = None) -> int:
