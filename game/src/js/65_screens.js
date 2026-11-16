@@ -89,20 +89,27 @@
     return 0;
   }
 
+  const DAY_ABBR = { mon: 'Пн', tue: 'Вт', wed: 'Ср', thu: 'Чт', fri: 'Пт', sat: 'Сб', sun: 'Нд' };
+
   function refreshMenu() {
     const shifts = PG.data.shifts;
+    const nx = PG.progress && PG.progress.nextIdx ? PG.progress.nextIdx() : -1;
     for (let i = 0; i < shifts.length; i++) {
       const c = cards[shifts[i].id];
       if (!c) continue;
       const open = isOpen(i);
       c.el.classList.toggle('locked', !open);
       c.el.disabled = !open;
-      c.el.classList.toggle('next', PG.progress && PG.progress.nextIdx ? PG.progress.nextIdx() === i : false);
+      c.el.classList.toggle('next', nx === i);
       const m = bestMedal(i);
-      c.medal.textContent = m > 0 ? MEDAL_NAMES[m] : (open ? '' : 'закрито');
+      c.medal.className = 'shift-medal m' + m;
       c.medal.style.setProperty('--c', MEDAL_COLORS[m]);
-      c.medal.classList.toggle('has', m > 0);
+      const slot = PG.C.SLOTS[shifts[i].slot];
+      c.el.setAttribute('aria-label', shifts[i].name + ', ' + (slot ? slot.label : '') + ', ' +
+        (m > 0 ? MEDAL_NAMES[m] : (open ? 'без медалі' : 'закрито')));
+      c.el.title = shifts[i].name + ' · складність ' + shifts[i].difficulty + ' з 5' + (m > 0 ? ' · ' + MEDAL_NAMES[m] : '');
     }
+    if (dom.playSub && PG.data.shifts[playIdx()]) dom.playSub.textContent = PG.data.shifts[playIdx()].name;
   }
 
   function buildCard(sh, idx) {
@@ -111,16 +118,9 @@
     const slot = PG.C.SLOTS[sh.slot];
     const ico = el('span', 'slot-ico');
     ico.setAttribute('data-slot', sh.slot);
-    const info = el('span', 'shift-info');
-    info.appendChild(el('span', 'shift-name', sh.name));
-    info.appendChild(el('span', 'shift-time', slot ? slot.label : ''));
-    const dots = el('span', 'diff-dots');
-    dots.title = 'Складність ' + sh.difficulty + ' з 5';
-    for (let i = 1; i <= 5; i++) dots.appendChild(el('i', i <= sh.difficulty ? 'on' : ''));
     const medal = el('span', 'shift-medal');
     b.appendChild(ico);
-    b.appendChild(info);
-    b.appendChild(dots);
+    b.appendChild(el('span', 'shift-time', slot ? slot.label : ''));
     b.appendChild(medal);
     b.addEventListener('click', function () { if (isOpen(idx)) start(idx); });
     cards[sh.id] = { el: b, medal: medal };
@@ -134,20 +134,37 @@
     if (ok) PG.bus.emit('party:open');
   }
 
+  const CAR_SVG = '<svg viewBox="0 0 80 36" width="80" height="36" aria-hidden="true">' +
+    '<path d="M6 24c0-5 3-7 8-8l8-8c2-2 4-2 7-2h14c4 0 6 1 8 3l7 7c6 1 12 2 12 8v3H6z" fill="#3df5b0"/>' +
+    '<path d="M24 16l6-6h12l7 6z" fill="#06241a" opacity=".55"/><rect x="34" y="3" width="12" height="4" rx="1" fill="#ffc857"/>' +
+    '<circle cx="22" cy="28" r="6" fill="#0b1228"/><circle cx="60" cy="28" r="6" fill="#0b1228"/>' +
+    '<circle cx="22" cy="28" r="2.5" fill="#93a3cc"/><circle cx="60" cy="28" r="2.5" fill="#93a3cc"/></svg>';
+
+  function section(cls, i) {
+    const s = el('section', 'mn-sec ' + cls);
+    s.style.setProperty('--i', i);
+    return s;
+  }
+
   function buildMenu() {
     const m = dom.menu;
     m.textContent = '';
-    const head = el('div', 'menu-head');
-    const hero = el('div', 'hero-icon');
+    const wrap = m;
+    const top = section('mn-top', 0);
+    const road = el('div', 'mn-road');
+    const car = el('div', 'mn-car');
+    car.innerHTML = CAR_SVG;
+    road.appendChild(car);
+    top.appendChild(road);
+    top.appendChild(el('h1', 'menu-title', '7 ланосів'));
+    top.appendChild(el('p', 'menu-pitch', 'Справжня зміна таксі в Порту, 2014. Обжени найкращого водія — його привид їде поруч.'));
+    const who = el('label', 'menu-name');
+    const hero = el('span', 'hero-icon');
     hero.innerHTML = HERO_SVG;
-    head.appendChild(hero);
-    const tt = el('div', 'menu-titles');
-    tt.appendChild(el('h1', 'menu-title', '7 ланосів'));
-    dom.hero = el('div', 'menu-hero', PG.util.playerName() + ' проти 7 ланосів');
-    tt.appendChild(dom.hero);
-    head.appendChild(tt);
-    m.appendChild(head);
-    const nm = el('label', 'menu-name', 'Твоє ім’я ');
+    who.appendChild(hero);
+    const col = el('span', 'menu-who');
+    dom.hero = el('span', 'menu-hero', PG.util.playerName() + ' проти 7 ланосів');
+    col.appendChild(dom.hero);
     const inp = el('input', 'menu-name-in');
     inp.id = 'player-name';
     inp.maxLength = 20;
@@ -157,47 +174,82 @@
       PG.util.setPlayerName(inp.value);
       dom.hero.textContent = PG.util.playerName() + ' проти 7 ланосів';
     });
-    nm.appendChild(inp);
-    m.appendChild(nm);
-    m.appendChild(el('p', 'menu-pitch',
-      'Справжня зміна таксі в Порту, 2014. Обжени найкращого водія — його привид їде поруч.'));
-    const play = btn('btn-big', 'Грати');
+    col.appendChild(inp);
+    who.appendChild(col);
+    top.appendChild(who);
+    wrap.appendChild(top);
+
+    const act = section('mn-act', 1);
+    const play = btn('btn-big mn-play');
     play.id = 'btn-play';
+    play.appendChild(el('span', 'mn-play-main', 'Грати'));
+    dom.playSub = el('span', 'mn-play-sub');
+    play.appendChild(dom.playSub);
     play.addEventListener('click', function () { start(playIdx()); });
-    m.appendChild(play);
+    act.appendChild(play);
+    dom.row = el('div', 'mn-row');
     const together = btn('btn-big alt', 'Гра разом');
     together.id = 'btn-party';
     together.addEventListener('click', openParty);
-    m.appendChild(together);
+    dom.row.appendChild(together);
+    const how = btn('btn-big alt', 'Як грати');
+    how.id = 'btn-howto';
+    how.addEventListener('click', function () { if (PG.hints) PG.hints.open(); });
+    dom.row.appendChild(how);
+    act.appendChild(dom.row);
     dom.partyNote = el('p', 'party-note', PARTY_NOTE);
     dom.partyNote.id = 'party-note';
     dom.partyNote.hidden = true;
-    m.appendChild(dom.partyNote);
-    buildDifficulty(m);
-    buildHowTo(m);
+    act.appendChild(dom.partyNote);
+    wrap.appendChild(act);
+
+    const camp = section('mn-camp', 2);
+    buildDifficulty(camp);
+    camp.appendChild(el('h2', 'mn-h', 'Тиждень у Порту'));
+    camp.id = 'shiftList';
+    const list = el('div', 'shift-list');
+    const shifts = PG.data.shifts;
+    let lastDay = null;
+    let rowEl = null;
+    for (let i = 0; i < shifts.length; i++) {
+      const dk = shifts[i].id.split('-')[0];
+      if (dk !== lastDay) {
+        lastDay = dk;
+        rowEl = el('div', 'day-group');
+        rowEl.appendChild(el('h3', 'day-title', DAY_ABBR[dk] || dk));
+        list.appendChild(rowEl);
+      }
+      rowEl.appendChild(buildCard(shifts[i], i));
+    }
+    camp.appendChild(list);
+    wrap.appendChild(camp);
+
+    const foot = section('mn-foot', 3);
+    dom.foot = foot;
     const about = btn('btn-link', 'Про дані');
     about.id = 'btn-about';
     about.addEventListener('click', function () { setScreen('about'); });
-    m.appendChild(about);
-
-    m.appendChild(el('p', 'menu-note',
-      'Крапки на картці — складність самої зміни (1–5). Рівень суперників обирай вище.'));
-    const list = el('div', 'shift-list');
-    list.id = 'shiftList';
-    const shifts = PG.data.shifts;
-    let lastDay = null;
-    let group = null;
-    for (let i = 0; i < shifts.length; i++) {
-      if (shifts[i].day !== lastDay) {
-        lastDay = shifts[i].day;
-        group = el('div', 'day-group');
-        group.appendChild(el('h2', 'day-title', lastDay));
-        list.appendChild(group);
-      }
-      group.appendChild(buildCard(shifts[i], i));
+    foot.appendChild(about);
+    if (PG.coach) {
+      const again = btn('btn-link', 'Пройти підказки на мапі');
+      again.id = 'btn-coach';
+      again.addEventListener('click', function () { PG.coach.rearm(); start(playIdx()); });
+      foot.appendChild(again);
     }
-    m.appendChild(list);
+    wrap.appendChild(foot);
+    // Modules that add their own buttons (shop, achievements) are moved into the right slot.
+    adopt();
+    new MutationObserver(adopt).observe(m, { childList: true });
     refreshMenu();
+  }
+
+  function adopt() {
+    const shop = document.getElementById('btn-shop');
+    if (shop && shop.parentNode !== dom.row) dom.row.insertBefore(shop, document.getElementById('btn-howto'));
+    const ach = document.getElementById('ach-open');
+    if (ach && ach.parentNode !== dom.foot) dom.foot.appendChild(ach);
+    const hb = document.getElementById('help-menu');
+    if (hb && hb.parentNode) hb.parentNode.removeChild(hb);
   }
 
   function refreshDifficulty() {
@@ -214,7 +266,8 @@
     if (!P || !P.setDifficulty) return;
     const box = el('div', 'diff-choice');
     box.id = 'diff-choice';
-    box.appendChild(el('span', 'diff-label', 'Складність'));
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', 'Складність суперників');
     diffBtns.length = 0;
     for (let i = 0; i < P.DIFFS.length; i++) {
       const b = btn('diff-btn', P.DIFF_LABEL[P.DIFFS[i]]);
@@ -225,22 +278,6 @@
     }
     m.appendChild(box);
     refreshDifficulty();
-  }
-
-  function buildHowTo(m) {
-    const P = PG.progress;
-    if (!P || !P.HOWTO) return;
-    const box = el('div', 'howto');
-    box.id = 'howto';
-    box.appendChild(el('h2', null, 'Як грати'));
-    for (let i = 0; i < P.HOWTO.length; i++) box.appendChild(el('p', null, P.HOWTO[i]));
-    if (PG.coach) {
-      const again = btn('btn-link', 'Пройти підказки на мапі');
-      again.id = 'btn-coach';
-      again.addEventListener('click', function () { PG.coach.rearm(); start(playIdx()); });
-      box.appendChild(again);
-    }
-    m.appendChild(box);
   }
 
   function listBlock(title, items, cls) {
