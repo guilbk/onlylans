@@ -197,7 +197,7 @@
     { id: 'glow_green', name: 'Неон зелений', cat: 'glow', price: 30, c: '#5dff6a' },
     { id: 'glow_violet', name: 'Неон фіолетовий', cat: 'glow', price: 30, c: '#a56bff' },
     { id: 'roof_classic', name: 'Класична шашка', cat: 'roof', price: 15 },
-    { id: 'roof_led', name: 'LED «ТАКСІ»', cat: 'roof', price: 35 },
+    { id: 'roof_led', name: 'Світлодіодна «ТАКСІ»', cat: 'roof', price: 35 },
     { id: 'roof_disco', name: 'Диско-шашка', cat: 'roof', price: 60 },
     { id: 'exhaust_grey', name: 'Сірий дим', cat: 'exhaust', price: 10, c: '#b4bac4' },
     { id: 'exhaust_pink', name: 'Рожевий дим', cat: 'exhaust', price: 25, c: '#ff8fd0' },
