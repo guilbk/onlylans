@@ -44,7 +44,7 @@
     stopTimer();
     if (ambTimer) { root.clearInterval(ambTimer); ambTimer = 0; }
     ctx = c; voices = []; mood = null; moodGain = null; engCur = -1;
-    rb = null; rOut = null; rd.stIn = null; rd.cur = null;
+    rb = null; rOut = null; sy = null; rd.stIn = null; rd.cur = null;
     master = c.createGain();
     comp = c.createDynamicsCompressor();
     comp.threshold.value = -12; comp.knee.value = 8; comp.ratio.value = 12;
@@ -252,6 +252,46 @@
   const chord = (d, t, ns, dur, v, fn) => ns.forEach((n, i) => fn(d, t + i * 0.012, hz(n), dur, v));
   const melody = (ns, bar, k) => ns[(bar * 7 + k * 3) % ns.length] + 12 * (1 + ((bar + k) % 2));
 
+  // night synthwave helpers: feedback-delay send (gated-snare tail, no convolver), detuned bass, saw pad
+  function synSend(d) {
+    if (sy && sy.d === d) return sy.s;
+    const c = ctx, s = c.createGain(), w = c.createGain();
+    s.connect(d); w.gain.value = 0.5; w.connect(d);
+    [[0.19, 0.5], [0.29, 0.42]].forEach((x) => {
+      const dl = c.createDelay(0.5), g = c.createGain(), lp = c.createBiquadFilter();
+      dl.delayTime.value = x[0]; g.gain.value = x[1]; lp.type = 'lowpass'; lp.frequency.value = 2200;
+      s.connect(dl); dl.connect(lp); lp.connect(g); g.connect(dl); lp.connect(w);
+    });
+    sy = { d, s };
+    return s;
+  }
+  function synBass(d, t, f, dur, v) { // two detuned saws + square, filter envelope
+    const g = ctx.createGain(), fl = ctx.createBiquadFilter();
+    fl.type = 'lowpass'; fl.Q.value = 3;
+    fl.frequency.setValueAtTime(1400, t); fl.frequency.exponentialRampToValueAtTime(220, t + dur * 0.8);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    fl.connect(g); g.connect(d);
+    [['sawtooth', -9], ['sawtooth', 9], ['square', 0]].forEach((x) => {
+      const o = ctx.createOscillator(); o.type = x[0]; o.frequency.value = f; o.detune.value = x[1];
+      o.connect(fl); o.start(t); o.stop(t + dur + 0.03);
+    });
+  }
+  function synPad(d, t, ns, dur, v) { // warm saw pad, slow filter sweep up and back
+    const g = ctx.createGain(), fl = ctx.createBiquadFilter();
+    fl.type = 'lowpass'; fl.Q.value = 1.5;
+    fl.frequency.setValueAtTime(450, t); fl.frequency.linearRampToValueAtTime(1900, t + dur * 0.55);
+    fl.frequency.linearRampToValueAtTime(600, t + dur);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + dur * 0.3);
+    g.gain.linearRampToValueAtTime(v, t + dur * 0.8); g.gain.linearRampToValueAtTime(0, t + dur + 0.1);
+    fl.connect(g); g.connect(d);
+    ns.forEach((n) => [-7, 7].forEach((de) => {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz(n); o.detune.value = de;
+      o.connect(fl); o.start(t); o.stop(t + dur + 0.15);
+    }));
+  }
+  const SYM = [[72, 75, 70], [68, 72, 75], [72, 68, 65], [70, 74, 70]]; // plucky melody, one row per bar
+
   // step functions: (dest, t, pos 0..15, bar, variation 0..3, chord, step length s, intensity, drop-out)
   const ST = {
     lofi: { name: 'Lo-Fi FM', bpm: 88, ch: [[57, 60, 64, 67], [50, 53, 57, 60], [55, 59, 62, 65], [48, 52, 55, 59]],
@@ -306,6 +346,31 @@
         }
         if (v === 2 && (p === 2 || p === 8 || p === 11)) pluck(d, t, hz(melody(ch, bar, p)), sd * 3, 0.04);
       } },
+    synth: { name: 'Нічний синт', bpm: 90, night: 1, ch: [[48, 55, 58, 63], [53, 56, 60, 63], [56, 60, 63, 67], [58, 62, 65, 68]],
+      fn(d, t, p, bar, v, ch, sd, I, dr) {
+        const s = synSend(d);
+        if (p === 0) synPad(d, t, ch, sd * 16, 0.014);
+        if (p % 2 === 0) { // pulsing eighths
+          const oct = v > 0 && (p === 6 || p === 14) ? 12 : 0;
+          synBass(d, t, hz(ch[0] - 24 + oct), sd * 1.7, p % 8 === 0 ? 0.055 : 0.042);
+        }
+        if (!dr) {
+          if (p === 0 || p === 8 || (p === 10 && v % 2)) kick(d, t, 0.15);
+          if (p === 4 || p === 12) { // gated snare: short burst, the tail comes from the delays
+            noise(s, { t, f: 2200, dur: 0.16, v: 0.08, q: 0.6, a: 0.002 });
+            noise(s, { t, f: 6500, dur: 0.1, v: 0.035, q: 0.5, a: 0.002, ftype: 'highpass' });
+            tone(s, { t, f: 200, f2: 130, dur: 0.09, v: 0.05 });
+          }
+          if (p % 2 === 0) hat(d, t, p % 4 === 2 ? 0.02 : 0.012);
+          else if (I > 0.6) hat(d, t, 0.007);
+        }
+        if (v === 1 && [0, 3, 6, 9, 12].indexOf(p) >= 0) // sparse arpeggio
+          tone(s, { t, f: hz(ch[(p / 3) % 4 | 0] + 24), dur: sd * 2, v: 0.025, type: 'square', lp: 2400, a: 0.004 });
+        if (v === 2 && (p === 0 || p === 6 || p === 10))
+          tone(s, { t, f: hz(SYM[bar % 4][p === 0 ? 0 : p === 6 ? 1 : 2]), dur: sd * 3, v: 0.04, type: 'sawtooth', lp: 2200, a: 0.004 });
+        if (v === 3 && p >= 8 && p % 2 === 0)
+          tone(s, { t, f: hz(ch[3 - ((p - 8) >> 1)] + 24), dur: sd * 2, v: 0.025, type: 'square', lp: 2600, a: 0.004 });
+      } },
     night: { name: 'Noite FM', bpm: 85, night: 1, ch: [[50, 57, 60, 64], [46, 53, 57, 62], [43, 50, 55, 58], [45, 52, 57, 60]],
       fn(d, t, p, bar, v, ch, sd, I, dr) {
         if (p === 0) padn(d, t, ch, sd * 16, 0.035, 600);
@@ -316,16 +381,20 @@
       } }
   };
   const rd = { seed: 1, mood: 'day', order: [], idx: 0, lvl: 0, tuneAt: 0, stIn: null, stFilt: null, cur: null };
-  let rb = null, rOut = null, stat = null, statF = null;
+  let rb = null, rOut = null, stat = null, statF = null, sy = null;
 
   function rdOrder() { // seeded shuffle; day favours the lively ones, night the slow ones
     const night = rd.mood === 'night';
-    const ids = night ? ['night', 'lofi', 'bossa', 'jazz', 'chill'] : ['chill', 'lofi', 'bossa', 'jazz'];
     let x = (rd.seed >>> 0) || 1;
     const r = () => { x = (x + 0x6d2b79f5) >>> 0; let y = Math.imul(x ^ (x >>> 15), 1 | x); y = (y + Math.imul(y ^ (y >>> 7), 61 | y)) ^ y; return ((y ^ (y >>> 14)) >>> 0) / 4294967296; };
-    const body = night ? ids.slice(1) : ids;
+    const body = night ? ['lofi', 'bossa', 'jazz', 'chill'] : ['chill', 'lofi', 'bossa', 'jazz'];
     for (let i = body.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const q = body[i]; body[i] = body[j]; body[j] = q; }
-    rd.order = night ? ['night'].concat(body) : body;
+    if (night) { // synth first or second, and again later in the loop; Noite FM takes the other slot
+      rd.order = (r() < 0.6 ? ['synth', 'night'] : ['night', 'synth']).concat(body.slice(0, 2), ['synth'], body.slice(2));
+    } else { // day: rare, never first
+      if (r() < 0.4) body.splice(1 + Math.floor(r() * body.length), 0, 'synth');
+      rd.order = body;
+    }
     rd.idx = 0;
   }
   function rdBuild() {
