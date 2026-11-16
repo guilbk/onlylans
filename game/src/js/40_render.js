@@ -344,7 +344,7 @@
   // ---- pins ----
   function pinAt(i) {
     let p = pinPool[i];
-    if (!p) p = pinPool[i] = { o: null, px: 0, py: 0, r: 0, reach: false, fare: 0 };
+    if (!p) p = pinPool[i] = { o: null, px: 0, py: 0, r: 0, reach: false, fare: 0, key: 0 };
     return p;
   }
 
@@ -402,11 +402,17 @@
       }
     }
     pins.length = n;
-    // reachable first, then by fare: labels are given out in this order
+    // reachable first, then nearest to the car (the quickest to take; labels are given out in this order)
+    for (let i = 0; i < n; i++) {
+      const q = pins[i];
+      const dx = q.o.x0 - G.x;
+      const dy = q.o.y0 - G.y;
+      q.key = (q.reach ? 0 : 1e12) + dx * dx + dy * dy;
+    }
     for (let i = 1; i < n; i++) {
       const p = pins[i];
       let j = i - 1;
-      while (j >= 0 && (pins[j].reach ? 1 : 0) * 1e6 + pins[j].fare < (p.reach ? 1 : 0) * 1e6 + p.fare) {
+      while (j >= 0 && pins[j].key > p.key) {
         pins[j + 1] = pins[j];
         j--;
       }

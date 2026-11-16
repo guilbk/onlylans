@@ -192,11 +192,23 @@
     if (PG.screen !== 'play' || !e || !e.G || e.G.over) return;
     if (k === ' ' || k === 'Spacebar') {
       ev.preventDefault();
-      e.G.paused = !e.G.paused;
-      PG.bus.emit('pause', { paused: e.G.paused });
+      pressHud(PG.hud && PG.hud.togglePause, 'btn-pause', function () {
+        e.G.paused = !e.G.paused;
+        PG.bus.emit('pause', { paused: e.G.paused });
+      });
     } else if (k === 'f' || k === 'F' || k === 'а' || k === 'А') {
-      e.G.fast = !e.G.fast;
+      pressHud(PG.hud && PG.hud.toggleFast, 'btn-fast', function () {
+        e.G.fast = !e.G.fast;
+      });
     }
+  }
+
+  // go through the HUD's own control so its state, buttons and events stay in sync
+  function pressHud(method, btnId, fallback) {
+    if (method) { method.call(PG.hud); return; }
+    const b = document.getElementById(btnId);
+    if (b) b.click();
+    else fallback();
   }
 
   function onKeyUp(ev) {
