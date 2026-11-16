@@ -1,0 +1,3 @@
+dist/** linguist-generated=true
+game/fixture/** linguist-generated=true
+*.json linguist-generated=true

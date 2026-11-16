@@ -79,6 +79,12 @@ Gates: Python `ruff check pipeline tests tools && python tools/check_py.py && py
 JS `node tools/engine_test.mjs` and `python tools/smoke.py game/index.html`; per merge
 `git log main..<branch> -i -E --grep='co-authored|claude|generated with|anthropic'` prints nothing.
 
+**Language share (hard rule).** Python is **≥ 50 %** of the repo's code by bytes, as GitHub's language bar
+counts it (Python against JavaScript + CSS + HTML; JSON, Markdown and `data/` do not count; `dist/` is marked
+`linguist-generated` in `.gitattributes`). Anything that can be computed offline lives in Python (`pipeline/`,
+`tools/*.py`); browser JS only plays the game and stays lean (no dead code, no duplicated helpers).
+`python tools/lang_share.py` prints the share and exits 1 below 50 %; it is part of the Python gate.
+
 ## §2 Raw data
 
 Source: UCI Machine Learning Repository dataset 339, «Taxi Service Trajectory — Prediction Challenge,

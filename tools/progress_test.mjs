@@ -1,0 +1,16 @@
+import vm from 'node:vm'; import fs from 'node:fs'; import assert from 'node:assert';
+globalThis.PG={data:{shifts:[{id:'a'},{id:'b'},{id:'c'}]},engine:{config:{difficulty:'normal'}}};
+vm.runInThisContext(fs.readFileSync(new URL('../game/src/js/60_progress.js', import.meta.url),'utf8'));
+const P=PG.progress; P.init();
+assert(P.isOpen(0)&&!P.isOpen(1)&&P.nextIdx()===0);
+assert(P.record({idx:0,shiftId:'a',earned:50,medal:0,rank:9})===true);
+assert(!P.isOpen(1));
+assert(P.record({idx:0,shiftId:'a',earned:40,medal:1,rank:9})===false);
+assert(P.isOpen(1)&&P.nextIdx()===1&&P.best(0).earned===50&&P.best(0).medal===1);
+P.setDifficulty('hard'); assert(PG.engine.config.difficulty==='hard');
+const rows=P.raceTable({rivals:[{id:'ze',name:'Зé',nick:'Акула',color:'#f',total:60,rides:3}]},{earned:50,rides:2});
+assert(rows[0].id==='ze'&&rows[1].player);
+assert(P.placeText({racePlace:2,raceSize:8})==='2-е місце серед 8 таксі на мапі');
+P.reset(); assert(P.hintDue({pin:false,ghost:true,bar:true})===null);
+assert(P.hintDue({pin:true}).n===1); P.markHint(1); assert(P.hintDue({pin:true,ghost:true}).n===2);
+console.log('ok', P.persistent());
