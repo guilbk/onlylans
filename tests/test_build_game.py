@@ -199,3 +199,13 @@ def test_achievements_inlined_last_when_present_and_skipped_when_absent(tmp_path
         '<script type="application/json" id="achievements-data">{"version":1,"x":"\\u003c/p>"}'
         in html
     )
+
+
+def test_heat_inlined_last_when_present_and_skipped_when_absent(tmp_path: Path) -> None:
+    src, data = make_src(tmp_path), write_data(tmp_path)
+    roads, streets, heat = tmp_path / "r.json", tmp_path / "s.png", tmp_path / "heat.json"
+    assert "heat-data" not in bg.build(src, data, roads, streets, None, None, None, heat)
+    heat.write_text('{"version":1,"x":"</p>"}', encoding="utf-8")
+    html = bg.build(src, data, roads, streets, None, None, None, heat)
+    assert html.index("game-data") < html.index("heat-data")
+    assert '<script type="application/json" id="heat-data">{"version":1,"x":"\\u003c/p>"}' in html

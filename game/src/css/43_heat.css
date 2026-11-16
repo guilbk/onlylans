@@ -1,0 +1,46 @@
+/* heat map button and legend: left of the zoom buttons, in the map stage */
+#map-heat {
+  position: absolute;
+  right: 68px;
+  bottom: calc(236px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: 0 6px 18px var(--shadow);
+  font: 700 22px/1 var(--font);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.08s ease-out;
+}
+
+#map-heat[hidden],
+#heat-legend[hidden] {
+  display: none;
+}
+
+#map-heat:active {
+  transform: scale(0.93);
+}
+
+#map-heat.on {
+  outline: 3px solid var(--ok);
+}
+
+#heat-legend {
+  position: absolute;
+  right: 12px;
+  bottom: calc(352px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  max-width: calc(100% - 24px);
+  padding: 6px 12px;
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 4px 12px var(--shadow);
+  color: var(--text);
+  font: 600 13px/1.3 var(--font);
+  pointer-events: none;
+}
