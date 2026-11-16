@@ -2,7 +2,7 @@
   const PG = root.PG = root.PG || {};
 
   const RATE = { regular: 0.05, tourist: 0.15, vip: 0.30, rush: 0.10 };
-  const COMBO_WINDOW = 90;          // game s after the previous drop-off
+  const COMBO_WINDOW = 300;         // game s from the previous drop-off to the next pickup
   const COMBO_K = [1.0, 1.0, 1.1, 1.2, 1.3];
 
   // FNV-1a 32 bit over the UTF-8 bytes of a string.
@@ -89,7 +89,7 @@
     bus.on('pickup', function () {
       const G = curG();
       if (!G) return;
-      const t = evT(G);
+      const t = G.leg.t0;           // the engine has already started the ride: its start is the pickup
       const prevN = G.combo || 0;
       if (prevN > 0 && t <= G.lastDropT + COMBO_WINDOW) {
         G.combo = prevN + 1;

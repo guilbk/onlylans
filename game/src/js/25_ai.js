@@ -17,47 +17,69 @@
   // react scales the personal reaction, attn = share of pins a rival ever notices, duty = share of the
   // shift it works, near = pins within this many metres of the player are always noticed with nearReact.
   const DIFF = {
-    easy: { react: 2.4, radius: 0.7, attn: 0.14, duty: 0.25, speed: 1, near: 0, nearReact: 1 },
-    normal: { react: 1.0, radius: 1.0, attn: 0.20, duty: 0.40, speed: 1.15, near: 2500, nearReact: 0.5 },
-    hard: { react: 0.55, radius: 1.25, attn: 0.28, duty: 0.50, speed: 1.3, near: 3200, nearReact: 0.35 },
+    easy: { react: 2.4, radius: 0.7, attn: 0.14, duty: 0.5, speed: 1, near: 0, nearReact: 1 },
+    normal: { react: 1.0, radius: 1.0, attn: 0.35, duty: 0.88, speed: 1.15, near: 2500, nearReact: 0.5 },
+    hard: { react: 0.55, radius: 1.25, attn: 0.5, duty: 0.95, speed: 1.3, near: 3200, nearReact: 0.35 },
   };
 
-  // S = per-candidate scratch: S.pdist (pickup to player, m), S.inSurge, S.air, S.diff.
+  const HUNT_M = 1500;       // Тіаго only takes pins this close to the player
+  const SHORT_KM = 5;        // Інеш takes nothing longer
+  const NUNO_KM = 4;         // Нуну takes nothing longer
+  const LONG_KM = 3.5;       // Руй takes nothing shorter (unless it touches the airport)
+  const STAND_ETA = 200;     // Фатіма leaves her stand for a street pin only this close in time
+  const STAND_WAIT = 420;    // ... and for a stand call at most this far away in time
+
+  // S = per-candidate scratch: S.pdist (pickup to player, m), S.inSurge, S.live (a surge runs or is about
+  // to), S.air, S.diff. score() <= 0 means "never"; att() scales the share of pins the rival notices.
   // `repos` = seconds between repositioning drives while idle.
   const PERS = {
     ze: {
-      react: 24, repos: 150, travel: 1,
+      react: 16, repos: 150, travel: 0.85,
+      att() { return 2.5; },
       score(o, eta) { return o.fare / (eta + o.d + 30); },
     },
     fatima: {
       react: 40, repos: 600, travel: 1,
+      att(o) { return o.c === 1 ? 3 : 0.5; },
       score(o, eta) {
-        return o.fare / (eta + o.d + 30) * (o.c === 1 ? 1.6 : 1) * (eta < 300 ? 1.15 : 1);
+        const b = o.fare / (eta + o.d + 30);
+        if (o.c === 1) return eta < STAND_WAIT ? b * 1.6 : 0;
+        return eta < STAND_ETA ? b * 0.5 : 0;
       },
     },
     rui: {
       react: 34, repos: 300, travel: 1,
+      att(o, S, night) { return (night ? 1.4 : 1) * (S.air ? 2 : 1) * (o.km >= 6 ? 1.5 : 1); },
       score(o, eta, S) {
-        return o.fare / (eta + o.d + 30) * (1 + o.km / 8) * (S.air ? 1.5 : 1);
+        if (o.km < LONG_KM && !S.air) return 0;
+        return o.fare / (eta + o.d + 30) * (1 + o.km / 4) * (S.air ? 2.5 : 1);
       },
     },
     ines: {
-      react: 16, repos: 120, travel: 1,
-      score(o, eta) { return o.fare / (eta + 0.5 * o.d + 60); },
+      react: 8, repos: 120, travel: 1,
+      att() { return 1.4; },
+      score(o, eta) { return o.km > SHORT_KM ? 0 : o.fare / (eta + 0.5 * o.d + 60); },
     },
     tiago: {
       react: 20, repos: 45, travel: 1,
       score(o, eta, S) {
-        return o.fare / (eta + o.d + 30) * (S.pdist < 1500 && S.diff !== 'easy' ? 1.8 : 1);
+        const b = o.fare / (eta + o.d + 30);
+        if (S.diff === 'easy') return b;
+        return S.pdist < HUNT_M ? b * 2 : 0;
       },
     },
     lurdes: {
       react: 30, repos: 240, travel: 1,
-      score(o, eta, S) { return o.fare / (eta + o.d + 30) * (S.inSurge ? 2 : 1); },
+      att(o, S) { return S.inSurge ? 3 : 0.7; },
+      score(o, eta, S) {
+        const b = o.fare / (eta + o.d + 30);
+        if (!S.live) return b;
+        return S.inSurge ? b * 4 : (eta < STAND_ETA ? b * 0.5 : 0);
+      },
     },
     nuno: {
-      react: 55, repos: 90, travel: 1.25, attn: 0.7,
-      score(o, eta) { return o.km > 5 ? 0 : 1 / (eta + 60); },
+      react: 90, repos: 90, travel: 1.4, attn: 0.5,
+      score(o, eta) { return o.km > NUNO_KM ? 0 : 1 / (eta + 60); },
     },
   };
 
@@ -91,7 +113,7 @@
   function clamp(x, a, b) { return x < a ? a : (x > b ? b : x); }
   function C(name, dflt) { return (PG.C && PG.C[name] !== undefined) ? PG.C[name] : dflt; }
 
-  const scratchS = { pdist: 1e9, inSurge: false, air: false, diff: 'normal' };
+  const scratchS = { pdist: 1e9, inSurge: false, live: false, air: false, diff: 'normal' };
   const scratchPos = { x: 0, y: 0 };
   const scratchPt = { x: 0, y: 0, k: 0, hx: 0, hy: 0 };
 
@@ -400,6 +422,10 @@
     const S = scratchS;
     S.diff = A.dn;
     const sg = sh.surgesM;
+    S.live = false;
+    if (id === 'lurdes' && sg) {
+      for (let j = 0; j < sg.length; j++) if (sg[j].t1 > T && T >= sg[j].t0 - 240) { S.live = true; break; }
+    }
     bestO = null; bestScore = -1; bestEta = 0; bestKind = 0;
     const tEnd = T + A.maxLead;
     for (let i = p.ptr; i < n; i++) {
@@ -445,17 +471,13 @@
       if (near) {
         ready = spawn + NOTICE_K * Rn * (0.8 + 0.4 * mix(p.seed, o.i * 2 + 2));
       } else {
-        let at = D.attn * (pers.attn || 1);
-        if (id === 'rui' && night) at *= 1.4;
-        else if (id === 'fatima' && o.c === 1) at *= 2;
-        else if (id === 'lurdes' && S.inSurge) at *= 2.5;
-        else if (id === 'tiago') at *= 0.6;
+        const at = D.attn * (pers.attn || 1) * (pers.att ? pers.att(o, S, night) : 1);
         if (mix(p.seed, o.i * 2 + 1) >= at) continue;
         ready = spawn + NOTICE_K * R0 * (0.8 + 0.4 * mix(p.seed, o.i * 2 + 2));
       }
       if (ready > T) continue;
       const sc = pers.score(o, eta, S);
-      if (sc > bestScore) { bestScore = sc; bestO = o; bestEta = eta; bestKind = kind; }
+      if (sc > bestScore && sc > 0) { bestScore = sc; bestO = o; bestEta = eta; bestKind = kind; }
     }
   }
 

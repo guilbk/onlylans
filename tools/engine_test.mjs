@@ -58,7 +58,7 @@ function mulberry32(a) {
 }
 
 // ---- the greedy bot ---------------------------------------------------------
-/** Best fare per second among reachable near pins; cruise to the nearest upcoming pin when idle. */
+/** Best fare per second among the pins on the radar (E.reachable); cruise to the best hotspot when none is takeable. */
 function botTick(rec, delay) {
   const G = E.G, orders = G.sh.orders;
   const riding = G.mode === 'ride';
@@ -80,16 +80,14 @@ function botTick(rec, delay) {
     return;
   }
   if (riding) return;
-  let near = null, nd = Infinity;
-  for (let i = 0; i < orders.length; i++) {
-    const o = orders[i];
-    if (o.t <= G.t) continue;
-    if (o.t > G.t + 400) break;
-    const d = Math.hypot(o.x0 - G.x, o.y0 - G.y);
-    if (d < nd) { nd = d; near = o; }
+  // nothing takeable on the radar: drive to the best hotspot (weight / distance); the bot never drives to a pin it cannot see
+  let spot = null, ss = -1;
+  for (const h of (G.ai ? G.ai.hot : [])) {
+    const sc = h.w / (1 + Math.hypot(h.x - G.x, h.y - G.y) / 3000);
+    if (sc > ss) { ss = sc; spot = h; }
   }
-  if (near && nd > 200 && (G.mode === 'idle' || !G.leg || Math.hypot(G.leg.x1 - near.x0, G.leg.y1 - near.y0) > 50)) {
-    if (E.cruiseTo(near.x0, near.y0)) rec.push({ t: G.t, kind: 'cruise', x: near.x0, y: near.y0 });
+  if (spot && Math.hypot(spot.x - G.x, spot.y - G.y) > 200 && (G.mode === 'idle' || !G.leg || Math.hypot(G.leg.x1 - spot.x, G.leg.y1 - spot.y) > 50)) {
+    if (E.cruiseTo(spot.x, spot.y)) rec.push({ t: G.t, kind: 'cruise', x: spot.x, y: spot.y });
   }
 }
 
