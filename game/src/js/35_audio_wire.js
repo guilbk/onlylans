@@ -42,7 +42,7 @@
     const hs = hash(String(e && e.sh && e.sh.id != null ? e.sh.id : e && e.idx != null ? e.idx : 0));
     A.radio.seed(hs); // each shift gets its own station order
     A.music.start(isNight(h) ? 'night' : 'day');
-    rlvl = -1; radioLvl(0.25);
+    rlvl = -1; radioLvl(0.4);
     // rain: about one shift in four, fixed by the shift id
     A.fast.set(false);
     A.ambience.set({
@@ -69,7 +69,7 @@
     A.engine.set(sp, { run: !G.over });
     if (G.over) return;
     A.fast.set(!!G.fast);
-    radioLvl(G.mode === 'ride' ? 1 : 0.25);
+    radioLvl(G.mode === 'ride' ? 1 : 0.4);
     A.ambience.set({ night: nightW(h + (G.t % 3600) / 3600), speed: sp, hour: h });
     A.music.setIntensity(Math.min(1, 0.25 + 0.2 * (G.combo || 0) + (G.t > 6000 ? 0.2 : 0)));
     if (G.t >= CD_FROM && !G.paused) {
