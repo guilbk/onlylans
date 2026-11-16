@@ -85,7 +85,64 @@ def test_check_shift_stops_at_wrong_kinds_and_empty_orders() -> None:
     wrong_kind = {**make_shift(), "orders": "none"}
     assert rules(v.check_shift(wrong_kind, BOUNDS)) == {"shift-types"}
     empty = {**make_shift(), "orders": [], "taxis": [], "ranking": [], "nDrivers": 0}
-    assert "shift-values" in rules(v.check_shift(empty, BOUNDS))
+    assert v.check_shift(empty, BOUNDS) == []  # an empty shift is valid, it only warns
+    half = {**empty, "ranking": [1.0], "taxis": [5], "nDrivers": 1}
+    assert "shift-values" in rules(v.check_shift(half, BOUNDS))
+
+
+def test_empty_shift_warning_does_not_fail_the_run(tmp_path: Path, capsys: Any) -> None:
+    doc = make_doc()
+    doc["shifts"][0].update(orders=[], taxis=[], ranking=[], nDrivers=0, hot=[], surges=[])
+    doc["shifts"][0]["ghost"] = {"taxi": 0, "total": 0.0, "orders": []}
+    assert v.empty_shift_warnings(doc) == ["warning: shift mon-am has no orders"]
+    assert v.empty_shift_warnings([]) == [] and v.empty_shift_warnings({"shifts": 3}) == []
+    path = tmp_path / "d.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    v.main(["--data", str(path), "--roads", str(tmp_path / "none.json")])
+    out = capsys.readouterr()
+    assert f"{path}: OK" in out.out and "mon-am has no orders" in out.err
+
+
+def test_check_shift_values_checks_detour_and_speed_range() -> None:
+    base = make_shift()
+    assert v.check_shift_values(base, "s") == []
+    assert rules(v.check_shift_values({**base, "detour": 1.0}, "s")) == {"shift-values"}
+    assert rules(v.check_shift_values({**base, "detour": 1.9}, "s")) == {"shift-values"}
+    for speeds in ([70.0] * 24, [5.0] * 24):
+        found = v.check_shift_values({**base, "speed_by_hour": speeds}, "s")
+        assert rules(found) == {"shift-values"}
+
+
+def test_speed_tables_must_be_equal_across_shifts() -> None:
+    doc = make_doc()
+    assert v.check_speed_tables(doc["shifts"]) == []
+    doc["shifts"][3]["speed_by_hour"] = [21.0] * 24
+    assert rules(v.validate_data(doc)) == {"shift-values"}
+    assert v.check_speed_tables([5, {"speed_by_hour": "x"}]) == []
+
+
+def test_hot_shares_must_not_add_up_over_one() -> None:
+    shift = make_shift()
+    shift["hot"] = [
+        {"x": 1, "y": 1, "w": 0.7, "name": "A"},
+        {"x": 2, "y": 2, "w": 0.5, "name": "B"},
+    ]
+    assert rules(v.check_places(shift, BOUNDS)) == {"hot"}
+    shift["hot"][1]["w"] = 0.3
+    assert v.check_places(shift, BOUNDS) == []
+
+
+def test_taxis_must_be_unique() -> None:
+    shift = {**make_shift(), "taxis": [101, 101]}
+    assert any("unique" in x for x in v.check_ranking_order(shift))
+
+
+def test_path_out_of_bounds_does_not_add_a_false_end_error() -> None:
+    order = make_shift()["orders"][0]
+    far = [*order[:5], [99999, 0, 10, 0], *order[6:]]
+    found = v.check_order_path(far, BOUNDS)
+    assert "order-bounds" in rules(found)
+    assert not any("path ends at" in x for x in found)
 
 
 def test_check_roads_header_and_bounds() -> None:
@@ -110,6 +167,13 @@ def test_check_roads_edges_checks_shape_index_interior_and_sort() -> None:
     assert rules(v.check_roads_edges([[0, 1, [1]]], 3)) == {"roads-edge"}
     assert rules(v.check_roads_edges([[0, 1, [99999, 0]]], 3)) == {"roads-bounds"}
     assert rules(v.check_roads_edges([[1, 2, []], [0, 1, []]], 3)) == {"roads-sorted"}
+
+
+def test_check_roads_edges_reports_malformed_ends_without_crashing() -> None:
+    assert rules(v.check_roads_edges([[None, 1, []], [0, 1, []]], 3)) == {"roads-index"}
+    assert rules(v.check_roads_edges([["a", 1.5, []]], 3)) == {"roads-index"}
+    assert "roads-index" in rules(v.validate_roads({"v": 1, "unit_m": 2.5, "nodes": [0, 0, 1, 1],
+                                                    "edges": [[None, 1, []]]}))
 
 
 def test_check_json_block_required_escape_and_invalid() -> None:

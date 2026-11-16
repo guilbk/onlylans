@@ -41,15 +41,15 @@ DEFAULT_SHIFT = "mon-am"
 DEFAULT_FRAMES = 120
 DEFAULT_SIZE = 480  # picture side, pixels
 
-SHIFT_S = 7200  # nominal shift length, s
+SHIFT_S = geo.SHIFT_S  # nominal shift length, s
 REPLAY_COVERS_LAST_DROP = True  # run on past SHIFT_S until the last drop-off
-POINT_STEP_S = 15  # seconds between GPS points of a ride (section 4)
+POINT_STEP_S = geo.GPS_STEP_S  # seconds between GPS points of a ride (section 4)
 DEADHEAD_S = 240  # the invented glide before a pickup, s
 MIN_SPAN_M = 1500.0  # smallest view window, m
 VIEW_PAD = 0.15  # margin around the route, share of its larger side
 
 # Order array indices (section 4).
-I_T, I_X0, I_Y0, I_PTS, I_FARE, I_CALL = 0, 1, 2, 5, 8, 9
+I_T, I_PTS, I_FARE, I_CALL = 0, 5, 8, 9
 
 GIF_MAX_BYTES = 1_500_000  # GIF size budget, bytes
 MIN_SIZE = 240  # smallest picture tried when the budget is not met, pixels
@@ -99,6 +99,7 @@ FLAG_CLOTH_TOP = 0.75  # height of the cloth's upper corner, in flag heights
 FLAG_CLOTH_MID = 0.5  # height of the cloth's inner corner, in flag heights
 HALO_MIX = 0.7  # share of the background mixed into the halo of the ghost's head
 MINUTES_PER_HOUR = 60
+S_PER_MIN = 60
 HOURS_PER_DAY = 24
 ALPHA_MAX = 255  # largest 8-bit value
 ALPHA_LEVELS = 256  # number of 8-bit alpha values
@@ -182,7 +183,7 @@ def clock_text(start_local: str, t_s: float) -> str:
         Hours and minutes; the clock wraps at midnight.
     """
     hh, mm = (int(p) for p in start_local.split(" ")[1].split(":"))
-    total = (hh * MINUTES_PER_HOUR + mm + int(t_s // MINUTES_PER_HOUR)) % (
+    total = (hh * MINUTES_PER_HOUR + mm + int(t_s // S_PER_MIN)) % (
         HOURS_PER_DAY * MINUTES_PER_HOUR
     )
     return f"{total // MINUTES_PER_HOUR:02d}:{total % MINUTES_PER_HOUR:02d}"
@@ -262,26 +263,6 @@ def money_text(value: float) -> str:
 # ---------------------------------------------------------------- the ghost's timeline
 
 
-def ride_points_m(order: Order, unit_m: float) -> list[Point]:
-    """Decode the points of a ride to map-frame metres.
-
-    Args:
-        order: Order array; field 5 holds flattened deltas, point 0 is ``(x0, y0)``.
-        unit_m: Metres per map unit (``unit_m`` of the file).
-
-    Returns:
-        ``len(deltas) / 2 + 1`` points in metres.
-    """
-    x, y = order[I_X0], order[I_Y0]
-    pts = [(x * unit_m, y * unit_m)]
-    deltas = order[I_PTS]
-    for i in range(0, len(deltas), 2):
-        x += deltas[i]
-        y += deltas[i + 1]
-        pts.append((x * unit_m, y * unit_m))
-    return pts
-
-
 def build_timeline(orders: Sequence[Order], unit_m: float, end_s: float) -> list[Leg]:
     """Build the ghost's legs from its orders.
 
@@ -301,7 +282,7 @@ def build_timeline(orders: Sequence[Order], unit_m: float, end_s: float) -> list
     prev_end_t = 0.0
     here: Point | None = None
     for o in sorted(orders, key=lambda x: x[I_T]):
-        pts = ride_points_m(o, unit_m)
+        pts = geo.decode_path(o, unit_m)
         t0 = float(o[I_T])
         if here is None:
             legs.append(Leg("wait", 0.0, t0, (pts[0],)))
@@ -685,7 +666,7 @@ def draw_orders(draw: ImageDraw.ImageDraw, scene: Scene, side: int, t_s: float) 
     u = side / BASE_SIZE
     for o in scene.orders:
         rgb = CALL_RGB.get(o[I_CALL], MUTED)
-        pts = ride_points_m(o, scene.unit_m)
+        pts = geo.decode_path(o, scene.unit_m)
         taken = o[I_T] <= t_s
         _flag(draw, scene_px(scene, side, pts[-1]), u, rgb if taken else mix(rgb, BACKGROUND, DIM))
         _pin(draw, scene_px(scene, side, pts[0]), u, mix(rgb, BACKGROUND, DIM) if taken else rgb)

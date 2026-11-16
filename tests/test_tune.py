@@ -97,7 +97,7 @@ def test_grids_vary_only_their_levers() -> None:
     assert all(s.rivals["normal"] == base.rivals["normal"] for s in hard)
 
 
-def test_evaluate_and_report_on_a_tiny_file(tmp_path: Path) -> None:
+def tiny_file(tmp_path: Path) -> Path:
     raw = {
         "unit_m": 5, "shifts": [{
             "id": "mon-am", "start_hour": 8, "detour": 1.4, "speed_by_hour": [20.0] * 24,
@@ -109,9 +109,23 @@ def test_evaluate_and_report_on_a_tiny_file(tmp_path: Path) -> None:
     }  # fmt: skip
     path = tmp_path / "d.json"
     path.write_text(json.dumps(raw), encoding="utf-8")
+    return path
+
+
+def test_evaluate_and_report_on_a_tiny_file(tmp_path: Path) -> None:
+    path = tiny_file(tmp_path)
     cands = tune.sweep(tune.easy_grid(sim.Settings())[:2], "easy", path, 1, None)
     assert len(cands) == 2 and cands[0].summaries["easy"].n == 1
     lines = tune.report("easy", "easy", cands, 1)
     assert lines[0].startswith("== easy") and any("any #1" in x for x in lines)
     row = tune.format_row("x", "easy", cands[0])
     assert "lead 1200/1200/900" in row and "rad 6000/4500/3000" in row and "rivals near" in row
+
+
+def test_main_exits_1_when_the_lead_is_below_the_floor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = str(tiny_file(tmp_path))
+    argv = ["--data", data, "--workers", "1", "--floor", "--lead", "100,100,100"]
+    assert tune.main(argv) == 1
+    assert "reachability floor" in capsys.readouterr().out

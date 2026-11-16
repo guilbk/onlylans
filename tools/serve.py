@@ -3,6 +3,10 @@
 ``python tools/serve.py [--port 8000] [--build] [--dir game]`` optionally rebuilds the game, then
 serves the folder on 0.0.0.0 (threaded ``http.server``). No network calls are made to find the
 LAN address: a UDP socket "connect" to a private address only asks the OS for its route.
+
+``tools/`` is not a package: the sibling import ``from qr import ...`` works because the script's
+folder is on ``sys.path`` (``python tools/serve.py``); tests and other tools add ``tools/`` to
+``sys.path`` before they import this module.
 """
 
 from __future__ import annotations
@@ -14,7 +18,9 @@ import socket
 import socketserver
 import subprocess
 import sys
+from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from os import PathLike
 from pathlib import Path
 
 from qr import QRError, encode, render_text
@@ -26,18 +32,29 @@ BIND_HOST = "0.0.0.0"  # all interfaces: the phone must reach it over the LAN
 PROBE_ADDR = ("10.255.255.255", 1)  # private, never contacted: UDP connect sends no packet
 LOOPBACK = "127.0.0.1"
 PORT_MAX = 65535
+REQUEST_TIMEOUT_S = 10  # seconds a request may take to arrive
 HINT = "Відкрий на телефоні в тій самій Wi-Fi"
 EXIT_OK = 0
 EXIT_FAIL = 1
 
 
 class NoCacheHandler(SimpleHTTPRequestHandler):
-    """Static file handler that tells the phone browser never to cache (always the fresh build)."""
+    """Static file handler: no caching (always the fresh build), no folder listing, 10 s timeout."""
+
+    timeout = REQUEST_TIMEOUT_S  # a client that stalls mid-request frees its thread
 
     def end_headers(self) -> None:
         """Add ``Cache-Control: no-store`` before the headers are sent."""
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
+
+    def list_directory(self, path: str | PathLike[str]) -> None:
+        """Refuse to list a folder: only the files the game links to are served on the LAN.
+
+        Args:
+            path: The folder asked for (unused).
+        """
+        self.send_error(HTTPStatus.NOT_FOUND, "No such file")
 
 
 class LanServer(ThreadingHTTPServer):
@@ -238,14 +255,17 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dir.is_dir():
         print(f"no such folder: {args.dir}", file=sys.stderr)
         return EXIT_FAIL
+    if not 0 <= args.port <= PORT_MAX:
+        print(f"port must be 0..{PORT_MAX}, got {args.port}", file=sys.stderr)
+        return EXIT_FAIL
     try:
-        url = build_url(args.host or detect_lan_ip(), args.port)
         server = make_server(args.dir, args.port)
+        url = build_url(args.host or detect_lan_ip(), server.server_port)  # the real port
     except (OSError, ValueError) as err:
         print(f"cannot start the server: {err}", file=sys.stderr)
         return EXIT_FAIL
     print(banner(url, ansi=not args.plain and sys.stdout.isatty()))
-    print(f"Serving {args.dir} on {BIND_HOST}:{args.port}; Ctrl+C to stop")
+    print(f"Serving {args.dir} on {BIND_HOST}:{server.server_port}; Ctrl+C to stop")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

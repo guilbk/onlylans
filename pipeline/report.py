@@ -28,7 +28,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scipy.ndimage import gaussian_filter
 
-from pipeline import geo, places, shifts
+from pipeline import geo, places, raw, shifts
 
 DEFAULT_WEEK = Path("data/work/week.csv")
 DEFAULT_DATA = Path("game/game_data.json")
@@ -41,7 +41,7 @@ HEATMAP_PNG = "heatmap.png"
 
 HOURS_PER_DAY = 24
 CENTS_PER_EUR = 100
-M_PER_KM = 1000.0
+M_PER_KM = geo.M_PER_KM
 PERCENT = 100.0
 TOP_HOURS = 5  # busiest hours listed in the demand section
 CALL_LETTERS = ("A", "B", "C")
@@ -49,12 +49,12 @@ CALL_TITLES = ("A: виклик диспетчера", "B: стоянка", "C: 
 TOP_N = 10
 
 # Filter rules in the order geo.trip_ok checks them; the first failed rule is reported.
-RULE_BAD_JSON = "bad_json"
-RULE_POINTS = "points"
-RULE_BOUNDS = "bounds"
-RULE_STEP = "step"
-RULE_LENGTH = "length"
-RULE_STRAIGHT = "straight"
+RULE_BAD_JSON = geo.RULE_BAD_JSON
+RULE_POINTS = geo.RULE_POINTS
+RULE_BOUNDS = geo.RULE_BOUNDS
+RULE_STEP = geo.RULE_STEP
+RULE_LENGTH = geo.RULE_LENGTH
+RULE_STRAIGHT = geo.RULE_STRAIGHT
 RULE_MISSING = "missing"
 RULE_ORDER = (
     RULE_MISSING,
@@ -181,51 +181,6 @@ class HotRow(NamedTuple):
 # --------------------------------------------------------------------------------------------
 
 
-def valid_point(p: object) -> bool:
-    """Tell whether a value is a usable lon/lat point.
-
-    Args:
-        p: Any value.
-
-    Returns:
-        True if ``p`` is a 2-element list or tuple of finite numbers (degrees).
-    """
-    if not isinstance(p, list | tuple) or len(p) != 2:
-        return False
-    return all(
-        isinstance(v, int | float) and not isinstance(v, bool) and math.isfinite(v) for v in p
-    )
-
-
-def reject_reason(pts: object) -> str | None:
-    """Find the first ``trip_ok`` rule that a lon/lat polyline breaks.
-
-    Mirrors ``geo.trip_ok`` rule by rule and in the same order. Geometry rules (step, length,
-    straight) are only evaluated when there are at least two valid in-map points.
-
-    Args:
-        pts: Parsed POLYLINE value, expected ``[[lon, lat], ...]`` in degrees.
-
-    Returns:
-        The key of the first failed rule (steps in metres, length in km), None if it passes.
-    """
-    if not isinstance(pts, list):
-        return RULE_BAD_JSON
-    if not geo.MIN_POINTS <= len(pts) <= geo.MAX_POINTS:
-        return RULE_POINTS
-    if not all(valid_point(p) and geo.in_map(p[0], p[1]) for p in pts):
-        return RULE_BOUNDS
-    steps_m = [
-        geo.haversine(a[0], a[1], b[0], b[1]) * M_PER_KM for a, b in zip(pts, pts[1:], strict=False)
-    ]
-    if max(steps_m) > geo.MAX_STEP_M:
-        return RULE_STEP
-    if not geo.MIN_PATH_KM <= sum(steps_m) / M_PER_KM <= geo.MAX_PATH_KM:
-        return RULE_LENGTH
-    straight_km = geo.haversine(pts[0][0], pts[0][1], pts[-1][0], pts[-1][1])
-    return RULE_STRAIGHT if straight_km < geo.MIN_STRAIGHT_KM else None
-
-
 def row_reason(row: Mapping[str, str]) -> str | None:
     """Find the reject rule of a week.csv row (missing flag, bad JSON, then the trip rules).
 
@@ -241,7 +196,7 @@ def row_reason(row: Mapping[str, str]) -> str | None:
         pts = json.loads(row["POLYLINE"])
     except ValueError:
         return RULE_BAD_JSON
-    return reject_reason(pts)
+    return geo.reject_reason(pts)
 
 
 def filter_table(total: int, rejected: Mapping[str, int]) -> list[tuple[str, int, float]]:
@@ -269,7 +224,6 @@ def scan_week(week: Path) -> tuple[list[shifts.Trip], int, Counter[str]]:
     Returns:
         ``(valid trips, number of rows read, rejected rows per rule key)``.
     """
-    csv.field_size_limit(sys.maxsize)
     trips: list[shifts.Trip] = []
     rejected: Counter[str] = Counter()
     rows = 0
@@ -1134,6 +1088,7 @@ def main(argv: list[str] | None = None) -> int:
         if not path.is_file():
             print(f"missing input file: {path}", file=sys.stderr)
             return 1
+    raw.set_csv_limit()
     for path in write_report(args.week, args.data, args.out):
         print(f"wrote {path} ({path.stat().st_size} bytes)")
     return 0

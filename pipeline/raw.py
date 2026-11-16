@@ -25,6 +25,24 @@ EXPECTED_SHA256 = "a33e2a5e145607ae2bad0db5d21b7548c88b7e0f9db1ce15839f24c4c61f8
 CSV_FIELD_LIMIT = 2**31 - 1
 
 
+def set_csv_limit() -> None:
+    """Lift the csv module's field limit: the POLYLINE column holds long JSON strings."""
+    csv.field_size_limit(CSV_FIELD_LIMIT)
+
+
+def write_atomic(path: Path, data: bytes) -> None:
+    """Write a file through a temp file and a rename, so a crash never leaves a half file.
+
+    Args:
+        path: Target file; its folder is created if missing.
+        data: The bytes to write.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(path)
+
+
 def file_sha256(path: Path) -> str:
     """Compute the SHA-256 of a file, reading it in 8 MB chunks.
 
@@ -154,7 +172,7 @@ def iter_train_rows(train_zip: Path) -> Iterator[list[str]]:
     Yields:
         The header row first, then one list of string fields per data row.
     """
-    csv.field_size_limit(CSV_FIELD_LIMIT)
+    set_csv_limit()
     with zipfile.ZipFile(train_zip) as archive, archive.open(TRAIN_CSV_MEMBER) as raw:
         text = io.TextIOWrapper(raw, encoding="utf-8", newline="")
         yield from csv.reader(text)

@@ -20,10 +20,10 @@ from pathlib import Path
 from typing import Any, NamedTuple
 from zoneinfo import ZoneInfo
 
-from pipeline import geo, places
+from pipeline import geo, places, raw
 
 TZ = ZoneInfo("Europe/Lisbon")
-SHIFT_S = 7200  # shift length, game seconds
+SHIFT_S = geo.SHIFT_S
 UNIT_M = 5  # metres per map unit
 UNIT_M_FALLBACK = 10  # metres per map unit if the 5 m file is too big
 MAX_BYTES = 5_000_000  # size budget of game_data.json, bytes
@@ -31,7 +31,7 @@ GENERATED = "2014-05-12/2014-05-19 UCI339"  # the ``generated`` stamp (no timest
 MONDAY = (2014, 5, 12)  # year, month, day of the first campaign day
 SUNDAY_DAY = 18  # day of May on which Saturday's night shift starts (Sun 00:00)
 MIN_ORDERS_WARN = 150  # a shift with fewer orders prints a warning
-GPS_STEP_S = 15  # seconds between two GPS points of a trip
+GPS_STEP_S = geo.GPS_STEP_S
 HOURS_PER_DAY = 24  # local hours in a day
 S_PER_HOUR = 3600.0  # seconds in an hour
 SPEED_MIN, SPEED_MAX = 12.0, 60.0  # clamp of the median speed per hour, km/h
@@ -138,7 +138,8 @@ def parse_row(row: dict[str, str]) -> Trip | None:
 
     Returns:
         A :class:`Trip` (km along the polyline, timestamp in unix seconds), or None if the row
-        is flagged missing, has no valid polyline or fails :func:`geo.trip_ok`.
+        is flagged missing, has no valid polyline, fails :func:`geo.trip_ok`, or has an unknown
+        call type, taxi id or timestamp.
     """
     if row["MISSING_DATA"].strip().lower() == "true":
         return None
@@ -148,13 +149,18 @@ def parse_row(row: dict[str, str]) -> Trip | None:
         return None
     if not isinstance(pts, list) or not geo.trip_ok(pts):
         return None
-    ts = int(row["TIMESTAMP"])
+    try:
+        ts = int(row["TIMESTAMP"])
+        taxi = int(row["TAXI_ID"])
+        call = CALL_INDEX[row["CALL_TYPE"].strip()]
+    except (KeyError, ValueError):  # unknown call type, TAXI_ID "NA", broken timestamp
+        return None
     stand_raw = row["ORIGIN_STAND"].strip()
     return Trip(
         trip_id=row["TRIP_ID"],
-        taxi=int(row["TAXI_ID"]),
+        taxi=taxi,
         ts=ts,
-        call=CALL_INDEX[row["CALL_TYPE"].strip()],
+        call=call,
         stand=int(stand_raw) if stand_raw.isdigit() else 0,
         pts=pts,
         km=geo.path_km(pts),
@@ -171,7 +177,6 @@ def load_trips(week: Path) -> list[Trip]:
     Returns:
         All trips passing the game filters, in file order.
     """
-    csv.field_size_limit(sys.maxsize)
     trips: list[Trip] = []
     with week.open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
@@ -519,22 +524,26 @@ def main(argv: list[str] | None = None) -> int:
         argv: Arguments (default ``sys.argv[1:]``).
 
     Returns:
-        0 on success.
+        0 on success, 1 if the file does not fit the size budget.
     """
     ap = argparse.ArgumentParser(description="Build game/game_data.json from week.csv")
     ap.add_argument("--week", type=Path, required=True, help="path to data/work/week.csv")
     ap.add_argument("--out", type=Path, default=Path("game/game_data.json"))
     args = ap.parse_args(argv)
+    raw.set_csv_limit()
     trips = load_trips(args.week)
     text = build_text(trips)
+    size = len(text.encode("utf-8"))
+    if size > MAX_BYTES:
+        print(f"error: game_data is {size} bytes, over the {MAX_BYTES} budget", file=sys.stderr)
+        return 1
     data = json.loads(text)
     for s in data["shifts"]:
         if len(s["orders"]) < MIN_ORDERS_WARN:
             print(f"warning: {s['id']} has only {len(s['orders'])} orders", file=sys.stderr)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(text, encoding="utf-8")
+    raw.write_atomic(args.out, text.encode("utf-8"))
     print("\n".join(table_rows(data)))
-    print(f"{len(trips)} valid trips, {len(text.encode('utf-8'))} bytes -> {args.out}")
+    print(f"{len(trips)} valid trips, {size} bytes -> {args.out}")
     return 0
 
 

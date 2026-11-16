@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import json
-import random
 from pathlib import Path
 
 import numpy as np
@@ -21,15 +20,6 @@ TS_MON_08 = 1399878000  # 2014-05-12 08:00 Europe/Lisbon (07:00 UTC)
 def line(n: int = 8, lon: float = LON0, lat: float = LAT0) -> list[list[float]]:
     """Return a straight north-going polyline of n points, about 300 m apart."""
     return [[lon, lat + i * DLAT] for i in range(n)]
-
-
-def zigzag(n: int, leg: int = 30) -> list[list[float]]:
-    """Return n points going north and south in legs of `leg` steps (long path, short straight)."""
-    out = []
-    for i in range(n):
-        k = i % (2 * leg)
-        out.append([LON0, LAT0 + (k if k <= leg else 2 * leg - k) * DLAT])
-    return out
 
 
 def make_trip(
@@ -61,61 +51,6 @@ def make_shift(sid: str, orders: int, ghost: float, median: float, hot: list[dic
 
 
 # --- filter rules --------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("pts", "rule"),
-    [
-        (line(), None),
-        ("not a list", report.RULE_BAD_JSON),
-        (None, report.RULE_BAD_JSON),
-        ([], report.RULE_POINTS),
-        (line(3), report.RULE_POINTS),
-        (line(241), report.RULE_POINTS),
-        ([*line(4)[:3], [LON0, "x"]], report.RULE_BOUNDS),
-        ([*line(4)[:3], [-9.5, LAT0]], report.RULE_BOUNDS),
-        ([*line(4)[:3], [LON0]], report.RULE_BOUNDS),
-        ([*line(4)[:3], [True, LAT0]], report.RULE_BOUNDS),
-        (
-            [[LON0, LAT0], [LON0, LAT0 + 0.0027], [LON0, LAT0 + 0.0135], [LON0, LAT0 + 0.0162]],
-            report.RULE_STEP,
-        ),
-        ([[LON0, LAT0 + i * 0.0001] for i in range(6)], report.RULE_LENGTH),
-        (zigzag(120), report.RULE_LENGTH),
-        (
-            [[LON0, LAT0], [LON0, LAT0 + DLAT], [LON0 + 0.003, LAT0 + DLAT], [LON0 + 0.003, LAT0]],
-            report.RULE_STRAIGHT,
-        ),
-    ],
-)
-def test_reject_reason_cases(pts: object, rule: str | None) -> None:
-    """Each synthetic polyline is rejected by exactly the expected first rule."""
-    assert report.reject_reason(pts) == rule
-
-
-def test_reject_reason_agrees_with_trip_ok() -> None:
-    """reject_reason is None exactly when geo.trip_ok accepts, on seeded random polylines."""
-    rng = random.Random(7)
-    for _ in range(400):
-        n = rng.choice([2, 4, 6, 20, 60, 250])
-        step = rng.choice([0.0002, 0.001, 0.003, 0.007])
-        lon, lat = LON0 + rng.uniform(-0.02, 0.02), LAT0 + rng.uniform(-0.02, 0.02)
-        pts = []
-        for _i in range(n):
-            lon += rng.uniform(-step, step)
-            lat += rng.uniform(-step, step)
-            pts.append([lon, lat])
-        assert (report.reject_reason(pts) is None) == geo.trip_ok(pts)
-
-
-def test_valid_point() -> None:
-    """Only 2-element lists/tuples of finite numbers are points."""
-    assert report.valid_point([1.0, 2.0])
-    assert report.valid_point((1, 2))
-    assert not report.valid_point([1.0])
-    assert not report.valid_point([1.0, float("nan")])
-    assert not report.valid_point("ab")
-    assert not report.valid_point([True, 1.0])
 
 
 def test_row_reason() -> None:

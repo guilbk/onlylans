@@ -1,4 +1,5 @@
 import http.client
+import socket
 import sys
 import threading
 from pathlib import Path
@@ -60,7 +61,7 @@ def test_detect_lan_ip(monkeypatch: pytest.MonkeyPatch) -> None:
     assert serve.detect_lan_ip() == "127.0.0.1"
 
 
-def test_route_ip_sends_nothing_and_returns_ipv4_or_none() -> None:
+def test_route_ip_returns_ipv4_or_none() -> None:
     got = serve.route_ip()
     assert got is None or serve._parse(got) is not None
 
@@ -130,6 +131,8 @@ def test_main_serves_and_prints_the_banner(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class Stop:
+        server_port = 8123
+
         def serve_forever(self) -> None:
             raise KeyboardInterrupt
 
@@ -141,3 +144,70 @@ def test_main_serves_and_prints_the_banner(
     out = capsys.readouterr().out
     assert code == 0
     assert "http://192.168.7.7:8123/" in out and serve.HINT in out and "stopped" in out
+
+
+def test_main_prints_the_real_port_when_asked_for_port_0(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class Stop:
+        server_port = 54321
+
+        def serve_forever(self) -> None:
+            raise KeyboardInterrupt
+
+        def server_close(self) -> None:
+            pass
+
+    monkeypatch.setattr(serve, "make_server", lambda directory, port: Stop())
+    assert serve.main(["--dir", str(tmp_path), "--port", "0", "--host", "192.168.7.7"]) == 0
+    assert "http://192.168.7.7:54321/" in capsys.readouterr().out
+
+
+def test_main_rejects_a_port_out_of_range(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert serve.main(["--dir", str(tmp_path), "--port", "70000"]) == 1
+    assert "port must be" in capsys.readouterr().err
+
+
+def run_server(directory: Path) -> tuple[serve.LanServer, threading.Thread]:
+    server = serve.make_server(directory, 0, host="127.0.0.1")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def test_folder_listing_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "secret.txt").write_text("x", encoding="utf-8")
+    server, thread = run_server(tmp_path)
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        for path in ("/", "/sub/"):
+            conn.request("GET", path)
+            res = conn.getresponse()
+            assert res.status == 404
+            assert b"secret.txt" not in res.read()
+        conn.request("GET", "/sub/secret.txt")
+        assert conn.getresponse().status == 200  # a file itself is still served
+        conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_a_stalled_request_is_dropped_after_the_timeout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    assert serve.NoCacheHandler.timeout == serve.REQUEST_TIMEOUT_S == 10
+    monkeypatch.setattr(serve.NoCacheHandler, "timeout", 0.3)
+    server, thread = run_server(tmp_path)
+    try:
+        with socket.create_connection(("127.0.0.1", server.server_port), timeout=5) as sock:
+            sock.sendall(b"GET / HTTP/1.1\r\nHost: x")  # never finished
+            assert sock.recv(1024) == b""  # the server closed the connection
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
