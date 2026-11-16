@@ -184,7 +184,7 @@ h2{font-size:clamp(21px,3.4vw,28px);margin:0 0 4px;letter-spacing:-.01em}
 .ad-r{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .ad h3{margin:0;font-size:19px;line-height:1.2;font-weight:700}
 .price{flex:none;background:var(--tag);color:#1c1a2e;font-weight:800;font-size:20px;padding:5px 12px 5px 18px;clip-path:polygon(10px 0,100% 0,100% 100%,10px 100%,0 50%);line-height:1.2}
-.price.own{background:var(--off);color:var(--offink);font-size:14px;padding:8px 12px 8px 18px}
+.price.own{background:var(--off);color:var(--offink);font-size:13px;line-height:1.25;max-width:148px;padding:7px 10px 7px 18px}
 .sel{margin:6px 0 0;font:600 13px/1.3 system-ui,sans-serif;color:var(--muted)}
 .dsc{margin:8px 0 12px;font-size:16px;line-height:1.4}
 .btn{width:100%;min-height:52px;border-radius:14px;border:0;font:800 18px/1 Rockwell,Georgia,serif;display:flex;align-items:center;justify-content:center;gap:8px}
@@ -852,7 +852,7 @@ function olxPhone(st,th){
   const N=th==='night';
   const cards=SKIN_IDS.map((id,i)=>{
     const S=SKINS[id],A=ADS[id],owned=S.price===0,sel=id===state.skin,can=WALLET>=S.price;
-    let price=owned?`<div class="price own">У гаражі</div>`:`<div class="price">${S.price} €</div>`;
+    let price=owned?`<div class="price own">1500 $, торг, не бита (майже)</div>`:`<div class="price">${S.price} €</div>`;
     let act;
     if(sel)act=`<button type="button" class="btn on"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Обрано</button>`;
     else if(owned)act=`<button type="button" class="btn buy">Обрати</button>`;
@@ -897,7 +897,7 @@ function secGarage(){
   return`<section id="s3"><h2>Гараж, стиль ${st}</h2><p class="sub">Великі версії для картки магазину (завдовжки 200 пікселів) і справжні 40 пікселів поряд.</p><div class="gar">${cards}</div></section>`;
 }
 function secShop(){
-  return`<section id="s4"><h2>ОЛЕКС: магазин скінів</h2><p class="sub">Свій вигляд, не схожий на справжні дошки оголошень. Гаманець ${WALLET} €: Порту класик і Нью-Йорк можна купити, кеб поки що ні.</p><div class="olxs">${olxPhone(state.style,'day')}${olxPhone(state.style,'night')}</div></section>`;
+  return`<section id="s4"><h2>ОЛЕКС: магазин скінів</h2><p class="sub">Свій вигляд, не схожий на справжні дошки оголошень. Гаманець ${WALLET} €: Матіз, Порту класик, Гольф, Нью-Йорк і рікшу можна купити, кеб, електро і коня поки що ні.</p><div class="olxs">${olxPhone(state.style,'day')}${olxPhone(state.style,'night')}</div></section>`;
 }
 function secMotion(){
   const st=state.style,th=resolved(),N=th==='night';
