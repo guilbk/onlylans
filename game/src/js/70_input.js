@@ -4,6 +4,8 @@
 
   const DRAG_PX = 6;            // movement beyond this is a pan, not a tap
   const WHEEL_K = 0.0015;
+  const PICK_TOUCH = 26;        // px: a finger picks the nearest pin within this radius
+  const PICK_MOUSE = 16;
   const INTERACTIVE = 'button, a, input, select, textarea, label, #order-card, .screen, [data-no-map]';
 
   let mapEl = null;
@@ -69,7 +71,10 @@
 
   function handleTap(ev) {
     if (!localXY(ev, tapPt).inside) return;
-    const pin = PG.render.nearestPin(tapPt.x, tapPt.y);
+    const touch = ev.pointerType !== 'mouse';
+    if (PG.orders && PG.orders.blocks && PG.orders.blocks(ev.clientX, ev.clientY)) return;  // next to the open card
+    const pin = PG.render.nearestPin(tapPt.x, tapPt.y, touch ? PICK_TOUCH : PICK_MOUSE);
+    if (PG.bus) PG.bus.emit('tap:fx', { x: tapPt.x, y: tapPt.y, pin: !!pin });
     if (pin) { tapPin(pin); return; }
     const e = liveGame();
     if (!e) return;
@@ -77,6 +82,8 @@
       PG.orders.tap(null);   // a tap elsewhere clears the selection
       return;
     }
+    const z = PG.render.zone;
+    if (tapPt.y < z.top || tapPt.y > z.bottom) return;    // the HUD strip and the buttons' gaps are not the map
     const w = PG.render.screenToWorld(tapPt.x, tapPt.y);
     e.cruiseTo(w.x, w.y);
   }
@@ -153,7 +160,7 @@
     const t = ev.target;
     const blocked = t && t.closest && t.closest(INTERACTIVE);
     let pin = null;
-    if (!blocked && localXY(ev, movePt).inside) pin = PG.render.nearestPin(movePt.x, movePt.y);
+    if (!blocked && localXY(ev, movePt).inside) pin = PG.render.nearestPin(movePt.x, movePt.y, PICK_MOUSE);
     mapEl.classList.toggle('over-pin', !!pin);
     const o = pin ? pin.o : null;
     if (o === hoverO) return;

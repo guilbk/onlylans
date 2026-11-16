@@ -15,7 +15,7 @@
     hovered: null,    // order under the mouse (or null)
     touch: false,     // last pointer was touch/pen
     tapped: false,    // tap() was called during the current gesture
-    card: null, els: null, cardKey: '', cardW: 0, cardH: 0, cardMode: '',
+    card: null, els: null, cardKey: '', cardW: 0, cardH: 0, cardMode: '', cand: -1, phoneTop: false,
     route: null, routeOrd: null, routeFx: 0, routeFy: 0, routeAt: 0, routeRoads: false,
     hinted: false, inited: false
   };
@@ -25,6 +25,7 @@
     hover: hover,
     tap: tap,
     clear: clear,
+    blocks: blocks,
     selected: null
   };
 
@@ -44,6 +45,8 @@
     S.route = null; S.routeOrd = null;
     if (S.card) S.card.className = 'order-card hidden';
     S.cardKey = '';
+    S.cardMode = '';        // the class list was reset, so the next place() must run in full
+    S.cand = -1;
   }
 
   function hover(o) {
@@ -176,47 +179,90 @@
       els.wait.className = pv.ok ? 'oc-wait' : 'oc-wait oc-bad';
       els.btn.style.display = selected && pv.ok ? '' : 'none';
       els.btn.textContent = g.mode === 'ride' ? 'Беру наступним' : 'Беру';
-      S.card.className = 'order-card' + (selected ? ' sel' : ' hov');
+      const cl = S.card.classList;
+      cl.remove('hidden');
+      cl.toggle('sel', selected);
+      cl.toggle('hov', !selected);
+      cl.toggle('dock', S.stage.clientWidth <= 640);   // measure at the final width
+      S.cardMode = '';
       S.cardW = S.card.offsetWidth; S.cardH = S.card.offsetHeight;
     }
     place(px, py);
   }
 
-  // Keep the card on screen and off the player's car.
-  function place(px, py) {
-    const st = S.stage, g = G(), c = S.card;
-    if (!st) return;
-    const W = st.clientWidth, H = st.clientHeight;
-    const car = PG.render.P(g.x, g.y);
-    const cx = car.x, cy = car.y;
-    const w = S.cardW, h = S.cardH, m = 8;
-    const phone = W <= 640;
-    let mode, left, top;
-    if (phone) {
-      // docked bottom; switch to the top if the car would be hidden
-      const dockH = parseFloat(st.style.getPropertyValue('--dock-h')) || 0;
-      const botTop = H - h - m - dockH;
-      const hidden = cy > botTop - 14 && cy < H;
-      mode = hidden ? 'top' : 'bottom';
-      left = 0;
-      top = mode === 'top' ? Math.round(m + (parseFloat(st.style.getPropertyValue('--hud-h')) || 0)) : 0;
-    } else {
-      mode = 'float';
-      left = px + 22; top = py - h / 2;
-      if (left + w > W - m) left = px - 22 - w;
-      if (left < m) left = m;
-      if (top < m) top = m;
-      if (top + h > H - m) top = H - m - h;
-      if (cx > left - 14 && cx < left + w + 14 && cy > top - 14 && cy < top + h + 14) {
-        top = cy < H / 2 ? H - m - h : m;                  // jump to the far side of the car
-      }
-      left = Math.round(left); top = Math.round(top);
+  // True when a tap at client (x, y) lands on or right next to the open card:
+  // such a tap must not clear the selection or send the car cruising.
+  function blocks(x, y) {
+    if (!S.card || !S.card.classList.contains('sel')) return false;
+    const r = S.card.getBoundingClientRect(), m = 10;
+    return x >= r.left - m && x <= r.right + m && y >= r.top - m && y <= r.bottom + m;
+  }
+
+  function hits(x, y, w, h, bx, by, bw, bh) {
+    return x < bx + bw && x + w > bx && y < by + bh && y + h > by;
+  }
+
+  // Cost of a card rectangle: the car, the pin itself and other bright pins must stay visible.
+  function cost(x, y, w, h, px, py, cx, cy, pins) {
+    let c = 0;
+    if (hits(x, y, w, h, cx - 22, cy - 22, 44, 44)) c += 4000;
+    if (hits(x, y, w, h, px - 20, py - 20, 40, 40)) c += 6000;
+    for (let i = 0; i < pins.length; i++) {
+      const p = pins[i];
+      if (!p.reach || (Math.abs(p.px - px) < 3 && Math.abs(p.py - py) < 3)) continue;
+      if (hits(x, y, w, h, p.px - p.r - 4, p.py - p.r - 4, 2 * p.r + 8, 2 * p.r + 8)) c += 1500;
     }
-    const k = mode + left + ':' + top;
-    if (k === S.cardMode) return;
-    S.cardMode = k;
+    return c;
+  }
+
+  // Keep the card on screen, off the HUD and dispatch bar, off the car and off neighbouring pins.
+  function place(px, py) {
+    const st = S.stage, g = G(), c = S.card, R = PG.render;
+    if (!st || !R) return;
+    const z = R.zone, pins = R.pins;
+    const W = st.clientWidth, H = st.clientHeight;
+    const car = R.P(g.x, g.y);
+    const cx = car.x, cy = car.y;
+    const w = S.cardW, h = S.cardH, m = 8, gap = 26;
+    const phone = W <= 640;
+    const top0 = z.top + m, bot0 = Math.min(H, z.bottom) - m;
+    let k, left = 0, top = 0, bottom = 0;
+    if (phone) {
+      // docked full width: bottom by default, top when the bottom one would hide the car or the pin
+      const bx = (W - w) / 2;
+      const cb = cost(bx, bot0 - h, w, h, px, py, cx, cy, pins);
+      const ct = cost(bx, top0, w, h, px, py, cx, cy, pins);
+      const atTop = ct - (S.phoneTop ? 300 : 0) < cb - (S.phoneTop ? 0 : 300);
+      S.phoneTop = atTop;
+      k = atTop ? 'top' : 'bottom';
+      top = Math.round(top0);
+      bottom = Math.round(H - bot0);
+    } else {
+      const lo = Math.max(top0, 0), hi = bot0 - h;
+      const cand = [
+        [px + gap, py - h / 2], [px - gap - w, py - h / 2],
+        [px - w / 2, py + gap], [px - w / 2, py - gap - h - 18],
+        [px + gap, py - h - 10], [px - gap - w, py - h - 10], [px + gap, py + 10], [px - gap - w, py + 10],
+        [px + 2.4 * gap, py - h / 2], [px - 2.4 * gap - w, py - h / 2],
+      ];
+      let best = -1, bc = Infinity;
+      for (let i = 0; i < cand.length; i++) {
+        const x = Math.min(Math.max(cand[i][0], m), W - m - w);
+        const y = Math.min(Math.max(cand[i][1], lo), Math.max(lo, hi));
+        // prefer the first candidates; a card pushed far from its pin costs more; stay with the last choice
+        const cc = cost(x, y, w, h, px, py, cx, cy, pins) + i * 40 +
+          Math.hypot(x - cand[i][0], y - cand[i][1]) * 3 - (i === S.cand ? 250 : 0);
+        if (cc < bc) { bc = cc; best = i; left = x; top = y; }
+      }
+      S.cand = best;
+      left = Math.round(left); top = Math.round(top);
+      k = 'float';
+    }
+    const key = k + left + ':' + top + ':' + bottom + ':' + W + ':' + H;
+    if (key === S.cardMode) return;
+    S.cardMode = key;
     c.style.left = phone ? '50%' : left + 'px';
-    if (mode === 'bottom') { c.style.top = ''; c.style.bottom = 'var(--dock-h, 70px)'; }
+    if (k === 'bottom') { c.style.top = ''; c.style.bottom = bottom + 'px'; }
     else { c.style.top = top + 'px'; c.style.bottom = ''; }
     c.classList.toggle('dock', phone);
   }
