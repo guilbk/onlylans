@@ -45,11 +45,13 @@ from serve import (
 )
 
 DEFAULT_PORT = 8090
-MAX_PLAYERS = 60
+MAX_PLAYERS = 40  # per room; the 30-car battle fits with a margin
 MAX_NAME = 20
 MAX_BODY = 4096
 MAX_TRIPS = 100_000
 MAX_ACTIVE = 3  # booked, not yet picked up: the pickup, the next one, one release in flight
+IDLE_TIMEOUT_S = 60.0  # a keep-alive connection silent this long is closed (no leaked threads)
+BACKLOG = 128  # pending connections: 30 phones reconnecting at once must not be refused
 DEFAULT_SIZES = (700,) * 28  # orders per shift when no game data is given; real shifts have ~500
 MAX_MONEY = 1_000_000.0
 COORD_LIMIT = 1e6  # metres; the map is 15 x 19 km
@@ -277,7 +279,11 @@ class Party:
                 del self._by_key[p.key]
 
     def _state(self) -> dict[str, Any]:
-        """The public state (the secret keys are left out)."""
+        """The public state (the secret keys are left out).
+
+        Compact on purpose: rounded numbers, no history; only what the phones draw. The dictionary
+        is a copy, so the caller serialises it after the lock is released.
+        """
         now = self._now()
         players = [
             {
@@ -286,11 +292,11 @@ class Party:
                 "color": p.color,
                 "x": None if p.x is None or p.y is None else round(p.x, 1),
                 "y": None if p.x is None or p.y is None else round(p.y, 1),
-                "hx": round(p.hx, 3),
-                "hy": round(p.hy, 3),
+                "hx": round(p.hx, 2),
+                "hy": round(p.hy, 2),
                 "money": round(p.money, 2),
                 "trips": p.trips,
-                "at": p.at,
+                "at": round(p.at, 3),
                 "online": now - p.seen <= OFFLINE_S,
             }
             for p in self._players.values()
@@ -299,8 +305,8 @@ class Party:
             "room": self.code,
             "host": self._host_id,
             "phase": self._phase(),
-            "now": now,
-            "start_at": self._start_at,
+            "now": round(now, 3),
+            "start_at": None if self._start_at is None else round(self._start_at, 3),
             "duration": self._duration,
             "shift": self._shift,
             "difficulty": self._difficulty,
@@ -597,20 +603,35 @@ def qr_payload(url: str) -> dict[str, Any]:
     return {"url": url, "rows": ["".join("1" if m else "0" for m in row) for row in matrix]}
 
 
-def join_link(host_header: str, code: str, lan_base: str = "") -> str:
-    """The link that opens a room: the caller's own address, or the LAN one for a loopback caller.
+def join_link(
+    host_header: str,
+    code: str,
+    lan_base: str = "",
+    public_url: str = "",
+    proto: str = "",
+) -> str:
+    """The link that opens a room.
+
+    A public URL (a tunnel) wins over everything. Otherwise the caller's own address, or the LAN
+    one for a loopback caller. Behind a tunnel the page is ``https`` while the tunnel talks plain
+    ``http`` to us, so the ``X-Forwarded-Proto`` header (``proto``) decides the scheme.
 
     Args:
         host_header: The ``Host`` header of the request (``name:port``).
         code: The room code.
         lan_base: ``http://LAN-IP:port/`` to use when the caller is on this machine itself.
+        public_url: The public ``https://...`` address of this server, if it has one.
+        proto: ``X-Forwarded-Proto`` of the request (``http`` or ``https``), if any.
 
     Returns:
         ``<base>?room=CODE``.
     """
+    if public_url:
+        return f"{public_url.rstrip('/')}/?room={code}"
     name = host_header.rsplit(":", 1)[0].strip("[]")
     local = name in (LOOPBACK, "::1", "localhost")
-    base = lan_base if local and lan_base else f"http://{host_header}/"
+    scheme = "https" if proto.strip().lower() == "https" else "http"
+    base = lan_base if local and lan_base else f"{scheme}://{host_header}/"
     return f"{base}?room={code}"
 
 
@@ -679,8 +700,10 @@ class PartyHandler(NoCacheHandler):
     """
 
     protocol_version = "HTTP/1.1"
+    timeout = IDLE_TIMEOUT_S
     rooms: Rooms
     lan_base = ""
+    public_url = ""
 
     def setup(self) -> None:
         """Turn off Nagle's algorithm: a small reply must leave at once."""
@@ -694,7 +717,7 @@ class PartyHandler(NoCacheHandler):
 
     def _reply(self, status: int, payload: dict[str, Any]) -> None:
         """Send a JSON reply."""
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
@@ -734,7 +757,14 @@ class PartyHandler(NoCacheHandler):
             return self.rooms.get(code).state()
         if path == "/api/qr":
             room = self.rooms.get(code)
-            return qr_payload(join_link(self.headers.get("Host", ""), room.code, self.lan_base))
+            link = join_link(
+                self.headers.get("Host", ""),
+                room.code,
+                self.lan_base,
+                self.public_url,
+                self.headers.get("X-Forwarded-Proto", ""),
+            )
+            return qr_payload(link)
         raise PartyError("not_found", HTTPStatus.NOT_FOUND)
 
     def do_GET(self) -> None:
@@ -763,6 +793,7 @@ def make_party_server(
     rooms: Rooms,
     host: str = BIND_HOST,
     lan_base: str = "",
+    public_url: str = "",
 ) -> LanServer:
     """Create (but do not start) the party server.
 
@@ -772,17 +803,20 @@ def make_party_server(
         rooms: The registry of parties.
         host: Interface to bind.
         lan_base: URL of this server on the LAN, for links shown on this machine itself.
+        public_url: Public ``https`` URL (a tunnel) to put in every join link and QR code.
 
     Returns:
         The bound server.
     """
-    handler = type("BoundPartyHandler", (PartyHandler,), {"rooms": rooms, "lan_base": lan_base})
+    attrs = {"rooms": rooms, "lan_base": lan_base, "public_url": public_url}
+    handler = type("BoundPartyHandler", (PartyHandler,), attrs)
 
     def build(*args: Any, **kwargs: Any) -> Any:
         """Create a handler that serves ``directory``."""
         return handler(*args, directory=str(directory), **kwargs)
 
-    return LanServer((host, port), build)
+    server_class = type("PartyServer", (LanServer,), {"request_queue_size": BACKLOG})
+    return server_class((host, port), build)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -799,6 +833,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--build", action="store_true", help="run pipeline.build_game first")
     ap.add_argument("--dir", type=Path, default=DEFAULT_DIR, help="folder to serve")
     ap.add_argument("--host", default=None, help="address to show in the URL (default: detect)")
+    ap.add_argument("--public-url", default="", help="public https URL (a tunnel) for join links")
     ap.add_argument("--plain", action="store_true", help="no ANSI colours around the QR code")
     args = ap.parse_args(argv)
     if args.build and run_build() != 0:
@@ -811,7 +846,11 @@ def main(argv: list[str] | None = None) -> int:
         lan = args.host or detect_lan_ip()
         base = build_url(lan, args.port)
         server = make_party_server(
-            args.dir, args.port, Rooms(sizes=load_sizes(args.dir / "game_data.json")), lan_base=base
+            args.dir,
+            args.port,
+            Rooms(sizes=load_sizes(args.dir / "game_data.json")),
+            lan_base=base,
+            public_url=args.public_url,
         )
     except (OSError, ValueError) as err:
         print(f"cannot start the server: {err}", file=sys.stderr)
