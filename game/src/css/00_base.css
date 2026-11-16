@@ -2,7 +2,7 @@
 :root, body[data-theme="night"] {
   --bg: #080f24;
   --hud: rgba(8, 15, 36, 0.95);
-  --panel: rgba(8, 15, 36, 0.92);
+  --panel: rgba(18, 30, 66, 0.95);
   --text: #eaf0ff;
   --muted: #93a3cc;
   --chip: #16244d;
@@ -12,7 +12,7 @@
   --bad: #ff6b6b;
   --btn: #1b2c5e;
   --btn-ink: #eaf0ff;
-  --card: #0d1734;
+  --card: #111d40;
   --blue: #8fb8ff;
   --track: #22356b;
   --gold: #ffd700;

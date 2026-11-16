@@ -65,7 +65,7 @@ body.party-screen #toast, body.party-screen #map-center, body.party-screen #orde
 
 body.party-player #btn-pause, body.party-player #btn-fast, body.party-player #btn-menu,
 body.party-player .res-buttons { display: none !important; }
-.pty-mini { position: absolute; z-index: 5; left: 8px; top: 132px; width: min(176px, 48%);
+.pty-mini { position: absolute; z-index: 5; left: 8px; top: 236px; width: min(176px, 48%);
   padding: 4px 6px; border-radius: 12px; background: var(--panel); border: 1px solid var(--track); color: var(--text);
   font: 600 12px var(--font); pointer-events: none; }
 .pty-mrow { display: flex; align-items: center; gap: 5px; padding: 2px 0; }
