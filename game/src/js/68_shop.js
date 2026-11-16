@@ -1,4 +1,4 @@
-/* 68_shop.js: «ОЛХ», the skin and car-mod marketplace (a parody of a classifieds site). Mods come from PG.cars.MODS.
+/* 68_shop.js: «ОЛЕКС», the skin and car-mod marketplace (a parody of a classifieds site). Mods come from PG.cars.MODS.
    The wallet is the sum of € earned over all shifts (spent on purchases). It adds its own menu button. */
 (function (root) {
   const PG = root.PG = root.PG || {};
@@ -557,7 +557,7 @@
 
   function build() {
     const r = el('div'); r.id = 'shop'; r.hidden = true;
-    r.setAttribute('role', 'dialog'); r.setAttribute('aria-label', 'ОЛХ');
+    r.setAttribute('role', 'dialog'); r.setAttribute('aria-label', 'ОЛЕКС');
     const head = el('div', 'olx-head');
     const top = el('div', 'olx-topbar');
     const back = el('button', 'olx-back'); back.type = 'button'; back.setAttribute('aria-label', 'Назад');
@@ -566,7 +566,7 @@
     top.appendChild(back);
     const logo = el('div', 'olx-logo');
     logo.appendChild(el('span', 'olx-mark'));
-    logo.appendChild(el('span', '', 'ОЛХ'));
+    logo.appendChild(el('span', '', 'ОЛЕКС'));
     top.appendChild(logo);
     const w = el('div', 'olx-wal');
     w.appendChild(el('small', '', 'Гаманець'));
@@ -647,7 +647,7 @@
     if (!document.getElementById('btn-shop')) {
       const b = el('button', 'btn-big alt');
       b.id = 'btn-shop'; b.type = 'button';
-      b.appendChild(el('span', 'olx-open-name', 'ОЛХ'));
+      b.appendChild(el('span', 'olx-open-name', 'ОЛЕКС'));
       b.appendChild(el('span', 'olx-open-wal'));
       b.addEventListener('click', open);
       const after = document.getElementById('party-note') || document.getElementById('btn-party');
