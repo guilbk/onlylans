@@ -90,7 +90,6 @@ def test_filter_week_keeps_the_old_file_when_reading_fails(tmp_path: Path) -> No
     assert out.read_text(encoding="utf-8") == "old"
 
 
-
 def test_build_parser_defaults_and_overrides() -> None:
     args = week.build_parser().parse_args([])
     assert args.root == Path(".") and args.out is None

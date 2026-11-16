@@ -40,6 +40,7 @@ def decode(png):
 
 # sampling and rasterizing
 
+
 def test_accumulate_counts_a_trip_once_per_pixel():
     t = trip((100, 255), (400, 255), (100, 255))  # out and back
     counts = streets.accumulate([t], GRID)
@@ -58,6 +59,7 @@ def test_accumulate_sums_different_trips():
 
 
 # tone map
+
 
 def test_clip_level_uses_lit_pixels_only():
     counts = np.zeros((10, 10), dtype=np.float32)
@@ -83,6 +85,7 @@ def test_tone_map_is_concave():
 
 # colour and PNG
 
+
 def test_to_alpha_range_and_zero():
     tone = np.array([[0.0, 0.5, 1.0]], dtype=np.float32)
     a = streets.to_alpha(tone)
@@ -106,6 +109,7 @@ def test_encode_png_is_deterministic():
 
 
 # render and size budget
+
 
 def test_render_png_size_matches_resolution_and_is_deterministic():
     trips = [trace.project_trip(lonlat_line())]
@@ -150,6 +154,7 @@ def test_build_within_budget_stops_at_limit():
 
 
 # loading and CLI
+
 
 def test_main_writes_png_and_is_deterministic(tmp_path, capsys):
     week = tmp_path / "week.csv"

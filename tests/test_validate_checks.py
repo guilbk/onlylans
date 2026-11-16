@@ -172,8 +172,9 @@ def test_check_roads_edges_checks_shape_index_interior_and_sort() -> None:
 def test_check_roads_edges_reports_malformed_ends_without_crashing() -> None:
     assert rules(v.check_roads_edges([[None, 1, []], [0, 1, []]], 3)) == {"roads-index"}
     assert rules(v.check_roads_edges([["a", 1.5, []]], 3)) == {"roads-index"}
-    assert "roads-index" in rules(v.validate_roads({"v": 1, "unit_m": 2.5, "nodes": [0, 0, 1, 1],
-                                                    "edges": [[None, 1, []]]}))
+    assert "roads-index" in rules(
+        v.validate_roads({"v": 1, "unit_m": 2.5, "nodes": [0, 0, 1, 1], "edges": [[None, 1, []]]})
+    )
 
 
 def test_check_json_block_required_escape_and_invalid() -> None:

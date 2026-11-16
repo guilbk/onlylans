@@ -55,11 +55,24 @@ def test_format_table_shape() -> None:
     assert lines[-1].startswith("summary: bronze+ 100%")
 
 
-def test_main_prints_every_run_and_writes_json(data: Path, tmp_path: Path,
-                                               capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_prints_every_run_and_writes_json(
+    data: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     out = tmp_path / "r.json"
-    argv = ["--data", str(data), "--diff", "easy,hard", "--lag", "0", "--shifts", "1",
-            "--workers", "1", "--json", str(out)]
+    argv = [
+        "--data",
+        str(data),
+        "--diff",
+        "easy,hard",
+        "--lag",
+        "0",
+        "--shifts",
+        "1",
+        "--workers",
+        "1",
+        "--json",
+        str(out),
+    ]
     assert b.main(argv) == 0
     text = capsys.readouterr().out
     assert "diff=easy" in text and "diff=hard" in text

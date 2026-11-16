@@ -92,11 +92,15 @@ def format_table(diff: str, strategy: str, lag: float, results: list[Result]) ->
     Returns:
         Multi-line text.
     """
-    lines = [f"== diff={diff} strategy={strategy} lag={lag:g}",
-             f"{'shift':<12}{'bot EUR':>9}{'median':>9}{'top10':>9}{'ghost':>9}  {'medal':<7}rank"]
+    lines = [
+        f"== diff={diff} strategy={strategy} lag={lag:g}",
+        f"{'shift':<12}{'bot EUR':>9}{'median':>9}{'top10':>9}{'ghost':>9}  {'medal':<7}rank",
+    ]
     for r in results:
-        lines.append(f"{r.shift_id:<12}{r.earned:>9.2f}{r.median:>9.2f}{r.top10:>9.2f}"
-                     f"{r.ghost:>9.2f}  {MEDAL_NAMES[r.medal]:<7}{r.rank}/{r.n_drivers}")
+        lines.append(
+            f"{r.shift_id:<12}{r.earned:>9.2f}{r.median:>9.2f}{r.top10:>9.2f}"
+            f"{r.ghost:>9.2f}  {MEDAL_NAMES[r.medal]:<7}{r.rank}/{r.n_drivers}"
+        )
     s = summarize(results)
     lines.append("summary: " + "  ".join(f"{k}+ {v:.0%}" for k, v in s.items()))
     return "\n".join(lines)
@@ -132,16 +136,22 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     keep = parse_list(args.shifts, int) if args.shifts else None
     runs = []
-    for diff, strategy, lag in product(parse_list(args.diff, str), parse_list(args.strategy, str),
-                                       parse_list(args.lag, float)):
+    for diff, strategy, lag in product(
+        parse_list(args.diff, str), parse_list(args.strategy, str), parse_list(args.lag, float)
+    ):
         if diff not in sim.DIFFICULTIES or strategy not in STRATEGIES:
             raise SystemExit(f"unknown diff/strategy: {diff}/{strategy}")
         results = evaluate(args.data, diff, lag, args.workers)
         if keep is not None:
             results = [results[i] for i in keep]
         print(format_table(diff, strategy, lag, results))
-        runs.append({"params": {"diff": diff, "strategy": strategy, "lag": lag},
-                     "results": [asdict(r) for r in results], "summary": summarize(results)})
+        runs.append(
+            {
+                "params": {"diff": diff, "strategy": strategy, "lag": lag},
+                "results": [asdict(r) for r in results],
+                "summary": summarize(results),
+            }
+        )
     if args.json:
         args.json.write_text(json.dumps(runs, sort_keys=True, indent=1), encoding="utf-8")
     return 0
