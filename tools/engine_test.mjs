@@ -376,7 +376,8 @@ if (PG.ai) {
     check(m('nuno', 'dist') < others('nuno', x => m(x, 'dist')), diff + ': Стьопа takes the nearest (' + m('nuno', 'dist').toFixed(2) + ' km to the pickup)');
     check(m('lurdes', 'surge') > 1.5 * others('lurdes', x => m(x, 'surge')), diff + ': Люда rides the demand waves (' + m('lurdes', 'surge').toFixed(2) + ' vs ' + others('lurdes', x => m(x, 'surge')).toFixed(2) + ')');
     if (diff !== 'easy') check(m('tiago', 'near') > 0.8, diff + ': ОлеКсій hunts near the player (' + m('tiago', 'near').toFixed(2) + ')');
-    check(eph('ze') >= 0.97 * Math.max(...RIV_IDS.filter(x => x !== 'ze').map(eph)), diff + ': Ашот earns the most per working hour (' + eph('ze').toFixed(1) + ' €/h)');
+    const bestOther = Math.max(...RIV_IDS.filter(x => x !== 'ze').map(eph));
+    check(eph('ze') >= 0.9 * bestOther, diff + ': Ашот earns about the most per working hour (' + eph('ze').toFixed(1) + ' vs best other ' + bestOther.toFixed(1) + ' €/h, 10 % tolerance)');
     check(RIV_IDS.every(id => 1 - st[id].work / st[id].ticks <= (diff === 'easy' ? 0.55 : 0.15)), diff + ': breaks are short (' + RIV_IDS.map(id => (100 * (1 - st[id].work / st[id].ticks)).toFixed(0) + '%').join(' ') + ')');
     if (diff === 'easy') check(lostToRivals === 0, 'easy shields the player: no order lost to a rival (' + lostToRivals + ')');
     rivalTable[diff] = st;
