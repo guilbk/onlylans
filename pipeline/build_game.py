@@ -14,6 +14,7 @@ FIXTURE_DEFAULT = Path("game/fixture/mini.json")
 ROADS_DEFAULT = Path("game/roads.json")
 STREETS_DEFAULT = Path("game/streets.png")
 MISSIONS_DEFAULT = Path("game/missions.json")
+FACTS_DEFAULT = Path("game/facts.json")
 OUT_DEFAULT = Path("game/index.html")
 
 PH_CSS = "/*__CSS__*/"
@@ -108,14 +109,21 @@ def collect_js(js_dir: Path) -> str:
     return "\n".join(out)
 
 
-def build_data_block(data: Path, roads: Path, streets: Path, missions: Path | None = None) -> str:
-    """Build the inline data elements: game data, then roads, streets and missions if present.
+def build_data_block(
+    data: Path,
+    roads: Path,
+    streets: Path,
+    missions: Path | None = None,
+    facts: Path | None = None,
+) -> str:
+    """Build the inline data: game data, then roads, streets, missions and facts if present.
 
     Args:
         data: Game data JSON (must exist).
         roads: Roads JSON; skipped silently if missing.
         streets: Streets PNG; skipped silently if missing.
         missions: Missions JSON (CONTRACT section 16); skipped silently if missing or ``None``.
+        facts: Result facts JSON (CONTRACT section 17); skipped silently if missing or ``None``.
 
     Returns:
         HTML for the data elements.
@@ -140,10 +148,22 @@ def build_data_block(data: Path, roads: Path, streets: Path, missions: Path | No
         parts.append(
             f'<script type="application/json" id="missions-data">{escape_json(mtext)}</script>'
         )
+    if facts is not None and facts.is_file():
+        ftext = facts.read_text(encoding="utf-8").strip()
+        parts.append(
+            f'<script type="application/json" id="facts-data">{escape_json(ftext)}</script>'
+        )
     return "\n".join(parts)
 
 
-def build(src: Path, data: Path, roads: Path, streets: Path, missions: Path | None = None) -> str:
+def build(
+    src: Path,
+    data: Path,
+    roads: Path,
+    streets: Path,
+    missions: Path | None = None,
+    facts: Path | None = None,
+) -> str:
     """Assemble the final HTML.
 
     Args:
@@ -152,6 +172,7 @@ def build(src: Path, data: Path, roads: Path, streets: Path, missions: Path | No
         roads: Roads JSON (optional file).
         streets: Streets PNG (optional file).
         missions: Missions JSON (optional file; absent = no missions in the game).
+        facts: Result facts JSON (optional file; absent = no facts on the result screen).
 
     Returns:
         The complete HTML document.
@@ -166,7 +187,7 @@ def build(src: Path, data: Path, roads: Path, streets: Path, missions: Path | No
     # Pieces are computed first, then placed; each placeholder is checked on the template.
     css = collect_css(src / "css")
     js = collect_js(src / "js")
-    block = build_data_block(data, roads, streets, missions)
+    block = build_data_block(data, roads, streets, missions, facts)
     for ph in (PH_CSS, PH_DATA, PH_JS):
         replace_once(html, ph, "")  # validates the count before any substitution
     html = html.replace(PH_CSS, css, 1)
@@ -189,11 +210,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--roads", type=Path, default=ROADS_DEFAULT)
     ap.add_argument("--streets", type=Path, default=STREETS_DEFAULT)
     ap.add_argument("--missions", type=Path, default=MISSIONS_DEFAULT)
+    ap.add_argument("--facts", type=Path, default=FACTS_DEFAULT)
     ap.add_argument("--out", type=Path, default=OUT_DEFAULT)
     args = ap.parse_args(argv)
     data = args.data if args.data is not None else default_data()
     try:
-        html = build(args.src, data, args.roads, args.streets, args.missions)
+        html = build(args.src, data, args.roads, args.streets, args.missions, args.facts)
     except (BuildError, OSError) as err:
         print(f"build error: {err}", file=sys.stderr)
         return 1

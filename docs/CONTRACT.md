@@ -682,3 +682,22 @@ the toast «★ Завдання виконано» (the `note` event), the bloc
 (between the stats and the race table) and the best stars on the campaign cards (a span in `#shift-<id>`).
 Stars: localStorage `porto-lanosiv-missions-v1` = `{v:1, best:{<shift id>: 0..3}}` (best of all tries;
 memory only if storage is blocked). Test: `node tools/missions_test.mjs`.
+
+## §17 Історія зміни (result story)
+
+After a shift the result screen shows a small map that replays the player's path against the ghost's, and 3–4
+real facts about the shift.
+
+**`game/facts.json`** (`python -m pipeline.facts`, deterministic, sorted keys, one line):
+`{"version":1,"shifts":{"<shift id>":[fact, ...]}}`, each fact a short Ukrainian sentence: the trips of the real
+drivers, the longest trip with its starting place (`places.place_name`), the district with the largest pickup
+share (`hot`), the ghost's trips and money. A fact the data cannot support is left out. `pipeline/facts.py`
+holds the plural helper (1 / 2–4 / 5–20 rules) and the number formats (no-break space in «1 234», comma in
+«23,4 км»). The build (§6) inlines the file as `<script type="application/json" id="facts-data">` when it exists
+(`--facts PATH`, default `game/facts.json`); without it the result screen has the map but no facts.
+
+**JS** (`67_story.js`, `67_story.css`): records `G.x/G.y` on `frame` every 10 game s from `shift:start`, and the
+pickup points on `pickup`; on `ui:screen` `result` inserts `#story` just above the race table (`.res-race`, else `.res-buttons`) (nothing of
+`65_screens.js` is edited). One canvas, both paths over the same bounds: the player's trail mint, the ghost's
+(`sh.ghostOrders`, 15 s per point) lilac, pickups as dots, replayed over 6 s of real time; the «Повтор» button
+(≥ 44 px) plays it again. No story in party mode (`PG.engine.party`).

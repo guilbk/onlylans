@@ -174,3 +174,14 @@ def test_missions_inlined_when_present_and_skipped_when_absent(tmp_path: Path) -
     assert (
         '<script type="application/json" id="missions-data">{"version":1,"x":"\\u003c/p>"}' in html
     )
+
+
+def test_facts_inlined_after_missions_when_present_and_skipped_when_absent(tmp_path: Path) -> None:
+    src, data = make_src(tmp_path), write_data(tmp_path)
+    roads, streets, facts = tmp_path / "r.json", tmp_path / "s.png", tmp_path / "facts.json"
+    assert "facts-data" not in bg.build(src, data, roads, streets)
+    assert "facts-data" not in bg.build(src, data, roads, streets, None, facts)
+    facts.write_text('{"version":1,"x":"</p>"}', encoding="utf-8")
+    html = bg.build(src, data, roads, streets, None, facts)
+    assert html.index("game-data") < html.index("facts-data")
+    assert '<script type="application/json" id="facts-data">{"version":1,"x":"\\u003c/p>"}' in html
