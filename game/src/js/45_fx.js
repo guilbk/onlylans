@@ -189,13 +189,13 @@
       const x = p.px, y = p.py, r = p.r;
       if (k === 'vip') {
         const pulse = 0.5 + 0.5 * Math.sin(t * 3 + i);
-        ctx.lineWidth = 2;
+        ctx.fillStyle = GOLD;
+        ctx.globalAlpha = 0.14 + 0.14 * pulse;
+        ctx.beginPath(); ctx.arc(x, y, r + 12 + pulse * 3, 0, TAU); ctx.fill();
         ctx.strokeStyle = GOLD;
-        ctx.globalAlpha = 0.35 + 0.35 * pulse;
-        ctx.beginPath(); ctx.arc(x, y, r + 5 + pulse * 3, 0, TAU); ctx.stroke();
-        ctx.globalAlpha = 0.9;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(x, y, r + 3, 0, TAU); ctx.stroke();
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.5 + 0.4 * pulse;
+        ctx.beginPath(); ctx.arc(x, y, r + 12 + pulse * 3, 0, TAU); ctx.stroke();
       } else if (k === 'tourist') {
         // small suitcase above the pin
         const cx = x + r * 0.9, cy = y - r - 5;
@@ -230,6 +230,7 @@
       ctx.beginPath(); ctx.arc(q.x + pOx[i], q.y + pOy[i], pSize[i], 0, TAU); ctx.fill();
     }
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
     ctx.font = 'bold 14px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
     for (let i = 0; i < NT; i++) {
       if (tLife[i] <= 0) continue;
