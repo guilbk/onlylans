@@ -414,37 +414,41 @@ function electroShapes(){
 }
 
 function horseShapes(){
-  const HB='#8a5a2e',HD='#6a4220',MANE='#2c1b10',WOOD='#8a6a45',RED='#c1442f';
+  const HB='#c9803f',HD='#8a5126',MANE='#2c1b10',WOOD='#c7985c',RED='#c9402c',CREAM='#fff3d6',HN=['#9a5a1f','#ffb25a'];
   const leg=(x,y,cls,off)=>({k:'grp',tf:`translate(${x} ${y})`,cls:'lg '+cls,st:`transform:translateX(${off}px)`,i:[
-    {k:'part',c:HD,n:'#ffb66b',d:el(0,0,10,4.5),w:3},{k:'mark',c:'#241a12',d:el(7,0,3.6,3.6)}]});
+    {k:'part',c:HD,n:'#ffb66b',d:rr(-13,-6.5,13,6.5,6.5),w:3},{k:'mark',c:'#2a1c12',d:el(9,0,5,6)}]});
   return [
-    {k:'wheel',d:rr(-116,-53,-72,-44,4),m:1},
-    {k:'line',c:'#3a2c20',w:3,d:'M-94 -48L-94 48'},
-    {k:'line',c:WOOD,n:'#e0b87a',w:4,d:'M-46 -25L72 -21',m:1},
-    {k:'body',c:'#ffc61a',n:['#b88600','#ffe36b'],d:rr(-132,-37,-46,37,14)},
-    {k:'part',c:'#c8940f',d:rr(-141,-20,-128,20,4),w:3},
-    {k:'part',c:'#8d2a3b',n:['#8d2a3b','#ff5d8a'],d:rr(-126,-33,-72,33,16),w:4},
-    {k:'line',c:'#6a1a2b',w:2,o:.6,d:'M-112 -28V28M-98 -30V30M-84 -29V29'},
-    {k:'lite',c:'#ffe066',d:rr(-106,-9,-90,9,4)},
-    {k:'part',c:'#5b3c26',n:'#c48a5a',d:rr(-70,-26,-50,26,6),w:3},
-    {k:'part',c:'#2f3b5e',n:'#7fa0ff',d:el(-60,0,6,16),w:3},
-    {k:'part',c:'#22c48a',n:['#0b7a55','#6dffc8'],d:el(-62,0,10,10),w:3},
-    {k:'part',c:'#15936a',d:'M-54 -7Q-44 0 -54 7Z',w:2},
-    {k:'mark',c:'#e8b58b',d:el(-51,-10,3,3),m:1},
-    {k:'grp',tf:'translate(8 0)',cls:'tail',st:'',i:[{k:'part',c:MANE,n:'#ffb66b',d:'M0 0Q-14 -9 -30 -5Q-18 0 -32 6Q-14 8 0 3Z',w:3}]},
-    leg(18,-21,'lgA',5),leg(18,21,'lgB',-5),leg(62,-21,'lgB',-5),leg(62,21,'lgA',5),
+    {k:'shd',d:el(-86,6,52,47)+el(40,7,92,28)},
+    {k:'wheel',d:rr(-112,-58,-70,-45,5),m:1},
+    {k:'line',c:'#3a2c20',w:4,d:'M-91 -50L-91 50'},
+    {k:'line',c:WOOD,n:'#e0b87a',w:5,d:'M-52 -21L84 -19',m:1},
+    {k:'body',c:'#ffd23a',n:['#b88600','#ffe36b'],d:rr(-126,-41,-46,41,16)},
+    {k:'part',c:'#d6a416',d:rr(-134,-22,-124,22,4),w:3},
+    {k:'part',c:CREAM,n:['#b88600','#fff3c4'],d:rr(-122,-37,-62,37,18),w:4},
+    {k:'mark',c:RED,d:rr(-110,-31,-103,31,2)},
+    {k:'mark',c:RED,d:rr(-94,-33,-87,33,2)},
+    {k:'mark',c:RED,d:rr(-78,-31,-71,31,2)},
+    {k:'lamp',c:'#ffe066',d:el(-124,-35,4.5,4.5),m:1},
+    {k:'part',c:'#8a4a28',n:'#c48a5a',d:rr(-62,-27,-48,27,6),w:3},
+    {k:'part',c:'#2f3b5e',n:'#7fa0ff',d:el(-56,0,6,16),w:3},
+    {k:'part',c:'#22c48a',n:['#0b7a55','#6dffc8'],d:el(-56,0,9.5,9.5),w:3},
+    {k:'mark',c:'#0b7a55',d:el(-56,0,5,5)},
+    leg(-2,-23,'lgA',5),leg(-2,23,'lgB',-5),leg(50,-23,'lgB',-5),leg(50,23,'lgA',5),
+    {k:'grp',tf:'translate(-13 0)',cls:'tail',st:'',i:[{k:'part',c:MANE,n:'#ffb66b',d:'M0 0Q-16 -12 -34 -6Q-22 0 -36 8Q-16 11 0 5Z',w:3}]},
     {k:'grp',cls:'hb',st:'',i:[
-      {k:'body',c:HB,n:['#9a5a1f','#ffb25a'],d:'M68 -13Q86 -13 98 -7L98 7Q86 13 68 13Z'},
-      {k:'body',c:HB,n:['#9a5a1f','#ffb25a'],d:el(104,0,15,8.5)},
-      {k:'body',c:HB,n:['#9a5a1f','#ffb25a'],d:el(40,0,38,18)},
-      {k:'part',c:'#b3322a',n:'#ff6a55',d:rr(30,-15,50,15,5),w:3},
-      {k:'part',c:RED,n:'#ff6a55',d:rr(68,-14,76,14,3),w:3},
-      {k:'line',c:MANE,w:6,d:'M99 0L62 0'},
-      {k:'line',c:RED,w:2.4,d:'M100 -8Q103 0 100 8'},
-      {k:'part',c:HD,d:el(93,-7.5,4.5,2.6),w:2,m:1},
-      {k:'mark',c:'#1b120b',d:el(107,-6.5,1.8,1.8),m:1},
-      {k:'mark',c:'#d6b093',d:el(116,0,4.5,6)}]},
-    {k:'line',c:'#3a2a1c',w:1.6,o:.9,d:'M-50 -10L74 -8M-50 10L74 8'}
+      {k:'body',c:HB,n:HN,d:'M62 -16L102 -8L102 8L62 16Z'},
+      {k:'body',c:HB,n:HN,d:el(8,0,22,22)},
+      {k:'body',c:HB,n:HN,d:el(32,0,28,21)},
+      {k:'body',c:HB,n:HN,d:el(52,0,20,21)},
+      {k:'body',c:HB,n:HN,d:'M98 -9Q112 -11 128 -6Q134 -3 134 0Q134 3 128 6Q112 11 98 9Z'},
+      {k:'part',c:'#8d2a3b',n:['#8d2a3b','#ff5d8a'],d:rr(14,-15,36,15,6),w:3},
+      {k:'part',c:RED,n:'#ff6a55',d:rr(64,-19,73,19,5),w:3},
+      {k:'line',c:MANE,w:9,d:'M100 0L54 0'},
+      {k:'part',c:HD,d:el(99,-8,5,2.8),w:2,m:1},
+      {k:'mark',c:'#1b120b',d:el(113,-6.5,2,2),m:1},
+      {k:'mark',c:'#e0c3a4',d:el(129,0,6,6)},
+      {k:'mark',c:CREAM,d:el(120,0,9,2.2)}]},
+    {k:'line',c:'#3a2a1c',w:1.5,o:.9,d:'M-50 -9L66 -14M-50 9L66 14'}
   ];
 }
 
@@ -457,7 +461,7 @@ const SKINS={
   rickshaw:{name:'Рікша',price:160,scale:.3,small:.25,build:rickshawShapes,nose:86,note:'Зелено-жовтий, три колеса'},
   cab:{name:'Лондонський кеб',price:200,scale:.27,small:.2,build:cabShapes,nose:100,note:'Чорний, круглий, жовтий ліхтар'},
   electro:{name:'Електро',price:320,scale:.27,small:.2,build:electroShapes,nose:100,note:'Білий, гладкий, скляний дах'},
-  horse:{name:'Кінь з возом',price:500,scale:.28,small:.19,build:horseShapes,nose:120,note:'Кінь тягне візок-таксі'}
+  horse:{name:'Кінь з возом',price:500,scale:.29,small:.17,build:horseShapes,nose:120,note:'Кінь тягне візок-таксі'}
 };
 const SKIN_IDS=Object.keys(SKINS);
 
@@ -474,6 +478,7 @@ function one(s,st,th,o){
   const op=s.o!=null?` opacity="${s.o}"`:'';
   const cl=s.cls?` class="${s.cls}"`:'';
   const dash=o.ghost?' stroke-dasharray="16 9"':'';
+  if(k==='shd')return st==='A'&&!o.noShd?`<path d="${s.d}" fill="#0b1020" opacity="${N?.34:.2}"/>`:'';
   if(k==='txt')return`<text transform="translate(${s.x} ${s.y}) rotate(90)" font-size="${s.z}" font-weight="800" text-anchor="middle" dominant-baseline="central" fill="${s.c}" font-family="${FONT_A}" letter-spacing="1"${st==='C'&&N?' opacity=".95"':''}>${s.t}</text>`;
   if(st==='A'){
     switch(k){
@@ -530,7 +535,7 @@ function paintCar(id,st,th,o={}){
 }
 function beam(id,st,th){
   if(th!=='night')return'';
-  if(id==='horse')return`<circle cx="-98" cy="0" r="46" fill="url(#lanternG)"/>`;
+  if(id==='horse')return`<circle cx="-122" cy="0" r="46" fill="url(#lanternG)"/>`;
   const n=SKINS[id].nose-4;
   return`<path d="M${n} -24L${n+250} -92L${n+250} 92L${n} 24Z" fill="url(#beam${st})"/>`;
 }
@@ -542,7 +547,7 @@ function carAt(id,st,th,x,y,deg,o={}){
 /* standalone car in its own svg (unit viewBox) */
 function carSVG(id,st,th,px,o={}){
   const k=px/200;
-  return`<svg class="car-svg" viewBox="-150 -62 275 124" width="${f1(275*k)}" height="${f1(124*k)}" aria-hidden="true">${paintCar(id,st,th,o)}</svg>`;
+  return`<svg class="car-svg" viewBox="-150 -62 290 124" width="${f1(290*k)}" height="${f1(124*k)}" aria-hidden="true">${paintCar(id,st,th,o)}</svg>`;
 }
 /* ---------- map geometry (shared by all styles) ---------- */
 const bz=(s,t)=>{const u=1-t;return[u*u*u*s[0][0]+3*u*u*t*s[1][0]+3*u*t*t*s[2][0]+t*t*t*s[3][0],u*u*u*s[0][1]+3*u*u*t*s[1][1]+3*u*t*t*s[2][1]+t*t*t*s[3][1]]};
