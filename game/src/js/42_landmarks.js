@@ -27,8 +27,7 @@
   }
 
   function isNight() {
-    if (PG.theme === 'night') return true;
-    if (PG.theme === 'day') return false;
+    if (PG.theme && PG.theme.name) return PG.theme.name === 'night';
     const G = PG.engine && PG.engine.G;
     if (!G || !G.sh) return true;           // the map is dark outside a shift
     const h = Math.floor(G.sh.startHour + (G.t || 0) / 3600) % 24;
@@ -118,10 +117,10 @@
     const a = R.P(0, 0), x0 = a.x, y0 = a.y;
     const k = Math.abs(R.P(100, 0).x - x0) / 100;       // px per metre, same helper as PG.fx
     if (k < FADE_LO * 0.5) return;
-    const alphaLabel = Math.max(0, Math.min(1, (k - FADE_LO) / (FADE_HI - FADE_LO)));
-    const grow = Math.max(0.75, Math.min(1.25, 0.55 + k * 2.2));   // gentle icon scale with zoom
+    const alphaLabel = Math.max(0, Math.min(1, (k - 0.05) / 0.03));
+    const grow = Math.max(1.0, Math.min(1.7, 0.6 + k * 4));   // gentle icon scale with zoom
     ctx.save();
-    ctx.font = '600 11px Trebuchet MS, Helvetica Neue, system-ui, sans-serif';
+    ctx.font = '700 13px Trebuchet MS, Helvetica Neue, system-ui, sans-serif';
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       if (it.tier && k < TIER1_K) continue;
@@ -133,14 +132,17 @@
         ctx.globalAlpha = 0.8;
         ctx.drawImage(glow, -34, -52, 68, 68);
       }
-      ctx.globalAlpha = 0.92;
+      ctx.globalAlpha = night ? 0.35 : 0.4;       // soft halo ring so a landmark stands out from the buildings
+      ctx.lineWidth = 2; ctx.strokeStyle = p.accent;
+      ctx.beginPath(); ctx.arc(0, -14 * grow, 19 * grow, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 0.97;
       ctx.scale(grow, grow);
       DRAW[it.kind](ctx, p);
       ctx.restore();
       if (alphaLabel > 0) {
-        ctx.globalAlpha = alphaLabel * 0.9;
+        ctx.globalAlpha = alphaLabel;
         ctx.textAlign = it.align === 'l' ? 'left' : it.align === 'r' ? 'right' : 'center';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 4;
         ctx.strokeStyle = night ? 'rgba(8,15,36,0.85)' : 'rgba(255,250,240,0.9)';
         ctx.strokeText(it.label, sx + it.lx, sy + it.ly);
         ctx.fillStyle = p.text;
