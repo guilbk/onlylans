@@ -7,12 +7,12 @@
   const PLAYER = { id: 'player', name: 'Ріїн Гіслінг', nick: 'Ти', color: '#3df5b0' };
 
   const HINTS = [
-    'Торкнись світлої точки — побачиш маршрут; торкнись ще раз — береш.',
+    'Торкнись світлої точки — побачиш маршрут, ще раз — береш. З мишею: наведи — маршрут, клік — береш.',
     'Ліловий автомобіль — привид: найкращий справжній водій цієї зміни.',
     'Смуга вгорі показує медалі: бронза, срібло, золото, легенда.'
   ];
   const HOWTO = [
-    'Світла точка на мапі — замовлення. Торкнись раз — побачиш маршрут, ще раз — береш.',
+    'Світла точка на мапі — замовлення. Торкнись раз — побачиш маршрут, ще раз — береш. З мишею: наведи — маршрут, клік — береш.',
     'Встигни доїхати до початку поїздки, поки точка не згасла; можна бронювати наступну під час поїздки.',
     'Чайові й серія поїздок підряд дають бонус; ×3 прискорює час.',
     'Ліловий автомобіль — привид, найкращий справжній водій зміни. Сім ланосів — ШІ-суперники.',
@@ -20,9 +20,9 @@
   ];
 
   const ABOUT = {
-    source: 'Джерело: UCI 339, Porto taxi trips, CC BY 4.0, один тиждень травня 2014.',
+    source: 'Джерело: UCI 339, «Taxi Service Trajectory», CC BY 4.0, один тиждень травня 2014.',
     data: ['поїздки', 'водії', 'маршрути', 'привид', 'рейтинг', 'гарячі точки', 'хвилі попиту', 'дорожній граф'],
-    dataNote: 'усе пораховано нашим Python із сирого архіву',
+    dataNote: 'усе пораховано нашим кодом із сирого архіву',
     model: ['тариф 3,25 + 0,50 €/км (×1,2 вночі)', 'час ×40', 'видимість і радіус міток', 'чайові',
       'серія (комбо)', 'типи пасажирів', '7 ланосів (ШІ-суперники)', 'медалі']
   };
@@ -148,13 +148,14 @@
     // call BEFORE record(); then after record() use the same object
     // -> {record, bestEarned, bestMedal, placeText, race}
     resultView: function (result, G) {
+      const hasNext = result.idx + 1 < shifts().length;
+      const wasOpen = hasNext && P.isOpen(result.idx + 1);
       const rec = P.record(result);
       const b = P.best(result.idx);
-      const nextOpen = result.idx + 1 < shifts().length && P.isOpen(result.idx + 1);
       return { record: rec, recordText: rec ? 'новий рекорд' : '',
         bestEarned: b ? b.earned : result.earned, bestMedal: b ? b.medal : result.medal,
         placeText: P.placeText(result), race: P.raceTable(G, result),
-        unlockedNext: nextOpen, nextIdx: P.nextIdx() };
+        unlockedNext: hasNext && !wasOpen && P.isOpen(result.idx + 1), nextIdx: P.nextIdx() };
     },
     placeText: function (r) {
       if (!r || !(r.raceSize > 1) || !(r.racePlace >= 1)) return '';
