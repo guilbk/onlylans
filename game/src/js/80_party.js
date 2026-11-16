@@ -4,7 +4,7 @@
   const doc = root.document;
   const qs = new URLSearchParams(root.location.search);
   const SCREEN = qs.get('screen') === '1';   // the clean spectator view for a projector
-  const POLL_MS = 200, BACKOFF_MAX = 2000;   // the server may set `poll_ms`
+  const POLL_MS = 200, BACKOFF_MAX = 2000, HANG_MS = 3000;   // the server may set `poll_ms`
   const KEY = 'party-session';
   const JSON_TYPE = { 'Content-Type': 'application/json' };
   const MAP_W = 15000, MAP_H = 19000;
@@ -58,7 +58,8 @@
   /** JSON call; resolves {ok, status, data}. A sample of the clock offset is taken from every reply. */
   function api(path, body) {
     const t0 = nowS();
-    const init = body === undefined ? undefined : { method: 'POST', headers: JSON_TYPE, body: JSON.stringify(Object.assign({ room: room }, body)) };
+    const init = body === undefined ? {} : { method: 'POST', headers: JSON_TYPE, body: JSON.stringify(Object.assign({ room: room }, body)) };
+    if (root.AbortSignal && root.AbortSignal.timeout) init.signal = root.AbortSignal.timeout(HANG_MS);   // a stalled server counts as lost
     return root.fetch(path + (body === undefined ? '?room=' + room : ''), init).then(function (r) {
       return r.json().then(function (data) {
         const t1 = nowS();
