@@ -31,11 +31,13 @@ FLOOR_MARGIN_S = 30.0  # slack above delay + boarding for the reachability floor
 SHIFT_STEP = 1 / 28  # one shift flipping moves a share by this much
 LOSS_SCALE = 100.0  # weight of a missed band against the design-change cost
 HARDER_MARGIN_EUR = 1.0  # a harder difficulty must earn at least this much less
-LEAD_GRID_A = tuple(range(300, 781, 60))
-LEAD_GRID_B = tuple(range(210, 601, 40))
-LEAD_GRID_C = tuple(range(180, 451, 30))
-K_EASY_GRID = (1.0, 1.1, 1.25, 1.4, 1.6, 1.8)
-K_HARD_GRID = (0.5, 0.6, 0.7, 0.8, 0.85, 1.0)
+LEAD_GRID_A = tuple(range(310, 791, 40))
+LEAD_GRID_B = tuple(range(310, 591, 20))
+LEAD_GRID_C = tuple(range(310, 431, 10))
+LEAD_GRID_FREE = tuple(range(180, 781, 30))  # the grid without the reachability floor
+RADIUS_SCALES = (1.0, 0.4)  # RADIUS (A, B, C together) as a share of the design values
+K_EASY_GRID = (1.0, 1.05, 1.1, 1.25, 1.4, 1.6, 1.8)
+K_HARD_GRID = (0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0)
 HARD_NEAR_GRID = (3200.0, 5000.0)
 HARD_ATTN_GRID = (0.28, 0.5)
 HARD_DUTY_GRID = (0.5, 0.9)
@@ -155,6 +157,9 @@ def change_cost(settings: sim.Settings) -> float:
     cost = sum(abs(math.log(a / b)) for a, b in zip(settings.lead, sim.DEFAULT_LEAD, strict=True))
     for d in sim.DIFFICULTIES:
         cost += abs(math.log(settings.diff_k[d] / sim.DEFAULT_DIFF_K[d]))
+    cost += sum(
+        abs(math.log(a / b)) for a, b in zip(settings.radius, sim.DEFAULT_RADIUS, strict=True)
+    )
     return cost
 
 
@@ -209,8 +214,16 @@ def evaluate(
     return Candidate(settings, sums, miss, change_cost(settings))
 
 
+def _rival_eur(c: Candidate) -> float:
+    """Mean rival euros over the played difficulties (stronger rivals make a better race)."""
+    sums = list(c.summaries.values())
+    if not sums:
+        return 0.0
+    return sum(sum(sm.rival_eur) / len(sm.rival_eur) for sm in sums) / len(sums)
+
+
 def rank(cands: list[Candidate]) -> list[Candidate]:
-    """Order candidates: smaller band miss first, then smaller change of the design.
+    """Order candidates: smaller band miss, then smaller change of the design, then stronger rivals.
 
     Args:
         cands: Evaluated candidates.
@@ -218,23 +231,29 @@ def rank(cands: list[Candidate]) -> list[Candidate]:
     Returns:
         A new sorted list.
     """
-    return sorted(cands, key=lambda c: (round(c.miss * LOSS_SCALE, 3), c.change))
+    return sorted(cands, key=lambda c: (round(c.miss * LOSS_SCALE, 3), c.change, -_rival_eur(c)))
 
 
-def normal_grid(base: sim.Settings) -> list[sim.Settings]:
-    """Settings that vary LEAD for the three call types (monotone A >= B >= C).
+def normal_grid(base: sim.Settings, floor_only: bool = False) -> list[sim.Settings]:
+    """Settings that vary LEAD for the three call types (monotone A >= B >= C) and RADIUS.
 
     Args:
         base: Settings to start from.
+        floor_only: Keep only the points that obey the reachability floor.
 
     Returns:
         One settings object per grid point.
     """
-    return [
-        replace(base, lead=(float(a), float(b), float(c)))
-        for a, b, c in itertools.product(LEAD_GRID_A, LEAD_GRID_B, LEAD_GRID_C)
-        if a >= b >= c
-    ]
+    out = []
+    grids = (LEAD_GRID_A, LEAD_GRID_B, LEAD_GRID_C) if floor_only else (LEAD_GRID_FREE,) * 3
+    for (a, b, c), k in itertools.product(itertools.product(*grids), RADIUS_SCALES):
+        if a < b or b < c:
+            continue
+        radius = tuple(r * k for r in sim.DEFAULT_RADIUS)
+        cand = replace(base, lead=(float(a), float(b), float(c)), radius=radius)
+        if not floor_only or obeys_floor(cand):
+            out.append(cand)
+    return out
 
 
 def easy_grid(base: sim.Settings) -> list[sim.Settings]:
@@ -304,12 +323,17 @@ def format_row(label: str, difficulty: str, c: Candidate) -> str:
     """
     st, sm = c.settings, c.summaries[difficulty]
     lead = "/".join(f"{v:.0f}" for v in st.lead)
+    rad = "/".join(f"{v:.0f}" for v in st.radius)
+    rv = st.rivals[difficulty]
+    who = f"near {rv.near:.0f} attn {rv.attn:.2f} duty {rv.duty:.2f} speed {rv.speed:.1f}"
     riv = sum(sm.rival_eur) / len(sm.rival_eur)
     return (
-        f"{label:<12} lead {lead:<11} K {st.diff_k[difficulty]:.2f} | bronze+ {sm.bronze:4.0%} "
+        f"{label:<10} lead {lead:<11} rad {rad:<14} K {st.diff_k[difficulty]:.2f} | "
+        f"bronze+ {sm.bronze:4.0%} "
         f"silver+ {sm.silver:4.0%} gold+ {sm.gold:4.0%} legend {sm.legend:4.0%} | "
         f"bot €{sm.bot_eur:5.1f} "
-        f"lost {sm.lost:3.1f} rival €{riv:5.1f} | miss {c.miss:.4f} floor {reach_floor(st):+.0f}s"
+        f"lost {sm.lost:3.1f} rival €{riv:5.1f} | miss {c.miss:.4f} "
+        f"floor {reach_floor(st):+.0f}s | rivals {who}"
     )
 
 
@@ -335,6 +359,12 @@ def report(title: str, difficulty: str, cands: list[Candidate], top: int) -> lis
     return lines
 
 
+def _lead(text: str) -> tuple[float, float, float]:
+    """Parse ``A,B,C`` into three lead times (argparse type)."""
+    a, b, c = (float(v) for v in text.split(","))
+    return a, b, c
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI: sweep normal (LEAD), then easy and hard (DIFF_K, hard rivals) around the normal pick.
 
@@ -349,10 +379,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--top", type=int, default=5)
     ap.add_argument("--floor", action="store_true", help="pick only among points obeying the floor")
+    ap.add_argument(
+        "--lead", type=_lead, default=None, metavar="A,B,C",
+        help="skip the LEAD sweep and tune the other levers around these leads",
+    )  # fmt: skip
     args = ap.parse_args(argv)
     n_shifts = len(sim.load_shifts(args.data))
     with sim.open_pool(args.data, args.workers) as pool:
-        normal = sweep(normal_grid(sim.Settings()), "normal", args.data, n_shifts, pool)
+        start = sim.Settings() if args.lead is None else replace(sim.Settings(), lead=args.lead)
+        grid = normal_grid(start, args.floor) if args.lead is None else [start]
+        normal = sweep(grid, "normal", args.data, n_shifts, pool)
         print("\n".join(report("normal: LEAD A/B/C", "normal", normal, args.top)))
         pool_c = [c for c in rank(normal) if not args.floor or obeys_floor(c.settings)]
         base = pool_c[0].settings

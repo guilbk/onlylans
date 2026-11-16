@@ -58,7 +58,7 @@ function mulberry32(a) {
 }
 
 // ---- the greedy bot ---------------------------------------------------------
-/** Best fare per second among reachable near pins; cruise to the nearest upcoming pin when idle. */
+/** Best fare per second among the pins on the radar (E.reachable); cruise to the best hotspot when none is takeable. */
 function botTick(rec, delay) {
   const G = E.G, orders = G.sh.orders;
   const riding = G.mode === 'ride';
@@ -80,22 +80,20 @@ function botTick(rec, delay) {
     return;
   }
   if (riding) return;
-  let near = null, nd = Infinity;
-  for (let i = 0; i < orders.length; i++) {
-    const o = orders[i];
-    if (o.t <= G.t) continue;
-    if (o.t > G.t + 400) break;
-    const d = Math.hypot(o.x0 - G.x, o.y0 - G.y);
-    if (d < nd) { nd = d; near = o; }
+  // nothing takeable on the radar: drive to the best hotspot (weight / distance); the bot never drives to a pin it cannot see
+  let spot = null, ss = -1;
+  for (const h of (G.ai ? G.ai.hot : [])) {
+    const sc = h.w / (1 + Math.hypot(h.x - G.x, h.y - G.y) / 3000);
+    if (sc > ss) { ss = sc; spot = h; }
   }
-  if (near && nd > 200 && (G.mode === 'idle' || !G.leg || Math.hypot(G.leg.x1 - near.x0, G.leg.y1 - near.y0) > 50)) {
-    if (E.cruiseTo(near.x0, near.y0)) rec.push({ t: G.t, kind: 'cruise', x: near.x0, y: near.y0 });
+  if (spot && Math.hypot(spot.x - G.x, spot.y - G.y) > 200 && (G.mode === 'idle' || !G.leg || Math.hypot(G.leg.x1 - spot.x, G.leg.y1 - spot.y) > 50)) {
+    if (E.cruiseTo(spot.x, spot.y)) rec.push({ t: G.t, kind: 'cruise', x: spot.x, y: spot.y });
   }
 }
 
-function runBot(idx, rec, difficulty, delay) {
+function runBot(idx, rec, difficulty, delay, onTick) {
   const G = newGame(idx, difficulty);
-  for (let i = 0; i < 1000 && !G.over; i++) { botTick(rec, delay); E.step(7.2); }
+  for (let i = 0; i < 1000 && !G.over; i++) { botTick(rec, delay); E.step(7.2); if (onTick) onTick(G); }
   return G;
 }
 
@@ -290,14 +288,32 @@ const rivalTable = {};
 if (PG.ai) {
   console.log('(6) rivals; greedy bot reacting after 200 game s, all ' + nShifts + ' shifts:');
   for (const diff of ['easy', 'normal', 'hard']) {
-    const st = {}; for (const id of RIV_IDS) st[id] = { eur: 0, rides: 0, fares: 0, pickups: 0 };
+    const st = {}; for (const id of RIV_IDS) st[id] = { eur: 0, rides: 0, fares: 0, pickups: 0, km: 0, maxKm: 0, air: 0, stand: 0, near: 0, surge: 0, react: 0, dist: 0, ticks: 0, work: 0, picks: 0 };
+    // what each rival picks, seen from outside: a new target is noticed at the next bot tick
+    let seen = {};
+    const onTick = (G) => {
+      for (const rv of G.rivals) {
+        const a = st[rv.id];
+        a.ticks++; if (rv.mode !== 'break') a.work++;
+        const o = rv.target;
+        if (!o || rv.mode !== 'pickup' || seen[rv.id] === o) continue;
+        seen[rv.id] = o;
+        a.picks++; a.km += o.km; a.maxKm = Math.max(a.maxKm, o.km); a.stand += o.c === 1 ? 1 : 0;
+        a.near += Math.hypot(o.x0 - G.x, o.y0 - G.y) < 1500 ? 1 : 0;
+        a.air += Math.hypot(o.x0 - 3232, o.y0 - 1323) <= 2500 || Math.hypot(o.x1 - 3232, o.y1 - 1323) <= 2500 ? 1 : 0;
+        for (const w of G.sh.surgesM || []) if (o.t >= w.t0 && o.t <= w.t1 && Math.hypot(o.x0 - w.x, o.y0 - w.y) <= w.r) { a.surge++; break; }
+        a.react += rv.p.lt0 - Math.max(o.t - E.leadOf(o), rv.p.idleSince);
+        a.dist += Math.hypot(o.x0 - rv.p.lx0, o.y0 - rv.p.ly0) / 1000;
+      }
+    };
     let medals = [0, 0, 0, 0, 0], lostToRivals = 0, rivalLost = 0, places = 0, botEur = 0, badPlace = 0, n = 0;
     const onLost = (p) => { if (p.by !== 'real') lostToRivals++; };
     const onRL = () => { rivalLost++; };
     const onRP = (p) => { st[p.rival.id].fares = Math.round((st[p.rival.id].fares + p.fare) * 100) / 100; st[p.rival.id].pickups++; };
     PG.bus.on('order:lost', onLost); PG.bus.on('rival:lost', onRL); PG.bus.on('rival:pickup', onRP);
     for (let s = 0; s < nShifts; s++) {
-      const G = runBot(s, [], diff, 200);
+      seen = {};
+      const G = runBot(s, [], diff, 200, onTick);
       const res = E.calcResult();
       n++; medals[res.medal]++; botEur += res.earned; places += res.racePlace;
       if (res.raceSize !== 8 || res.racePlace < 1 || res.racePlace > 8) badPlace++;
@@ -321,6 +337,20 @@ if (PG.ai) {
     }
     check(mx - mn > 1, diff + ': the 7 differ in average € (spread ' + (mx - mn).toFixed(2) + ')');
     check(weakest === 'nuno', diff + ': Нуну is the weakest (weakest: ' + weakest + ')');
+    // every tactic of CONTRACT §11 shows in the numbers
+    const m = (id, k) => st[id][k] / Math.max(1, st[id].picks);
+    const others = (id, f) => RIV_IDS.filter(x => x !== id).reduce((acc, x) => acc + f(x), 0) / 6;
+    const eph = (id) => st[id].eur / Math.max(1, st[id].work * 7.2 / 3600);
+    check(m('rui', 'km') > 1.4 * others('rui', x => m(x, 'km')), diff + ': Руй takes long trips (' + m('rui', 'km').toFixed(1) + ' km vs ' + others('rui', x => m(x, 'km')).toFixed(1) + ')');
+    check(m('rui', 'air') > 2 * others('rui', x => m(x, 'air')), diff + ': Руй flies to the airport (' + m('rui', 'air').toFixed(2) + ' vs ' + others('rui', x => m(x, 'air')).toFixed(2) + ')');
+    check(m('fatima', 'stand') > 0.65 && m('fatima', 'stand') > 1.25 * others('fatima', x => m(x, 'stand')), diff + ': Фатіма stays on stand calls (' + m('fatima', 'stand').toFixed(2) + ' vs ' + others('fatima', x => m(x, 'stand')).toFixed(2) + ')');
+    check(m('ines', 'react') < 0.6 * others('ines', x => m(x, 'react')), diff + ': Інеш reacts fastest (' + m('ines', 'react').toFixed(0) + ' s vs ' + others('ines', x => m(x, 'react')).toFixed(0) + ' s)');
+    check(st.ines.maxKm <= 5 && st.nuno.maxKm <= 4, diff + ': Інеш takes short rides, Нуну nothing long (' + st.ines.maxKm.toFixed(1) + ', ' + st.nuno.maxKm.toFixed(1) + ' km)');
+    check(m('nuno', 'dist') < others('nuno', x => m(x, 'dist')), diff + ': Нуну takes the nearest (' + m('nuno', 'dist').toFixed(2) + ' km to the pickup)');
+    check(m('lurdes', 'surge') > 1.5 * others('lurdes', x => m(x, 'surge')), diff + ': Лурдеш rides the demand waves (' + m('lurdes', 'surge').toFixed(2) + ' vs ' + others('lurdes', x => m(x, 'surge')).toFixed(2) + ')');
+    if (diff !== 'easy') check(m('tiago', 'near') > 0.8, diff + ': Тіаго hunts near the player (' + m('tiago', 'near').toFixed(2) + ')');
+    check(eph('ze') >= 0.97 * Math.max(...RIV_IDS.filter(x => x !== 'ze').map(eph)), diff + ': Зé earns the most per working hour (' + eph('ze').toFixed(1) + ' €/h)');
+    check(RIV_IDS.every(id => 1 - st[id].work / st[id].ticks <= (diff === 'easy' ? 0.55 : 0.15)), diff + ': breaks are short (' + RIV_IDS.map(id => (100 * (1 - st[id].work / st[id].ticks)).toFixed(0) + '%').join(' ') + ')');
     if (diff === 'easy') check(lostToRivals === 0, 'easy shields the player: no order lost to a rival (' + lostToRivals + ')');
     rivalTable[diff] = st;
     const sh = (k) => (100 * k / n).toFixed(0) + '%';

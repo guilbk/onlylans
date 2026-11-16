@@ -356,9 +356,9 @@ skipping the missing ones. `10_data` uses `PG.DATA` if set, `12_roads` uses `PG.
 | `SLOTS` | `{am:{h:8,label:"08–10"}, lunch:{h:12,label:"12–14"}, pm:{h:17,label:"17–19"}, night:{h:22,label:"22–24"}}`; `sat-night` starts at hour 0 |
 | `DAYS` | `mon tue wed thu fri sat sun` = понеділок, вівторок, середа, четвер, п'ятниця, субота, неділя |
 | `CALL` | `0 = A` dispatch call, `1 = B` taxi stand, `2 = C` street hail (`CALL_NAMES = ["Виклик","Стоянка","З вулиці"]`) |
-| `LEAD` (game s) | `[720, 540, 420]` for A, B, C — pin visible from `t − LEAD[c]·DIFF_K·leadK` |
+| `LEAD` (game s) | `[310, 310, 310]` for A, B, C — pin visible from `t − LEAD[c]·DIFF_K·leadK` (tuned by `python -m pipeline.tune`: the shortest windows the 200-s measuring bot can still use; below `delay + BOARD_S + 30` s over `DIFF_K` a call type is invisible to it) |
 | `RADIUS` (m) | `[5000, 3500, 2500]` — pin visible only within `RADIUS[c]·DIFF_K` of the car |
-| `DIFF_K` | `{easy:1.25, normal:1, hard:0.85}` |
+| `DIFF_K` | `{easy:1.0, normal:1, hard:0.9}` |
 | `BOARD_S` | 30 (boarding seconds added to eta) |
 | `HOME` | `{x: 9110, y: 12443}` metres |
 | `MAP` | `{w: 15000, h: 19000}` metres |
@@ -502,8 +502,11 @@ Subscribers must not rely on order except: `rules` subscribes to `dropoff` at lo
 `< 0.88` vip; else rush. Tip rate (× `o.fare`): regular 0.05, tourist 0.15, vip 0.30, rush 0.10.
 `PG.rules.leadK(o)` = 0.6 for rush, else 1. Tip = round to cents of `fare × rate` plus combo bonus.
 
-**Combo**: a pickup within **90 game s** after the previous drop-off (or while booked during a ride, i.e.
-pickup time ≤ `lastDropT + 90`) raises `n` by 1, else `n = 1` (and if `n` was ≥ 2, emit `combo:break`).
+**Combo**: a pickup within **300 game s** after the previous drop-off (or while booked during a ride, i.e.
+pickup time ≤ `lastDropT + 300`; the pickup time is the start of the ride, `G.leg.t0` in the `pickup` handler)
+raises `n` by 1, else `n = 1` (and if `n` was ≥ 2, emit `combo:break`). The window was picked with the
+measuring bot (`pipeline/sim.py`, 28 shifts, normal): with 90 s only 10 % of its rides reached ×1.1; with 300 s
+42 % reach ×1.1 or more and 9 % reach ×1.3; with 600 s 71 % and 37 %.
 Multiplier `k`: n=1 → 1.0, n=2 → 1.1, n=3 → 1.2, n ≥ 4 → **1.3** (shown as badge «×1.3»). Bonus paid at
 drop-off inside `tip`: `fare × (k − 1)`. Emit `combo {n, k}` on every increase. `G.bestCombo = max n`.
 
@@ -529,7 +532,31 @@ Medals: 0 none, 1 бронза, 2 срібло, 3 золото, 4 легенда
 | lurdes | Лурдеш | «Хвиля» | `#a0e85b` | f | demand waves (surges) |
 | nuno | Нуну | «Новачок» | `#ffffff` | m | slow, nearest first |
 
-Tuning (`DIFF`, `PERS`), arrival-first claims, toasts: brief K6. Race table «Перегони 7 ланосів» on the
+**Tactics in numbers** (`PG.ai.PERS`; `python -m pipeline.sim --tactics` prints them, `tools/engine_test.mjs`
+checks them on every difficulty). A score ≤ 0 means «never take this pin».
+
+| id | Reaction `react` (s) | What it does |
+|---|---|---|
+| ze | 16, every drive takes 0.85× the time | notices the most pins (×2.5), takes the best € per minute; the top earner per working hour |
+| fatima | 40 | stand calls ×1.6 and only within 420 s, a street pin only within 120 s; notices stand pins ×3; waits at stands |
+| rui | 34 (night ×0.7) | nothing under 3.5 km unless it touches the airport (2.5 km round it); score ×(1 + km/4), airport ×2.5; drives to the airport 25 % of idle drives (night 60 %) |
+| ines | 8 | nothing over 5 km; score `fare / (eta + ½·d + 60)`; notices ×1.4 |
+| tiago | 20 | not on easy: only pins within 1500 m of the player (×2); repositions every 45 s next to the player |
+| lurdes | 30 | while a demand wave runs (or starts within 240 s) she takes wave pins (×4, noticed ×3) and nothing else beyond 120 s; else the busiest hotspots |
+| nuno | 90, every drive takes 1.7× the time, notices ×0.5 | nothing over 4 km, `1 / (eta + 60)`: the nearest pin first; the weakest of the 7 |
+
+Difficulty changes sharpness (`PG.ai.DIFF`): easy `react ×2.4, radius ×0.7, attn 0.14, duty 0.5, speed ×1.0, no
+near rule`; normal `×1.0, ×1.0, 0.35, 0.88, ×1.15, near 2500 m at ×0.5`; hard `×0.55, ×1.25, 0.5, 0.9, ×1.6,
+near 5000 m at ×0.35`. `duty` is the share of a 1500 s cycle a rival works, the rest is a break (normal 9 %,
+hard 8 %, easy 40 % of the shift on break; it was 34–60 %). Rivals hardly take orders away from the measuring bot (0 to 0.1
+per shift; the bot's income barely moves even if the rivals drive twice as fast, see the report of the balance
+sweep), so the medal shares are set by `LEAD` and `DIFF_K`; the rivals make the race table and the place.
+Shipped medal shares of the 200-s bot on the 28 shifts (`node tools/engine_test.mjs`, equal to `pipeline.sim`):
+easy bronze+ 100 %, gold+ 64 %, legend 25 %; normal bronze+ 100 %, gold+ 50 %, legend 18 % (target ≤ 15 %: one
+shift over); hard bronze+ 86 %, gold+ 21 %, legend 7 %. `RADIUS` does not move the bot (a sweep down to 40 % of the
+values changes nothing), and below `LEAD` 310 s the 200-s bot cannot take a pin at all.
+
+Arrival-first claims, toasts: brief K6. Race table «Перегони 7 ланосів» on the
 result: Ріїн + 7, by €, colour dot, nickname, rides.
 
 **«Про дані» lists**: source UCI 339, CC BY 4.0; **data**: trips, drivers, routes, the ghost, the

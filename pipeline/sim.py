@@ -40,7 +40,6 @@ TRAIL_EVERY_S = 10.0  # the engine wakes every 10 game s (trail sample)
 BOT_STEP_S = 7.2  # bot cadence, game s per tick
 BOT_TICKS = 1000  # ticks of the bot loop of engine_test
 BOT_WINDOW_S = 900.0  # the bot looks at orders due within this many game s
-CRUISE_WINDOW_S = 400.0  # the idle bot drives towards the nearest pin due within this many game s
 CRUISE_MIN_M = 200.0  # no cruising for a pin nearer than this (metres)
 HOME = (9110.0, 12443.0)  # start of the car, metres
 MAP_W_M = 15000.0
@@ -50,9 +49,9 @@ LEGEND_K = 1.25  # legend medal at 1.25 x the ghost total
 DEFAULT_DELAY_S = 200.0
 
 DIFFICULTIES = ("easy", "normal", "hard")
-DEFAULT_LEAD = (720.0, 540.0, 420.0)  # game s, call types A, B, C
+DEFAULT_LEAD = (310.0, 310.0, 310.0)  # game s, call types A, B, C
 DEFAULT_RADIUS = (5000.0, 3500.0, 2500.0)  # metres, call types A, B, C
-DEFAULT_DIFF_K = {"easy": 1.25, "normal": 1.0, "hard": 0.85}
+DEFAULT_DIFF_K = {"easy": 1.0, "normal": 1.0, "hard": 0.9}
 
 # ---- constants of the rivals (25_ai.js) ------------------------------------------------------
 GRID_S = 5.0  # game s between decision points of a free rival
@@ -67,7 +66,7 @@ RIVAL_IDS = ("ze", "fatima", "rui", "ines", "tiago", "lurdes", "nuno")
 # ---- passenger kinds and tips (22_rules.js) --------------------------------------------------
 TIP_RATE = {"regular": 0.05, "tourist": 0.15, "vip": 0.30, "rush": 0.10}
 RUSH_LEAD_K = 0.6
-COMBO_WINDOW_S = 90.0
+COMBO_WINDOW_S = 300.0  # game s from a drop-off to the next pickup (CONTRACT section 13)
 COMBO_K = (1.0, 1.0, 1.1, 1.2, 1.3)
 
 OK, GONE, LATE = 0, 1, 2  # feasibility reason codes of the engine
@@ -97,9 +96,9 @@ class RivalDiff:
 
 
 DEFAULT_RIVAL_DIFF = {
-    "easy": RivalDiff(2.4, 0.7, 0.14, 0.25, 1.0, 0.0, 1.0),
-    "normal": RivalDiff(1.0, 1.0, 0.20, 0.40, 1.15, 2500.0, 0.5),
-    "hard": RivalDiff(0.55, 1.25, 0.28, 0.50, 1.3, 3200.0, 0.35),
+    "easy": RivalDiff(2.4, 0.7, 0.14, 0.5, 1.0, 0.0, 1.0),
+    "normal": RivalDiff(1.0, 1.0, 0.35, 0.88, 1.15, 2500.0, 0.5),
+    "hard": RivalDiff(0.55, 1.25, 0.5, 0.9, 1.6, 5000.0, 0.35),
 }
 
 
@@ -113,6 +112,7 @@ class Settings:
         diff_k: ``PG.C.DIFF_K`` per difficulty (scales lead and radius).
         rivals: ``PG.ai.DIFF`` per difficulty.
         delay: Reaction time of the bot, game s (0 = sees every pin at once).
+        combo_window: Game s from a drop-off to the next pickup that keeps the combo.
     """
 
     lead: tuple[float, float, float] = DEFAULT_LEAD
@@ -120,6 +120,7 @@ class Settings:
     diff_k: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_DIFF_K))
     rivals: dict[str, RivalDiff] = field(default_factory=lambda: dict(DEFAULT_RIVAL_DIFF))
     delay: float = DEFAULT_DELAY_S
+    combo_window: float = COMBO_WINDOW_S
 
 
 @dataclass(slots=True)
@@ -223,6 +224,8 @@ class ShiftResult:
         rival_eur: Total of each rival in ``RIVAL_IDS`` order, euros.
         rival_rides: Pickups of each rival in ``RIVAL_IDS`` order.
         race_place: Place among the player and the 7 rivals (1..8).
+        combo: Player pickups at combo level 1, 2, 3 and 4 or more.
+        tactics: Per rival the measured behaviour (see :func:`note_pickup`), in ``RIVAL_IDS`` order.
     """
 
     shift_id: str
@@ -234,6 +237,8 @@ class ShiftResult:
     rival_eur: tuple[float, ...]
     rival_rides: tuple[int, ...]
     race_place: int
+    tactics: tuple[dict[str, float], ...] = ()
+    combo: tuple[int, ...] = (0, 0, 0, 0)
 
 
 # ---- small pure helpers ----------------------------------------------------------------------
@@ -507,52 +512,90 @@ class Persona:
 
 
 PERSONAS = {
-    "ze": Persona(24, 150),
+    "ze": Persona(16, 150, 0.85),
     "fatima": Persona(40, 600),
     "rui": Persona(34, 300),
-    "ines": Persona(16, 120),
+    "ines": Persona(8, 120),
     "tiago": Persona(20, 45),
     "lurdes": Persona(30, 240),
-    "nuno": Persona(55, 90, 1.25, 0.7),
+    "nuno": Persona(90, 90, 1.7, 0.5),
 }
 
+# Hunting range of Tiago, short and long trips, game numbers of the tactics (25_ai.js).
+HUNT_M = 1500.0  # Tiago only takes pins this close to the player
+SHORT_KM = 5.0  # Ines takes nothing longer
+NUNO_KM = 4.0  # Nuno takes nothing longer
+LONG_KM = 3.5  # Rui takes nothing shorter (unless it touches the airport)
+STAND_ETA_S = 120.0  # Fatima leaves the stand only for a pin this close in time
+STAND_WAIT_S = 420.0  # ... and for a stand call at most this far away
 
-def _score_ze(o: Order, eta: float, pdist: float, surge: bool, air: bool) -> float:
+
+@dataclass(slots=True)
+class Ctx:
+    """What a rival knows about one candidate pin (``S`` of 25_ai.js).
+
+    Attributes:
+        pdist: Pickup distance to the player, m (1e9 when unknown or hidden).
+        surge: The pickup is inside a running demand wave (Lurdes only).
+        live: A demand wave is running or about to start (Lurdes only).
+        air: The trip touches the airport (Rui only).
+        easy: Difficulty is easy.
+    """
+
+    pdist: float = 1e9
+    surge: bool = False
+    live: bool = False
+    air: bool = False
+    easy: bool = False
+
+
+def _score_ze(o: Order, eta: float, c: Ctx) -> float:
     """Ze: best euros per minute."""
     return o.fare / (eta + o.d + 30)
 
 
-def _score_fatima(o: Order, eta: float, pdist: float, surge: bool, air: bool) -> float:
-    """Fatima: likes taxi-stand orders and short pickups."""
-    return o.fare / (eta + o.d + 30) * (1.6 if o.c == 1 else 1) * (1.15 if eta < 300 else 1)
+def _score_fatima(o: Order, eta: float, c: Ctx) -> float:
+    """Fatima: stand calls, anything else only when it is right next to her."""
+    base = o.fare / (eta + o.d + 30)
+    if o.c == 1:
+        return base * 1.6 if eta < STAND_WAIT_S else 0
+    return base * 0.5 if eta < STAND_ETA_S else 0
 
 
-def _score_rui(o: Order, eta: float, pdist: float, surge: bool, air: bool) -> float:
+def _score_rui(o: Order, eta: float, c: Ctx) -> float:
     """Rui: long trips and the airport."""
-    return o.fare / (eta + o.d + 30) * (1 + o.km / 8) * (1.5 if air else 1)
+    if o.km < LONG_KM and not c.air:
+        return 0
+    return o.fare / (eta + o.d + 30) * (1 + o.km / 4) * (2.5 if c.air else 1)
 
 
-def _score_ines(o: Order, eta: float, pdist: float, surge: bool, air: bool) -> float:
-    """Ines: short rides."""
-    return o.fare / (eta + 0.5 * o.d + 60)
+def _score_ines(o: Order, eta: float, c: Ctx) -> float:
+    """Ines: short rides, quickly."""
+    return 0 if o.km > SHORT_KM else o.fare / (eta + 0.5 * o.d + 60)
 
 
-def _score_tiago(o: Order, eta: float, pdist: float, surge: bool, air: bool) -> float:
-    """Tiago: hunts orders within 1500 m of the player (pdist is 1e9 on easy)."""
-    return o.fare / (eta + o.d + 30) * (1.8 if pdist < 1500 else 1)
+def _score_tiago(o: Order, eta: float, c: Ctx) -> float:
+    """Tiago: hunts pins near the player (not on easy)."""
+    base = o.fare / (eta + o.d + 30)
+    if c.easy:
+        return base
+    return base * 2 if c.pdist < HUNT_M else 0
 
 
-def _score_lurdes(o: Order, eta: float, pdist: float, surge: bool, air: bool) -> float:
-    """Lurdes: demand waves count double."""
-    return o.fare / (eta + o.d + 30) * (2 if surge else 1)
+def _score_lurdes(o: Order, eta: float, c: Ctx) -> float:
+    """Lurdes: inside a demand wave she takes only wave pins."""
+    base = o.fare / (eta + o.d + 30)
+    if not c.live:
+        return base
+    return base * 4 if c.surge else (base * 0.5 if eta < STAND_ETA_S else 0)
 
 
-def _score_nuno(o: Order, eta: float, pdist: float, surge: bool, air: bool) -> float:
+def _score_nuno(o: Order, eta: float, c: Ctx) -> float:
     """Nuno: nearest first, nothing over 5 km."""
-    return 0 if o.km > 5 else 1 / (eta + 60)
+    return 0 if o.km > NUNO_KM else 1 / (eta + 60)
 
 
-SCORERS: dict[str, Callable[[Order, float, float, bool, bool], float]] = {
+SCORERS: dict[str, Callable[[Order, float, Ctx], float]] = {
     "ze": _score_ze,
     "fatima": _score_fatima,
     "rui": _score_rui,
@@ -624,6 +667,10 @@ class Rival:
     ly1: float = 0.0
     u_att: list[float] = field(default_factory=list)
     u_rdy: list[float] = field(default_factory=list)
+    c_pd: float = 1e9
+    c_react: float = 0.0
+    c_dist: float = 0.0
+    tac: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -681,6 +728,7 @@ class Game:
     tips: float = 0.0
     combo: int = 0
     last_drop_t: float = -1e9
+    combo_rides: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
     cur: Order | None = None
     nxt: Order | None = None
     claim: dict[int, Claim] = field(default_factory=dict)
@@ -1103,7 +1151,7 @@ def near_airport(o: Order) -> bool:
     ) ** 2 <= r * r
 
 
-def attention(g: Game, rv: Rival, o: Order, night: bool, surge: bool) -> float:
+def attention(g: Game, rv: Rival, o: Order, night: bool, c: Ctx) -> float:
     """Share of pins of this kind a rival notices away from the player.
 
     Args:
@@ -1111,19 +1159,24 @@ def attention(g: Game, rv: Rival, o: Order, night: bool, surge: bool) -> float:
         rv: The rival.
         o: The order.
         night: Local hour 22..05.
-        surge: ``o`` is inside a demand wave.
+        c: What the rival knows about the pin.
 
     Returns:
         A probability in 0..1 (may exceed 1 for boosted cases).
     """
     at = g.D.attn * PERSONAS[rv.id].attn
-    if rv.id == "rui" and night:
-        return at * 1.4
-    if rv.id == "fatima" and o.c == 1:
-        return at * 2
-    if rv.id == "lurdes" and surge:
+    rid = rv.id
+    if rid == "ze":
         return at * 2.5
-    return at * 0.6 if rv.id == "tiago" else at
+    if rid == "fatima":
+        return at * (3 if o.c == 1 else 0.5)
+    if rid == "rui":
+        return at * (1.4 if night else 1) * (2 if c.air else 1) * (1.5 if o.km >= 6 else 1)
+    if rid == "ines":
+        return at * 1.4
+    if rid == "lurdes":
+        return at * (3 if c.surge else 0.7)
+    return at
 
 
 def scan(g: Game, rv: Rival, t: float) -> tuple[Order, float, int] | None:
@@ -1148,6 +1201,7 @@ def scan(g: Game, rv: Rival, t: float) -> tuple[Order, float, int] | None:
     r0, rn = pers.react * d.react * owl, pers.react * d.near_react * owl
     km_k = sh.detour / rival_speed(g, t) * 3600 * pers.travel / 1000
     scorer = SCORERS[rid]
+    cx = Ctx(easy=g.dn == "easy", live=rid == "lurdes" and active_surge(sh, t) is not None)
     best: tuple[Order, float, int] | None = None
     best_score = -1.0
     t_end = t + g.max_lead
@@ -1164,8 +1218,8 @@ def scan(g: Game, rv: Rival, t: float) -> tuple[Order, float, int] | None:
         kind = claim_kind(g, o, t + eta, t)
         if kind == 0:
             continue
-        sc = _consider(g, rv, o, eta, t, spawn, (px, py, track, night, r0, rn), scorer)
-        if sc is not None and sc > best_score:
+        sc = _consider(g, rv, o, eta, t, spawn, (px, py, track, night, r0, rn), (cx, scorer))
+        if sc is not None and sc > best_score and sc > 0:
             best_score, best = sc, (o, eta, kind)
     return best
 
@@ -1178,32 +1232,33 @@ def _consider(
     t: float,
     spawn: float,
     ctx: tuple[float, float, bool, bool, float, float],
-    scorer: Callable[[Order, float, float, bool, bool], float],
+    how: tuple[Ctx, Callable[[Order, float, Ctx], float]],
 ) -> float | None:
     """Perception, attention and reaction gates of one candidate; its score or None."""
     px, py, track, night, r0, rn = ctx
+    cx, scorer = how
     d = g.D
-    near, pdist = False, 1e9
+    near, cx.pdist = False, 1e9
     if track:
-        pdist = math.sqrt((o.x0 - px) ** 2 + (o.y0 - py) ** 2)
-        near = d.near > 0 and pdist <= d.near
+        cx.pdist = math.sqrt((o.x0 - px) ** 2 + (o.y0 - py) ** 2)
+        near = d.near > 0 and cx.pdist <= d.near
     if not near:
         dist = math.sqrt((o.x0 - rv.x) ** 2 + (o.y0 - rv.y) ** 2)
         if dist > g.st.radius[o.c] * d.radius:
             return None
-    if rv.id == "tiago" and g.dn == "easy":
-        pdist = 1e9
-    surge = rv.id == "lurdes" and in_surge(g.sh, o)
-    air = rv.id == "rui" and near_airport(o)
+    if rv.id == "tiago" and cx.easy:
+        cx.pdist = 1e9
+    cx.surge = rv.id == "lurdes" and in_surge(g.sh, o)
+    cx.air = rv.id == "rui" and near_airport(o)
     if near:
         ready = spawn + NOTICE_K * rn * (0.8 + 0.4 * rv.u_rdy[o.i])
     else:
-        if rv.u_att[o.i] >= attention(g, rv, o, night, surge):
+        if rv.u_att[o.i] >= attention(g, rv, o, night, cx):
             return None
         ready = spawn + NOTICE_K * r0 * (0.8 + 0.4 * rv.u_rdy[o.i])
     if ready > t:
         return None
-    return scorer(o, eta, pdist, surge, air)
+    return scorer(o, eta, cx)
 
 
 def commit(g: Game, rv: Rival, t: float, o: Order, eta: float, kind: int) -> None:
@@ -1229,6 +1284,10 @@ def commit(g: Game, rv: Rival, t: float, o: Order, eta: float, kind: int) -> Non
             g.lost_to_rivals += 1
         if loser is not None and loser is not rv:
             lose(g, loser, t)
+    px, py = player_at(g, t)
+    rv.c_pd = math.hypot(o.x0 - px, o.y0 - py)
+    rv.c_react = t - max(o.t - g.ai_lead[o.i], rv.idle_since)
+    rv.c_dist = math.hypot(o.x0 - rv.x, o.y0 - rv.y)
     start_leg(rv, t, o.x0, o.y0, eta)
     rv.state, rv.cur, rv.nxt, rv.target, rv.mode = 1, o, t1, o, "pickup"
 
@@ -1287,6 +1346,26 @@ def _free_step(g: Game, rv: Rival, t: float) -> None:
     rv.nxt = t + GRID_S
 
 
+def note_pickup(g: Game, rv: Rival, o: Order) -> None:
+    """Measure what a rival just picked (the numbers of the tactics table).
+
+    Args:
+        g: The game.
+        rv: The rival that boards the passenger of ``o``.
+        o: The order.
+    """
+    a = rv.tac
+    a["rides"] = a.get("rides", 0) + 1
+    a["km"] = a.get("km", 0.0) + o.km
+    a["air"] = a.get("air", 0) + near_airport(o)
+    a["stand"] = a.get("stand", 0) + (o.c == 1)
+    a["near"] = a.get("near", 0) + (rv.c_pd < HUNT_M)
+    a["surge"] = a.get("surge", 0) + in_surge(g.sh, o)
+    a["react"] = a.get("react", 0.0) + rv.c_react
+    a["dist"] = a.get("dist", 0.0) + rv.c_dist / 1000
+    a["fare"] = a.get("fare", 0.0) + o.fare
+
+
 def process(g: Game, rv: Rival, t: float) -> None:
     """Run one wake-up of a rival at game time ``t`` (state machine of 25_ai.js).
 
@@ -1306,6 +1385,7 @@ def process(g: Game, rv: Rival, t: float) -> None:
         c = g.claim.get(o.i)
         if c is not None and c.by == rv.id:
             c.boarded = True
+        note_pickup(g, rv, o)
         rv.state, rv.mode = 2, "ride"
         rv.lt0, rv.lt1, rv.nxt = t, t + o.d, t + o.d
     elif rv.state == 2:
@@ -1628,11 +1708,11 @@ def on_pickup(g: Game) -> None:
     g.lt0, g.lt1 = tev, tev + o.d
     g.lx0, g.ly0, g.lx1, g.ly1 = o.x0, o.y0, o.x1, o.y1
     g.mode = "ride"
-    # 22_rules.js reads the leg end as "now", which is already the end of the ride here
-    if g.combo > 0 and g.lt1 <= g.last_drop_t + COMBO_WINDOW_S:
+    if g.combo > 0 and tev <= g.last_drop_t + g.st.combo_window:
         g.combo += 1
     else:
         g.combo = 1
+    g.combo_rides[min(g.combo, 4) - 1] += 1
 
 
 def on_dropoff(g: Game) -> None:
@@ -1801,21 +1881,20 @@ def bot_tick(g: Game) -> None:
 
 
 def _bot_cruise(g: Game) -> None:
-    """Idle bot: drive towards the nearest pin due within 400 s."""
-    orders = g.sh.orders
-    near, nd = None, math.inf
-    lo = bisect.bisect_right(g.sh.times, g.t)
-    for k in range(lo, len(orders)):
-        o = orders[k]
-        if o.t > g.t + CRUISE_WINDOW_S:
-            break
-        d = math.hypot(o.x0 - g.x, o.y0 - g.y)
-        if d < nd:
-            nd, near = d, o
-    if near is None or nd <= CRUISE_MIN_M:
+    """Idle bot: no pin on the radar is takeable, so drive to the best hotspot (weight / distance).
+
+    The bot only knows what a player knows: the pin radar and where the shift is busy. It never
+    drives to a pin it cannot see.
+    """
+    best, bs = None, -1.0
+    for h in g.hot:
+        sc = h.w / (1 + math.hypot(h.x - g.x, h.y - g.y) / 3000)
+        if sc > bs:
+            bs, best = sc, h
+    if best is None or math.hypot(best.x - g.x, best.y - g.y) <= CRUISE_MIN_M:
         return
-    if g.mode == "idle" or math.hypot(g.lx1 - near.x0, g.ly1 - near.y0) > 50:
-        cruise_to(g, near.x0, near.y0)
+    if g.mode == "idle" or math.hypot(g.lx1 - best.x, g.ly1 - best.y) > 50:
+        cruise_to(g, best.x, best.y)
 
 
 def play_shift(shift: Shift, difficulty: str, settings: Settings) -> ShiftResult:
@@ -1835,12 +1914,15 @@ def play_shift(shift: Shift, difficulty: str, settings: Settings) -> ShiftResult
             break
         bot_tick(g)
         step(g, BOT_STEP_S)
+        for rv in g.rivals:
+            rv.tac[rv.mode] = rv.tac.get(rv.mode, 0) + 1
     earned = to_cents(g.tot)
     ec = js_round(earned * 100)
     place_n = 1 + sum(1 for rv in g.rivals if js_round(rv.total * 100) > ec)
     return ShiftResult(
         shift.id, earned, medal_of(shift, earned), g.rides, g.lost_to_rivals, g.rival_lost,
         tuple(rv.total for rv in g.rivals), tuple(rv.rides for rv in g.rivals), place_n,
+        tuple(rv.tac for rv in g.rivals), tuple(g.combo_rides),
     )  # fmt: skip
 
 
@@ -1948,6 +2030,41 @@ def summarise(results: Sequence[ShiftResult]) -> Summary:
         tuple(sum(r.rival_rides[k] for r in results) / n for k in range(cols)),
         sum(r.race_place for r in results) / n,
     )  # fmt: skip
+
+
+TACTIC_HEAD = "rival   rides  km  air% stand% near% surge% react pick  eur/h break% idle% cruise%"
+
+
+def tactic_table(results: Sequence[ShiftResult]) -> list[str]:
+    """Per rival, what its tactic looks like in numbers (the table of the balance report).
+
+    Args:
+        results: Results of one difficulty, with ``tactics`` filled.
+
+    Returns:
+        A header and one line per rival: pickups per shift, mean trip km, shares of its pickups
+        (airport, taxi-stand calls, within 1.5 km of the player, inside a demand wave), mean
+        seconds from the pin appearing to the decision, and the shares of the shift in modes.
+    """
+    lines = [TACTIC_HEAD]
+    for k, rid in enumerate(RIVAL_IDS):
+        t: dict[str, float] = {}
+        for r in results:
+            for key, v in r.tactics[k].items():
+                t[key] = t.get(key, 0) + v
+        rides = max(t.get("rides", 0), 1)
+        ticks = max(sum(t.get(m, 0) for m in ("idle", "cruise", "pickup", "ride", "break")), 1)
+        worked = max(ticks - t.get("break", 0), 1) * BOT_STEP_S / 3600
+        eph = t.get("fare", 0) / worked
+        share = [100 * t.get(key, 0) / rides for key in ("air", "stand", "near", "surge")]
+        mode = [100 * t.get(key, 0) / ticks for key in ("break", "idle", "cruise")]
+        row = [rides / len(results), t.get("km", 0) / rides, *share]
+        row += [t.get("react", 0) / rides, t.get("dist", 0) / rides, eph, *mode]
+        widths = (5, 4, 5, 6, 5, 6, 5, 4, 6, 6, 5, 7)
+        lines.append(
+            f"{rid:<7} " + " ".join(f"{v:{w}.1f}" for v, w in zip(row, widths, strict=True))
+        )
+    return lines
 
 
 def run_difficulties(
@@ -2115,11 +2232,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--data", type=Path, default=Path("game/game_data.json"))
     ap.add_argument("--compare", action="store_true", help="compare with tools/engine_test.mjs")
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--tactics", action="store_true", help="print what each rival does")
     args = ap.parse_args(argv)
     shifts = load_shifts(args.data)
     by_diff = run_difficulties(args.data, Settings(), DIFFICULTIES, args.workers, len(shifts))
     for d in DIFFICULTIES:
         print(format_summary(d, summarise(by_diff[d])))
+        if args.tactics:
+            print("\n".join(tactic_table(by_diff[d])))
     if not args.compare:
         return 0
     proc = subprocess.run(
