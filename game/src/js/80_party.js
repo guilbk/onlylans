@@ -1,25 +1,27 @@
-/* 80_party.js: party mode (?party=1), one map for everybody; the server decides order claims (CONTRACT §15). */
+/* 80_party.js: «Гра разом», rooms of friends on one map; the server decides order claims (CONTRACT §15). */
 (function (root) {
   const PG = root.PG = root.PG || {};
   const doc = root.document;
   const qs = new URLSearchParams(root.location.search);
-  if (qs.get('party') !== '1') return;
-
-  const HOST = qs.get('host') === '1';
-  const POLL_MS = 500;
-  const KEY = 'party-key';
+  const SCREEN = qs.get('screen') === '1';   // the clean spectator view for a projector
+  const POLL_MS = 200;
+  const KEY = 'party-session';
+  const JSON_TYPE = { 'Content-Type': 'application/json' };
   const MAP_W = 15000, MAP_H = 19000;
-  const SMOOTH = 6;          // 1/s, how fast other cars follow the server positions
+  const DELAY = 0.35;        // s, other cars are drawn this far behind the server time, between two samples
+  const EXTRA = 0.25;        // s, how far a car may be extrapolated when the next sample is late
   const FIRST_SLOT = 10, SLOTS = 22;   // PG.cars heading slots 0-9 belong to the rivals, ghost and hero
 
+  let on = false;            // the party UI was started on this page
   let snap = null;           // last server state
-  let me = null;             // {id, key}
+  let me = null;             // {room, key, id, token?}
+  let room = '';             // room code
   let started = false;       // the shift was set up on this page
   let mode = '';             // what the overlay shows
   let ui = {};               // refs of the current overlay
-  const hud = {};            // board, time and chip elements (they live as long as the page)
-  let offset = 0, bestRtt = 1e9, lastDraw = 0;
-  const cars = new Map();    // player id -> smoothed {x, y, hx, hy}
+  const hud = {};            // board, mini board and QR (they live as long as the page)
+  let offset = 0, bestRtt = 1e9, lastDraw = 0, link = '';
+  const cars = new Map();    // player id -> [{t, x, y}] samples on the server clock
   const others = new Set();  // order ids this page put into G.taken (claimed by other players)
   const pending = new Set(); // order ids with a claim in flight
   const stage = () => doc.getElementById('stage');
@@ -27,6 +29,9 @@
   const srvNow = () => nowS() + offset;
   const E = () => PG.engine;
   const G = () => PG.engine.G;
+  const eur = (x) => PG.util.eur(x);
+  const ranked = () => snap.players.slice().sort((a, b) => b.money - a.money);
+  const isHost = () => !!me && !!me.token;
 
   function el(tag, cls, text, parent) {
     const e = doc.createElement(tag);
@@ -36,11 +41,18 @@
     return e;
   }
 
+  function btn(text, parent, fn, cls) {
+    const b = el('button', cls || 'pty-btn', text, parent);
+    b.type = 'button';
+    b.addEventListener('click', fn);
+    return b;
+  }
+
   /** JSON call; resolves {ok, status, data}. A sample of the clock offset is taken from every reply. */
   function api(path, body) {
     const t0 = nowS();
-    const init = body === undefined ? undefined : { method: 'POST', body: JSON.stringify(body) };
-    return root.fetch(path, init).then(function (r) {
+    const init = body === undefined ? undefined : { method: 'POST', headers: JSON_TYPE, body: JSON.stringify(Object.assign({ room: room }, body)) };
+    return root.fetch(path + (body === undefined ? '?room=' + room : ''), init).then(function (r) {
       return r.json().then(function (data) {
         const t1 = nowS();
         if (data && typeof data.now === 'number' && t1 - t0 <= bestRtt * 1.5 + 0.02) {
@@ -52,11 +64,9 @@
     });
   }
 
-  const gameClock = () => (srvNow() - snap.start_at) * PG.C.BASE_SCALE;
-  const eur = (x) => PG.util.eur(x);
-  const ranked = () => snap.players.slice().sort((a, b) => b.money - a.money);
+  const gameClock = () => (srvNow() - snap.start_at) * PG.C.SHIFT / snap.duration;
 
-  // ---- the overlay: name entry, lobby, host setup, countdown ----
+  // ---- the overlay: entry, lobby, countdown ----
   function show(m, build) {
     if (m === mode) return;
     const box = doc.getElementById('party');
@@ -64,7 +74,51 @@
     ui = {};
     box.textContent = '';
     box.hidden = !build;
+    box.classList.toggle('count', m.indexOf('count') === 0);
     if (build) build(el('div', 'pty-card', undefined, box));
+  }
+
+  function save(name) {
+    root.sessionStorage.setItem(KEY, JSON.stringify({ room: room, key: me.key, id: me.id, token: me.token, name: name }));
+    root.history.replaceState(null, '', '?room=' + room);
+  }
+
+  /** Create or join a room; on success the poll takes over and shows the lobby. */
+  function enter(path, body, name) {
+    ui.err.textContent = '';
+    return root.fetch(path, { method: 'POST', headers: JSON_TYPE, body: JSON.stringify(body) }).then(function (r) {
+      return r.json().then(function (d) {
+        if (!r.ok) { ui.err.textContent = ({ no_room: 'Такого лобі немає', phase: 'Гру вже завершено', full: 'Лобі заповнене', busy: 'Забагато лобі' })[d.error] || 'Не вдалося'; return; }
+        room = d.room || body.room;
+        me = { key: d.key, id: d.id, token: d.token };
+        save(name);
+        onState(d.state);
+        startPoll();
+      });
+    }).catch(function () { ui.err.textContent = 'Немає зв’язку з сервером гри. Запусти python tools/party.py'; });
+  }
+
+  function buildEntry(fixed) {
+    return function (card) {
+      el('h1', null, fixed ? 'Лобі ' + fixed : 'Гра разом', card);
+      el('p', null, fixed ? 'Тебе запросили. Введи ім’я й заходь.' : 'Грайте разом на одній мапі: хто перший забрав замовлення, той і поїхав.', card);
+      const name = el('input', 'pty-input', undefined, card);
+      name.maxLength = 20;
+      name.placeholder = 'Твоє ім’я';
+      name.setAttribute('aria-label', 'Твоє ім’я');
+      if (!fixed) btn('Створити лобі', card, function () { enter('/api/create', { name: name.value }, name.value); });
+      if (!fixed) el('p', 'pty-sub', 'або долучись за кодом', card);
+      const code = fixed ? null : el('input', 'pty-input pty-codein', undefined, card);
+      if (code) {
+        code.maxLength = 4;
+        code.placeholder = 'КОД';
+        code.setAttribute('autocapitalize', 'characters');
+        code.setAttribute('aria-label', 'Код лобі');
+      }
+      btn('Приєднатися', card, function () { enter('/api/join', { room: fixed || code.value, name: name.value }, name.value); }, fixed ? 'pty-btn' : 'pty-btn alt');
+      ui.err = el('p', 'pty-err', '', card);
+      if (!fixed) btn('Назад', card, function () { show('', null); }, 'pty-btn ghost');
+    };
   }
 
   function fillList(list) {
@@ -72,42 +126,9 @@
     snap.players.forEach(function (p) {
       const row = el('div', 'pty-row' + (p.online ? '' : ' off'), undefined, list);
       el('i', 'pty-dot', undefined, row).style.background = p.color;
-      el('span', 'pty-name', p.name, row);
+      el('span', 'pty-name', p.name + (me && p.id === me.id ? ' (ти)' : ''), row);
+      if (p.id === snap.host) el('span', 'pty-tag', 'ведучий', row);
     });
-  }
-
-  function listHead(n) {
-    return n + ' ' + PG.util.plural(n, 'гравець', 'гравці', 'гравців');
-  }
-
-  /** Joins (or rejoins with the key saved in this tab); the name is only used for a new player. */
-  function join(name, key) {
-    return api('/api/join', { name: name, key: key }).then(function (r) {
-      if (!r.ok) { if (ui.err) ui.err.textContent = r.status === 409 ? 'Гру вже завершено' : 'Не вдалося приєднатися'; return; }
-      me = { id: r.data.id, key: r.data.key };
-      root.sessionStorage.setItem(KEY, JSON.stringify({ key: me.key, name: name }));
-    });
-  }
-
-  function buildJoin(card) {
-    el('h1', null, 'Гра разом', card);
-    el('p', null, 'Усі грають на одній мапі. Хто перший забрав замовлення, той і поїхав.', card);
-    ui.name = el('input', 'pty-input', undefined, card);
-    ui.name.maxLength = 20;
-    ui.name.value = 'Таксист ' + (snap.players.length + 1);
-    ui.name.setAttribute('aria-label', 'Твоє ім’я');
-    ui.name.addEventListener('focus', function () { ui.name.select(); });
-    const go = el('button', 'pty-btn', 'Приєднатися', card);
-    go.type = 'button';
-    ui.err = el('p', 'pty-err', '', card);
-    go.addEventListener('click', function () { join(ui.name.value, null); });
-  }
-
-  function buildLobby(card) {
-    el('h1', null, 'Чекаємо на старт', card);
-    ui.head = el('p', 'pty-sub', '', card);
-    ui.list = el('div', 'pty-list', undefined, card);
-    el('p', 'pty-wait', 'Ведучий скоро почне. Тримай телефон вертикально.', card);
   }
 
   function drawQr(canvas, rows) {
@@ -122,56 +143,89 @@
     });
   }
 
-  function buildSetup(card) {
+  function qrInto(canvas, urlEl) {
+    api('/api/qr').then(function (r) {
+      link = r.data.url || '';
+      if (urlEl && 'value' in urlEl) urlEl.value = link;
+      else if (urlEl) urlEl.textContent = link;
+      if (r.data.rows && r.data.rows.length) drawQr(canvas, r.data.rows);
+    }).catch(function () {});
+  }
+
+  /** The system share sheet where there is one (it needs https on phones); else copy the link. */
+  function share(b) {
+    if (root.navigator.share) { root.navigator.share({ title: 'Таксі: гра разом', text: 'Заходь у лобі ' + room, url: link }).catch(function () {}); return; }
+    ui.url.select();
+    let ok = false;
+    try { ok = doc.execCommand('copy'); } catch (err) { ok = false; }
+    b.textContent = ok ? 'Посилання скопійовано' : 'Скопіюй посилання вище';
+  }
+
+  function hostControls(card) {
     const P = PG.progress, shifts = PG.data.shifts;
+    el('label', 'pty-label', 'Зміна', card);
+    const sel = el('select', 'pty-input', undefined, card);
+    shifts.forEach(function (sh, i) {
+      const slot = PG.C.SLOTS[sh.slot];
+      el('option', null, sh.name + (slot ? ' · ' + slot.label : ''), sel).value = String(i);
+    });
+    el('label', 'pty-label', 'Складність', card);
+    const dif = el('div', 'pty-seg', undefined, card);
+    let diff = 'normal';
+    P.DIFFS.forEach(function (d) {
+      const b = btn(P.DIFF_LABEL[d], dif, function () {
+        diff = d;
+        Array.prototype.forEach.call(dif.children, function (c) { c.classList.toggle('on', c === b); });
+      }, 'pty-seg-btn' + (d === diff ? ' on' : ''));
+    });
+    btn('Старт', card, function () {
+      api('/api/start', { token: me.token, shift: +sel.value, difficulty: diff, duration: PG.C.SHIFT / PG.C.BASE_SCALE })
+        .then(function (r) { if (!r.ok) ui.err.textContent = 'Не вдалося почати'; });
+    });
+    ui.err = el('p', 'pty-err', '', card);
+  }
+
+  function buildLobby(card) {
+    el('h1', null, 'Лобі', card);
+    ui.code = el('div', 'pty-code', room, card);
+    const row = el('div', 'pty-share', undefined, card);
+    const qr = el('canvas', 'pty-qr', undefined, row);
+    const side = el('div', 'pty-col', undefined, row);
+    ui.url = el('input', 'pty-url', undefined, side);
+    ui.url.readOnly = true;
+    ui.url.setAttribute('aria-label', 'Посилання');
+    const sh = btn('Поділитися', side, function () { share(sh); }, 'pty-btn alt');
+    qrInto(qr, ui.url);
+    ui.head = el('p', 'pty-sub', '', card);
+    ui.list = el('div', 'pty-list', undefined, card);
+    if (isHost()) hostControls(card);
+    else el('p', 'pty-wait', 'Чекаємо на ведучого. Тримай телефон вертикально.', card);
+  }
+
+  function buildScreenLobby(card) {
     card.classList.add('wide');
     el('h1', null, 'Гра разом', card);
     const cols = el('div', 'pty-cols', undefined, card);
     const left = el('div', 'pty-col', undefined, cols);
     el('p', 'pty-sub', 'Скануйте код, щоб приєднатися', left);
     const qr = el('canvas', 'pty-qr', undefined, left);
-    ui.url = el('p', 'pty-url', '', left);
-    api('/api/qr').then(function (r) {
-      ui.url.textContent = r.data.url;
-      if (r.data.rows.length) drawQr(qr, r.data.rows);
-    });
+    ui.url = el('p', 'pty-link', '', left);
+    qrInto(qr, ui.url);
     const right = el('div', 'pty-col', undefined, cols);
+    el('div', 'pty-code', room, right);
     ui.head = el('p', 'pty-sub', '', right);
     ui.list = el('div', 'pty-list', undefined, right);
-    el('label', 'pty-label', 'Зміна', right);
-    const sel = el('select', 'pty-input', undefined, right);
-    shifts.forEach(function (sh, i) {
-      const slot = PG.C.SLOTS[sh.slot];
-      el('option', null, sh.name + (slot ? ' · ' + slot.label : ''), sel).value = String(i);
-    });
-    el('label', 'pty-label', 'Складність', right);
-    const dif = el('div', 'pty-seg', undefined, right);
-    let diff = 'normal';
-    P.DIFFS.forEach(function (d) {
-      const b = el('button', 'pty-seg-btn' + (d === diff ? ' on' : ''), P.DIFF_LABEL[d], dif);
-      b.type = 'button';
-      b.addEventListener('click', function () {
-        diff = d;
-        Array.prototype.forEach.call(dif.children, function (c) { c.classList.toggle('on', c === b); });
-      });
-    });
-    const go = el('button', 'pty-btn', 'Старт', right);
-    go.type = 'button';
-    ui.err = el('p', 'pty-err', '', right);
-    go.addEventListener('click', function () {
-      api('/api/start', { shift: +sel.value, difficulty: diff, duration: PG.C.SHIFT / PG.C.BASE_SCALE })
-        .then(function (r) { if (!r.ok) ui.err.textContent = 'Не вдалося почати'; });
-    });
   }
 
-  function message(text) {
-    return function (card) { el('h1', null, text, card); };
+  function leave() {
+    root.sessionStorage.removeItem(KEY);
+    root.location.href = root.location.pathname;
   }
 
   // ---- the shift ----
   function begin() {
     started = true;
-    if (HOST) return;
+    if (SCREEN) return;
     const e = E();
     e.config.difficulty = snap.difficulty;
     e.party = { clock: gameClock };
@@ -180,28 +234,34 @@
     installClaims(e);
   }
 
-  /** The server decides: the claim goes first, the engine action follows only when it is ours. */
+  const nameOf = (id) => (snap.players.find(function (p) { return p.id === id; }) || {}).name || 'інший гравець';
+
+  /** The server gave the order to somebody else: take the booking back and remember it as taken. */
+  function lose(o, by) {
+    G().taken.add(o.i);
+    others.add(o.i);
+    E().unbook(o);
+    E().say('Вже забрав ' + by);
+  }
+
+  /** Booking is instant on the phone; the server confirms in the background and a loss is rolled back. */
   function installClaims(e) {
     const orig = { pick: e.startPickup, book: e.bookNext, cruise: e.cruiseTo };
     const release = (o) => api('/api/release', { key: me.key, order: o.i });
 
-    function run(o) {
-      const g = G(), riding = g.mode === 'ride', prev = riding ? g.next : g.cur;
-      const ok = !g.over && (riding ? orig.book(o) : orig.pick(o));
-      if (!ok) release(o);
-      else if (prev && prev !== o) release(prev);
-    }
-
-    function take(o, first) {
-      if (!G() || G().over || !e.reachable(o)) return first(o);   // the engine says why not
+    function take(o, act) {
+      const g = G();
+      if (!g || g.over) return false;
       if (pending.has(o.i)) return true;
+      const prev = g.mode === 'ride' ? g.next : g.cur;
+      if (!act(o)) return false;
       pending.add(o.i);
+      if (prev && prev !== o) release(prev);
       api('/api/claim', { key: me.key, order: o.i }).then(function (r) {
         pending.delete(o.i);
-        if (r.data.ok) { run(o); return; }
-        if (r.data.ok === false) { G().taken.add(o.i); others.add(o.i); e.say('Вже забрав ' + r.data.by); }
-        else e.say('Не вдалося забрати');
-      }, function () { pending.delete(o.i); e.say('Немає зв’язку'); });
+        if (r.data.ok === false) lose(o, r.data.by);
+        else if (!r.data.ok) { e.unbook(o); e.say('Не вдалося забрати'); }
+      }, function () { pending.delete(o.i); e.unbook(o); e.say('Немає зв’язку'); });
       return true;
     }
     e.startPickup = (o) => take(o, orig.pick);
@@ -214,7 +274,7 @@
     };
   }
 
-  /** Orders other players claimed leave the pins of this phone; claims they gave back return. */
+  /** Orders other players claimed leave the pins of this phone; claims they gave back return; a lost race is rolled back. */
   function syncTaken() {
     const g = G();
     if (!g) return;
@@ -222,34 +282,52 @@
     Object.keys(snap.claims).forEach(function (k) { if (snap.claims[k] !== me.id) now.add(+k); });
     now.forEach(function (i) { if (!g.taken.has(i)) { g.taken.add(i); others.add(i); } });
     others.forEach(function (i) { if (!now.has(i) && !pending.has(i)) { g.taken.delete(i); others.delete(i); } });
+    [g.mode === 'pickup' ? g.cur : null, g.next].forEach(function (o) {
+      if (o && now.has(o.i) && !pending.has(o.i)) lose(o, nameOf(snap.claims[o.i]));
+    });
   }
 
   function syncBody() {
-    const g = started && !HOST ? G() : null;
+    const g = started && !SCREEN ? G() : null;
     if (!g) return { key: me.key };
     return { key: me.key, x: Math.round(g.x), y: Math.round(g.y), hx: g.hx, hy: g.hy, money: g.tot, trips: g.rides };
   }
 
-  // ---- other cars ----
+  // ---- other cars: samples on the server clock, drawn a little behind it so they glide ----
   function follow(players) {
     players.forEach(function (p) {
-      if (p.x !== null && !cars.has(p.id)) cars.set(p.id, { x: p.x, y: p.y });
+      if (p.x === null) return;
+      const s = cars.get(p.id) || [];
+      cars.set(p.id, s);
+      if (!s.length || s[s.length - 1].t !== p.at) { s.push({ t: p.at, x: p.x, y: p.y }); if (s.length > 8) s.shift(); }
     });
+  }
+
+  function carAt(s, t) {
+    const n = s.length;
+    if (n < 2 || t <= s[0].t) return s[0];
+    if (t >= s[n - 1].t) {
+      const a = s[n - 2], b = s[n - 1], k = Math.min(t - b.t, EXTRA) / Math.max(b.t - a.t, 0.05);
+      return { x: b.x + (b.x - a.x) * k, y: b.y + (b.y - a.y) * k };
+    }
+    let i = 1;
+    while (s[i].t < t) i++;
+    const a = s[i - 1], b = s[i], k = (t - a.t) / Math.max(b.t - a.t, 1e-3);
+    return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
   }
 
   function drawCars(ctx) {
     if (!snap || !started) return;
-    const dt = Math.min(0.1, nowS() - lastDraw), k = 1 - Math.exp(-dt * SMOOTH), W = stage().clientWidth;
+    const dt = Math.min(0.1, nowS() - lastDraw), W = stage().clientWidth, t = srvNow() - DELAY;
     lastDraw = nowS();
-    // phones: the size of the hero; the host screen: big, readable from the back of the room
-    const len = HOST ? Math.max(44, W * 0.034) : PG.render.carLen('hero'), fs = Math.round(HOST ? len * 0.45 : 11);
+    // phones: the size of the hero; the projector: big, readable from the back of the room
+    const len = SCREEN ? Math.max(44, W * 0.034) : PG.render.carLen('hero'), fs = Math.round(SCREEN ? len * 0.45 : 11);
     ctx.font = '700 ' + fs + 'px system-ui, sans-serif';
     ctx.textAlign = 'center';
     snap.players.forEach(function (p, i) {
-      const c = cars.get(p.id);
-      if (!c || (me && p.id === me.id)) return;
-      c.x += (p.x - c.x) * k; c.y += (p.y - c.y) * k;
-      const a = PG.cars.turn(FIRST_SLOT + i % SLOTS, p.hx, p.hy, dt, false);
+      const s = cars.get(p.id);
+      if (!s || (me && p.id === me.id)) return;
+      const c = carAt(s, t), a = PG.cars.turn(FIRST_SLOT + i % SLOTS, p.hx, p.hy, dt, false);
       const q = PG.render.P(c.x, c.y), x = q.x, y = q.y, alpha = p.online ? 1 : 0.4;
       if (x < -60 || y < -60 || x > W + 60 || y > stage().clientHeight + 60) return;
       PG.cars.draw(ctx, x, y, a, len, p.color, alpha, 'rival');
@@ -263,34 +341,43 @@
     ctx.globalAlpha = 1;
   }
 
-  // ---- scoreboards: the host's big one, the phone's chip, the result block ----
+  // ---- scoreboards: the projector's, the phone's mini board, the result block ----
   function board() {
-    const b = hud.board || (hud.board = el('aside', 'pty-board', undefined, doc.getElementById('app')));
-    b.textContent = '';
-    const done = snap.phase === 'done';
-    el('h2', null, done ? 'Фінал' : PG.data.shifts[snap.shift].name, b);
-    hud.time = el('div', 'pty-time', '', b);
+    if (!hud.board) {
+      hud.board = el('aside', 'pty-board', undefined, doc.getElementById('app'));
+      hud.title = el('h2', null, '', hud.board);
+      hud.time = el('div', 'pty-time', '', hud.board);
+      hud.rows = el('div', 'pty-rows', undefined, hud.board);
+      const foot = el('div', 'pty-foot', undefined, hud.board);
+      el('p', 'pty-sub', 'Долучайся за кодом ' + room, foot);
+      qrInto(el('canvas', 'pty-qr small', undefined, foot));
+    }
+    hud.title.textContent = snap.phase === 'done' ? 'Фінал' : PG.data.shifts[snap.shift].name;
+    hud.rows.textContent = '';
     ranked().forEach(function (p, i) {
-      const row = el('div', 'pty-row' + (p.online ? '' : ' off'), undefined, b);
+      const row = el('div', 'pty-row' + (p.online ? '' : ' off'), undefined, hud.rows);
       el('span', 'pty-pos', String(i + 1), row);
       el('i', 'pty-dot', undefined, row).style.background = p.color;
       el('span', 'pty-name', p.name, row);
       el('span', 'pty-trips', String(p.trips), row);
       el('b', 'pty-eur', eur(p.money), row);
     });
-    if (done) {
-      const again = el('button', 'pty-btn', 'Нова гра', b);
-      again.type = 'button';
-      again.addEventListener('click', function () {
-        api('/api/reset', {}).then(function () { root.location.reload(); });
-      });
-    }
   }
 
-  function chip() {
-    const c = hud.chip || (hud.chip = el('div', 'pty-chip', '', doc.getElementById('app')));
-    const list = ranked(), i = list.findIndex(function (p) { return p.id === me.id; });
-    c.textContent = '#' + (i + 1) + ' з ' + list.length + ' · ' + list[0].name + ' ' + eur(list[0].money);
+  /** Top 3 and you, on the phone. */
+  function mini() {
+    const m = hud.mini || (hud.mini = el('div', 'pty-mini', undefined, doc.getElementById('app')));
+    const list = ranked(), at = list.findIndex(function (p) { return p.id === me.id; });
+    const rows = list.slice(0, 3);
+    if (at > 2) rows.push(list[at]);
+    m.textContent = '';
+    rows.forEach(function (p) {
+      const i = list.indexOf(p), row = el('div', 'pty-mrow' + (p.id === me.id ? ' me' : ''), undefined, m);
+      el('span', 'pty-pos', String(i + 1), row);
+      el('i', 'pty-dot', undefined, row).style.background = p.color;
+      el('span', 'pty-name', p.name, row);
+      el('b', 'pty-eur', eur(p.money), row);
+    });
   }
 
   function resultBlock() {
@@ -304,12 +391,16 @@
     box.textContent = '';
     el('h2', null, 'Перегони гравців', box);
     ranked().forEach(function (p) {
-      const row = el('div', 'race-row' + (me && p.id === me.id ? ' me' : ''), undefined, box);
+      const row = el('div', 'race-row' + (p.id === me.id ? ' me' : ''), undefined, box);
       el('i', 'race-dot', undefined, row).style.background = p.color;
       el('span', 'race-name', p.name, row);
       el('span', 'race-rides', String(p.trips), row);
       el('span', 'race-total', eur(p.money), row);
     });
+    const bar = el('div', 'pty-bar', undefined, box);
+    if (isHost()) btn('Ще раз', bar, function () { api('/api/reset', { token: me.token }); });
+    else el('p', 'pty-sub', 'Ведучий почне нову гру', bar);
+    btn('Вийти', bar, leave, 'pty-btn ghost');
   }
 
   // ---- one server reply ----
@@ -318,28 +409,22 @@
     follow(s.players);
     if (s.phase === 'lobby') {
       if (started) { root.location.reload(); return; }
-      if (HOST) show('setup', buildSetup);
-      else if (me) show('lobby', buildLobby);
-      else show('join', buildJoin);
-    } else if (!started && (HOST || me)) begin();
-    else if (!started) {
-      if (s.phase === 'done') show('over', message('Гру завершено. Чекай новий раунд'));
-      else show('join', buildJoin);
-    }
-    if (ui.head) ui.head.textContent = listHead(s.players.length);
+      show('lobby', SCREEN ? buildScreenLobby : buildLobby);
+    } else if (!started) begin();
+    if (ui.head) ui.head.textContent = s.players.length + ' ' + PG.util.plural(s.players.length, 'гравець', 'гравці', 'гравців');
     if (ui.list) fillList(ui.list);
     if (!started) return;
-    if (HOST) board();
+    if (SCREEN) board();
     else {
       syncTaken();
-      chip();
+      mini();
       if (PG.screen === 'result') resultBlock();
     }
   }
 
   /** The map fills the screen (no empty band); the camera follows the cars, left of the leaderboard. */
   const cam = { s: 0, x: 0, y: 0 };
-  function hostCamera() {
+  function screenCamera() {
     const v = PG.render.view, st = stage(), W = st.clientWidth, H = st.clientHeight;
     const pw = hud.board ? hud.board.offsetWidth + 12 : 0, cover = Math.max(W / MAP_W, H / MAP_H) * 1.02;
     const live = snap.players.filter(function (p) { return p.x !== null && p.online; });
@@ -365,8 +450,8 @@
     const left = snap.start_at - srvNow();
     const count = left > 0 ? String(Math.ceil(left)) : '';
     if (mode !== 'count:' + count) show('count:' + count, count ? function (card) { el('div', 'pty-count', count, card); } : null);
-    if (HOST) {
-      hostCamera();
+    if (SCREEN) {
+      screenCamera();
       if (hud.time) {
         const r = Math.max(0, Math.ceil(snap.start_at + snap.duration - srvNow()));
         hud.time.textContent = snap.phase === 'done' ? '' : Math.floor(r / 60) + ':' + String(r % 60).padStart(2, '0');
@@ -374,16 +459,26 @@
     }
   }
 
-  function poll() {
-    const req = me ? api('/api/sync', syncBody()) : api('/api/party');
-    req.then(function (r) {
-      if (r.status === 403) { root.sessionStorage.removeItem(KEY); root.location.reload(); }
-      else if (r.ok) onState(r.data);
-    }).catch(function () {}).then(function () { root.setTimeout(poll, POLL_MS); });
+  let polling = false;
+  function startPoll() {
+    if (!polling) { polling = true; poll(); }
   }
 
-  function init() {
-    doc.body.classList.add('party', HOST ? 'party-host' : 'party-player');
+  function poll() {
+    const t0 = nowS();
+    const req = me ? api('/api/sync', syncBody()) : api('/api/party');
+    req.then(function (r) {
+      if (r.status === 403 || (r.status === 404 && me)) { leave(); return; }
+      if (r.status === 404 && !me) { ui.err && (ui.err.textContent = 'Такого лобі немає'); return; }
+      if (r.ok) onState(r.data);
+    }).catch(function () {}).then(function () { root.setTimeout(poll, Math.max(0, POLL_MS - (nowS() - t0) * 1000)); });
+  }
+
+  /** Start the party UI: resume a saved room, open the room from the link, or ask what to do. */
+  function activate() {
+    if (on) return;
+    on = true;
+    doc.body.classList.add('party', SCREEN ? 'party-screen' : 'party-player');
     const box = el('div', null, undefined, doc.getElementById('app'));
     box.id = 'party';
     box.setAttribute('data-no-map', '');
@@ -391,14 +486,21 @@
     PG.render.onDraw(drawCars, 3);
     PG.bus.on('frame', frame);
     PG.bus.on('ui:screen', function (e) {
-      if (!started || HOST) return;
+      if (!started || SCREEN) return;
       if (e.name === 'menu' && !G().over) PG.screens.setScreen('play');
       if (e.name === 'result') resultBlock();
     });
-    const saved = HOST ? null : JSON.parse(root.sessionStorage.getItem(KEY) || 'null');
-    (saved ? join(saved.name, saved.key) : Promise.resolve()).catch(function () {}).then(poll);
+    const code = (qs.get('room') || '').toUpperCase();
+    const saved = JSON.parse(root.sessionStorage.getItem(KEY) || 'null');
+    if (SCREEN) { room = code; startPoll(); return; }
+    if (saved && (!code || saved.room === code)) {
+      room = saved.room;
+      me = { key: saved.key, id: saved.id, token: saved.token };
+      startPoll();
+    } else show('entry:' + code, buildEntry(code));
   }
 
-  if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', init);
-  else init();
+  const ready = (fn) => (doc.readyState === 'loading' ? doc.addEventListener('DOMContentLoaded', fn) : fn());
+  PG.bus.on('party:open', function () { ready(function () { activate(); if (!me && !SCREEN) show('entry:', buildEntry('')); }); });
+  if (qs.get('party') === '1' || qs.get('room') || SCREEN) ready(activate);
 })(typeof window !== 'undefined' ? window : globalThis);
