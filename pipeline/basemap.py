@@ -296,7 +296,15 @@ def build(data_path: Path = DATA_DEFAULT) -> dict[str, object]:
         if poly:
             cx = sum(q[0] for q in poly) / len(poly)
             cy = sum(q[1] for q in poly) / len(poly)
-            districts.append({"name": name, "ua": DISTRICT_UA[name], "x": round(cx), "y": round(cy), "poly": flat(poly)})
+            districts.append(
+                {
+                    "name": name,
+                    "ua": DISTRICT_UA[name],
+                    "x": round(cx),
+                    "y": round(cy),
+                    "poly": flat(poly),
+                }
+            )
     parks = [{"name": n, "poly": clipped([to_m(*p) for p in poly])} for n, poly in PARKS]
     bridges = [
         {
