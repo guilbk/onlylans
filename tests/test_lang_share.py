@@ -157,3 +157,32 @@ def test_main_without_code_is_below_minimum(tmp_path: Path) -> None:
 
 def test_main_outside_a_repository_exits_two(tmp_path: Path) -> None:
     assert ls.main(["--root", str(tmp_path / "nope")]) == 2
+
+
+def test_run_git_returns_stdout_and_raises_on_failure(tmp_path: Path) -> None:
+    make_repo(tmp_path, {"a.py": 3}, "")
+    assert ls.run_git(tmp_path, ["rev-parse", "--is-inside-work-tree"]) == b"true\n"
+    with pytest.raises(subprocess.CalledProcessError):
+        ls.run_git(tmp_path, ["no-such-command"])
+
+
+def test_tracked_blobs_lists_every_tracked_path(tmp_path: Path) -> None:
+    make_repo(tmp_path, {"a.py": 3, "sub/b.js": 4}, "")
+    blobs = ls.tracked_blobs(tmp_path)
+    assert set(blobs) == {".gitattributes", "a.py", "sub/b.js"}
+    assert ls.blob_sizes(tmp_path, [blobs["a.py"], blobs["sub/b.js"]]) == {
+        blobs["a.py"]: 3,
+        blobs["sub/b.js"]: 4,
+    }
+
+
+def test_excluding_attrs_reports_only_switched_on_attributes(tmp_path: Path) -> None:
+    make_repo(tmp_path, {"a.js": 1, "dist/b.js": 1}, "dist/** linguist-generated\n")
+    on = ls.excluding_attrs(tmp_path, ["a.js", "dist/b.js"])
+    assert on == {"a.js": set(), "dist/b.js": {"linguist-generated"}}
+    assert ls.excluding_attrs(tmp_path, []) == {}
+
+
+def test_percent_and_attr_field_constants() -> None:
+    assert ls.PERCENT == 100.0
+    assert ls.ATTR_FIELDS == 3
