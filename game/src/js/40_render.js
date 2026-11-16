@@ -408,13 +408,18 @@
   // ---- camera update ----
   function updateCamera(dt, G, play) {
     const t = clock();
-    if (t < zoomEaseUntil) view.scale += (zoomEaseTo - view.scale) * (1 - Math.exp(-dt * 5));
+    const frozen = !!(PG.orders && (PG.orders.selected || PG.orders.hovered));   // a pin under the finger or mouse must not slide away
+    if (frozen) {
+      zoomEaseUntil += dt;           // the zoom ease waits
+    } else if (t < zoomEaseUntil) view.scale += (zoomEaseTo - view.scale) * (1 - Math.exp(-dt * 5));
     if (punch !== 0) {                     // kick decays back; applied as a ratio so user zoom is kept
       const next = Math.abs(punch) < 0.002 ? 0 : punch * Math.exp(-dt * 6);
       view.scale *= (1 + next) / (1 + punch);
       punch = next;
     }
-    if (play && G) {
+    if (frozen && play) {
+      // camera stays put while a pin is selected
+    } else if (play && G) {
       const held = t - lastPanClock < PAN_HOLD_S;
       const forced = t < recenterUntil;
       if (!held || forced) {

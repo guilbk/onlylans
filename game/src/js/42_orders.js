@@ -26,7 +26,8 @@
     tap: tap,
     clear: clear,
     blocks: blocks,
-    selected: null
+    selected: null,
+    hovered: null   // order under the mouse: the camera holds still while it is set
   };
 
   function G() { return PG.engine && PG.engine.G; }
@@ -41,7 +42,7 @@
 
   function clear() {
     setSelected(null);
-    S.hovered = null;
+    S.hovered = null; orders.hovered = null;
     S.route = null; S.routeOrd = null;
     if (S.card) S.card.className = 'order-card hidden';
     S.cardKey = '';
@@ -53,6 +54,7 @@
     if (S.touch && o) return;           // touch has no hover
     if (S.selected) return;             // a selection wins over hover
     S.hovered = o || null;
+    orders.hovered = S.hovered;
     if (o) markHint();
   }
 
@@ -73,7 +75,7 @@
     if (!S.touch) { take(o); return; }      // mouse: one click takes at once
     if (S.selected === o) { take(o); return; }
     setSelected(o);
-    S.hovered = null;
+    S.hovered = null; orders.hovered = null;
     S.route = null; S.routeOrd = null;
     markHint();
   }
@@ -104,7 +106,7 @@
     const g = G();
     const o = S.selected || S.hovered;
     if (!g || !o || !PG.render || !PG.engine) return;
-    if (g.over || o.t <= g.t) { if (S.selected === o) clear(); else S.hovered = null; return; }
+    if (g.over || o.t <= g.t) { if (S.selected === o) clear(); else { S.hovered = null; orders.hovered = null; } return; }
     const pv = PG.engine.preview(o);
     if (!pv) return;
     const hoverOnly = !S.selected;
