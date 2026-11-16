@@ -19,9 +19,8 @@
 
   const PIN_GLOW = ['rgba(255,200,87,0.20)', 'rgba(94,230,255,0.20)', 'rgba(255,122,144,0.20)'];
   const PIN_TRACK = ['rgba(255,200,87,0.25)', 'rgba(94,230,255,0.25)', 'rgba(255,122,144,0.25)'];
-  const FONT_LABEL = '700 12px ' + FONT;
-  const FONT_TAG = '600 10px ' + FONT;
-  const FONT_FLOAT = '800 15px ' + FONT;
+  const FONT_LABEL = '700 13px ' + FONT;
+  const FONT_TAG = '700 11px ' + FONT;
   const GHOST_TRAIL_N = 10;
   const GHOST_ALPHA = [];
   for (let i = 0; i < GHOST_TRAIL_N; i++) GHOST_ALPHA.push('rgba(180,140,255,' + (0.35 * i / GHOST_TRAIL_N).toFixed(3) + ')');
@@ -31,12 +30,16 @@
 
   const MAX_LABELS = 96;
   const MAX_FAINT = 900;
-  const FLOAT_LIFE = 70;          // game s a float stays visible
+  const POP_S = 0.4;              // real s of the pin pop-in
+  const EXPIRE_S = 0.35;          // real s of the pin expiry fade
+  const EXPIRE_N = 16;
   const PAN_HOLD_S = 4;           // camera stays put this long after a manual pan
   const MIN_SCALE_PHONE_M = 6000; // metres across on a phone at start
   const DESKTOP_VIEW_H_M = 8000;  // metres of height on desktop at start
   const MAX_SCALE = 0.4;          // px per metre
   const GHOST_TRAIL_DT = 12;      // game s between ghost trail samples
+  const CAR_LEN = { hero: 40, rival: 30, ghost: 32 };   // screen px at the default zoom
+  const TAG_H = 14;
 
   // ---- state ----
   let stage = null;
@@ -52,6 +55,7 @@
   let recenterUntil = 0;
   let centerShown = null;
   let frameNo = 0;
+  let dtNow = 0.016;
 
   const view = { cx: HOME_X, cy: HOME_Y, scale: 0.065 };
   const pOut = { x: 0, y: 0 };
@@ -66,7 +70,15 @@
   const ghostTrail = new Float32Array(GHOST_TRAIL_N * 2);
   let ghostTrailN = 0;
   let ghostTrailT = -1e9;
-  const carAngle = { player: 0, ghost: 0 };
+  const born = new Map();         // order -> real s it first showed as a pin
+  let prevPins = new Set();
+  let curPins = new Set();
+  const expired = [];             // fading pins: {x, y, c, r, t0} in world metres
+  let punch = 0;                  // short zoom kick on pickup / drop-off
+  let zoomEaseTo = 0;
+  let zoomEaseUntil = 0;
+  const rx = new Float32Array(16);
+  const ry = new Float32Array(16);
   const layers = [];
   const zone = { top: 0, bottom: 1e9, bx0: 0, by0: 0, bx1: 0, by1: 0 };  // keeps pins clear of UI
 
@@ -129,6 +141,16 @@
     view.cy = by - (py - H * 0.5) / view.scale;
     clampView();
     lastPanClock = clock();
+  }
+
+  function kick(v) {
+    if (!PG.REDUCED && punch < 0.09) punch += v;
+  }
+
+  // car length in screen px: grows gently with zoom, never below 80 % of the base size
+  function carLen(kind) {
+    const z = view.scale / defaultScale();
+    return CAR_LEN[kind] * Math.min(1.5, Math.max(0.8, Math.pow(z, 0.35))) * (W >= 700 ? 1.15 : 1);
   }
 
   function recenter() {
@@ -322,6 +344,12 @@
   // ---- camera update ----
   function updateCamera(dt, G, play) {
     const t = clock();
+    if (t < zoomEaseUntil) view.scale += (zoomEaseTo - view.scale) * (1 - Math.exp(-dt * 3));
+    if (punch !== 0) {                     // kick decays back; applied as a ratio so user zoom is kept
+      const next = Math.abs(punch) < 0.002 ? 0 : punch * Math.exp(-dt * 6);
+      view.scale *= (1 + next) / (1 + punch);
+      punch = next;
+    }
     if (play && G) {
       const held = t - lastPanClock < PAN_HOLD_S;
       const forced = t < recenterUntil;
@@ -358,7 +386,28 @@
     return lo;
   }
 
-  function collectPins(G) {
+  function popK(age) {                 // ease-out-back: grows past 1 and settles
+    if (PG.REDUCED || age >= POP_S) return 1;
+    const x = age / POP_S - 1;
+    return Math.max(0.01, 1 + 2.7 * x * x * x + 1.7 * x * x);
+  }
+
+  // pins that vanished because their time ran out fade out instead of blinking off
+  function noteExpired(G, tNow) {
+    if (!PG.REDUCED) {
+      prevPins.forEach(function (o) {
+        if (curPins.has(o) || o.t > G.t + 30 || G.cur === o || G.next === o) return;
+        if (G.taken && G.taken.has(o.i)) return;
+        if (expired.length >= EXPIRE_N) expired.shift();
+        expired.push({ x: o.x0, y: o.y0, c: o.c, t0: tNow });
+      });
+    }
+    const t = prevPins;
+    prevPins = curPins;
+    curPins = t;
+  }
+
+  function collectPins(G, tNow) {
     const eng = PG.engine;
     const C = PG.C;
     const orders = G.sh.orders;
@@ -367,6 +416,7 @@
     const horizon = G.t + maxLead + 1800;
     let n = 0;
     faintN = 0;
+    curPins.clear();
     const margin = 24;
     for (let i = firstAfter(orders, G.t); i < orders.length; i++) {
       const o = orders[i];
@@ -393,8 +443,13 @@
         p.py = sy;
         p.reach = reach;
         p.fare = o.fare;
-        p.r = reach ? 9 + Math.min(3, o.fare / 8) : 3;
+        p.r = reach ? 13 + Math.min(4, o.fare / 6) : 4;
+        p.lw = 0;
+        let b = born.get(o);
+        if (b === undefined) { b = tNow; born.set(o, b); }
+        p.k = popK(tNow - b);
         pins[n - 1] = p;
+        curPins.add(o);
       } else if (faintN < MAX_FAINT) {
         faint[faintN * 2] = sx;
         faint[faintN * 2 + 1] = sy;
@@ -402,6 +457,7 @@
       }
     }
     pins.length = n;
+    noteExpired(G, tNow);
     // reachable first, then nearest to the car (the quickest to take; labels are given out in this order)
     for (let i = 0; i < n; i++) {
       const q = pins[i];
@@ -420,16 +476,21 @@
     }
   }
 
-  function nearestPin(px, py) {
+  // Forgiving pick: nearest pin within rad px (reachable ones win ties), or its price label.
+  function nearestPin(px, py, rad) {
+    const R = rad || 18;
     let best = null;
-    let bd = Infinity;
+    let bs = Infinity;
     for (let i = 0; i < pins.length; i++) {
       const p = pins[i];
       const dx = px - p.px;
       const dy = py - p.py;
-      const d = Math.sqrt(dx * dx + dy * dy);
-      const lim = p.r + 10;
-      if (d <= lim && d < bd) { bd = d; best = p; }
+      let d = Math.sqrt(dx * dx + dy * dy);
+      const lim = p.reach ? Math.max(R, p.r + 6) : Math.min(R, p.r + 10);
+      if (p.lw > 0 && px >= p.lx && px <= p.lx + p.lw && py >= p.ly && py <= p.ly + 16) d = Math.min(d, lim * 0.9);
+      if (d > lim) continue;
+      const sc = d - (p.reach ? 6 : 0);
+      if (sc < bs) { bs = sc; best = p; }
     }
     return best;
   }
@@ -500,44 +561,6 @@
     ctx.fill();
   }
 
-  function carBody(len, wid, color, alpha) {
-    // car points to +x; centre at origin
-    const hl = len * 0.5;
-    const hw = wid * 0.5;
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(-hl + 3, -hw);
-    ctx.lineTo(hl - 4, -hw);
-    ctx.lineTo(hl, -hw + 3);
-    ctx.lineTo(hl, hw - 3);
-    ctx.lineTo(hl - 4, hw);
-    ctx.lineTo(-hl + 3, hw);
-    ctx.lineTo(-hl, hw - 2);
-    ctx.lineTo(-hl, -hw + 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = 'rgba(7,11,20,0.75)';
-    ctx.fillRect(hl * 0.05, -hw + 1.5, hl * 0.5, wid - 3);
-    ctx.globalAlpha = 1;
-  }
-
-  function drawCar(px, py, hx, hy, len, wid, color, alpha, halo) {
-    if (halo > 0) {
-      ctx.globalAlpha = 0.16 * alpha;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(px, py, halo, 0, TAU);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(Math.atan2(hy, hx));
-    carBody(len, wid, color, alpha);
-    ctx.restore();
-  }
-
   function drawFaint(G) {
     ctx.fillStyle = 'rgba(138,150,179,0.22)';
     for (let i = 0; i < faintN; i++) {
@@ -545,16 +568,27 @@
     }
   }
 
+  function ring(x, y, r, w, col, a) {
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = w;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, TAU);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
   function drawPinDots(G, tReal) {
     const eng = PG.engine;
     for (let i = pins.length - 1; i >= 0; i--) {
       const p = pins[i];
       const o = p.o;
+      const k = p.k;
       if (!p.reach) {
         ctx.fillStyle = COL_MUTED;
-        ctx.globalAlpha = 0.85;
+        ctx.globalAlpha = 0.85 * Math.min(1, k);
         ctx.beginPath();
-        ctx.arc(p.px, p.py, 3, 0, TAU);
+        ctx.arc(p.px, p.py, p.r, 0, TAU);
         ctx.fill();
         ctx.globalAlpha = 1;
         continue;
@@ -564,34 +598,52 @@
       let frac = (o.t - G.t) / lead;
       if (frac < 0) frac = 0;
       if (frac > 1) frac = 1;
-      const pulse = frac < 0.25 ? 0.6 + 0.4 * Math.sin(tReal * 10) : 1;
+      const low = frac < 0.25;
+      const pulse = low ? 0.6 + 0.4 * Math.sin(tReal * 10) : 1;
+      if (k !== 1) { ctx.save(); ctx.translate(p.px, p.py); ctx.scale(k, k); ctx.translate(-p.px, -p.py); }
       ctx.fillStyle = PIN_GLOW[c];
       ctx.beginPath();
-      ctx.arc(p.px, p.py, p.r + 5, 0, TAU);
+      ctx.arc(p.px, p.py, p.r + 6, 0, TAU);
       ctx.fill();
       ctx.fillStyle = PIN_COL[c];
       ctx.beginPath();
       ctx.arc(p.px, p.py, p.r, 0, TAU);
       ctx.fill();
       ctx.strokeStyle = 'rgba(7,11,20,0.55)';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(p.px, p.py, p.r - 3, 0, TAU);
+      ctx.arc(p.px, p.py, p.r - 4, 0, TAU);
       ctx.stroke();
-      ctx.strokeStyle = PIN_TRACK[c];
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(p.px, p.py, p.r + 4.5, 0, TAU);
-      ctx.stroke();
+      ring(p.px, p.py, p.r + 5.5, 3.5, PIN_TRACK[c], 1);
       if (frac > 0.002) {
-        ctx.globalAlpha = pulse;
+        ctx.lineWidth = low ? 4.5 : 3.5;
         ctx.strokeStyle = PIN_COL[c];
+        ctx.globalAlpha = pulse;
         ctx.beginPath();
-        ctx.arc(p.px, p.py, p.r + 4.5, -Math.PI / 2, -Math.PI / 2 + TAU * frac);
+        ctx.arc(p.px, p.py, p.r + 5.5, -Math.PI / 2, -Math.PI / 2 + TAU * frac);
         ctx.stroke();
         ctx.globalAlpha = 1;
       }
+      if (low && !PG.REDUCED) {                         // running out: a ripple leaves the pin
+        const ph = (tReal * 1.6) % 1;
+        ring(p.px, p.py, p.r + 6 + ph * 14, 2, PIN_COL[c], 0.6 * (1 - ph));
+      }
+      if (k !== 1) ctx.restore();
     }
+    for (let i = expired.length - 1; i >= 0; i--) {     // shrinking, greying ghosts of expired pins
+      const e = expired[i];
+      const f = (tReal - e.t0) / EXPIRE_S;
+      if (f >= 1) { expired.splice(i, 1); continue; }
+      P(e.x, e.y);
+      const r = 14 * (1 - f * 0.5);
+      ctx.fillStyle = COL_MUTED;
+      ctx.globalAlpha = 0.7 * (1 - f);
+      ctx.beginPath();
+      ctx.arc(pOut.x, pOut.y, r, 0, TAU);
+      ctx.fill();
+      ring(pOut.x, pOut.y, r + 4 + f * 10, 2, COL_MUTED, 0.6 * (1 - f));
+    }
+    ctx.globalAlpha = 1;
   }
 
   function drawPinLabels(carPx, carPy) {
@@ -600,16 +652,17 @@
     ctx.textBaseline = 'middle';
     for (let i = 0; i < pins.length; i++) {
       const p = pins[i];
-      if (!p.reach) continue;
+      if (!p.reach || p.k < 0.9) continue;
       const fr = Math.round(p.o.fare);
       const txt = LABELS[fr] || (LABELS[fr] = '€' + fr);
-      const w = txt.length * 7.4 + 10;
+      const w = txt.length * 8 + 12;
       const h = 16;
       const x = p.px - w * 0.5;
-      const y = p.py - p.r - 7 - h;
-      if (x < 2 || x + w > W - 2 || y < 2) continue;
+      const y = p.py - p.r - 9 - h;
+      if (x < 2 || x + w > W - 2 || y < zone.top + 2) continue;
       if (!labelFree(x, y, w, h)) continue;
       if (!addLabelRect(x, y, w, h)) break;
+      p.lx = x; p.ly = y; p.lw = w;
       ctx.fillStyle = 'rgba(7,11,20,0.82)';
       ctx.fillRect(x, y, w, h);
       ctx.fillStyle = PIN_COL[p.o.c];
@@ -731,82 +784,79 @@
       ctx.lineTo(ghostOut.x * s + ox, ghostOut.y * s + oy);
       ctx.stroke();
     }
-    let hx = ghostOut.hx;
-    let hy = ghostOut.hy;
-    if (!hx && !hy) { hx = Math.cos(carAngle.ghost); hy = Math.sin(carAngle.ghost); }
-    else carAngle.ghost = Math.atan2(hy, hx);
     const px = ghostOut.x * s + ox;
     const py = ghostOut.y * s + oy;
-    if (px < -30 || py < -30 || px > W + 30 || py > H + 30) return;
-    drawCar(px, py, hx, hy, 19, 10, COL_GHOST, 0.5, 18);
-  }
-
-  function drawRivals(G) {
-    const rv = G.rivals;
-    if (!rv || !rv.length) return;
+    const a = PG.cars.turn(8, ghostOut.hx, ghostOut.hy, dtNow, false);
+    if (px < -40 || py < -40 || px > W + 40 || py > H + 40) return;
+    const len = carLen('ghost');
+    PG.cars.draw(ctx, px, py, a, len, COL_GHOST, 0.6, 'ghost');
     ctx.font = FONT_TAG;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    for (let i = 0; i < rv.length; i++) {
-      const r = rv[i];
-      P(r.x, r.y);
-      const px = pOut.x;
-      const py = pOut.y;
-      if (px < -30 || py < -30 || px > W + 30 || py > H + 30) continue;
-      let hx = r.hx;
-      let hy = r.hy;
-      if (!hx && !hy) { hx = 1; hy = 0; }
-      drawCar(px, py, hx, hy, 15, 8, r.color || '#ffffff', 1, 11);
-      const name = r.name || r.id || '';
-      const w = name.length * 5.6 + 6;
-      const x = px - w * 0.5;
-      const y = py - 22;
-      if (labelFree(x, y, w, 12) && addLabelRect(x, y, w, 12)) {
-        ctx.fillStyle = 'rgba(7,11,20,0.7)';
-        ctx.fillRect(x, y, w, 12);
-        ctx.fillStyle = r.color || '#ffffff';
-        ctx.fillText(name, px, y + 9.5);
+    tag('Привид', px, py - len * 0.5 - 8, COL_GHOST, py - len * 0.5 - 8 - 12 > zone.top);
+  }
+
+  // name tag above a car; skipped when it would sit under the HUD or on another label
+  function tag(name, px, py, color, ok) {
+    if (!ok || !name) return;
+    const w = name.length * 6.4 + 10;
+    const x = px - w * 0.5;
+    const y = py - 12;
+    if (!labelFree(x, y, w, TAG_H) || !addLabelRect(x, y, w, TAG_H)) return;
+    ctx.fillStyle = 'rgba(7,11,20,0.78)';
+    ctx.fillRect(x, y, w, TAG_H);
+    ctx.fillStyle = color;
+    ctx.fillText(name, px, y + 11);
+  }
+
+  function drawRivals(G, hx0, hy0) {
+    const rv = G.rivals;
+    if (!rv || !rv.length) return;
+    const len = carLen('rival');
+    const near = len * 0.8;
+    const n = Math.min(rv.length, 8);
+    ctx.font = FONT_TAG;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    for (let i = 0; i < n; i++) {         // fan out cars that sit on top of the hero or of each other
+      P(rv[i].x, rv[i].y);
+      let x = pOut.x;
+      let y = pOut.y;
+      let c = Math.hypot(x - hx0, y - hy0) < near ? 1 : 0;
+      for (let j = 0; j < i; j++) if (Math.hypot(x - rx[j], y - ry[j]) < near) c++;
+      if (c) {
+        const a = c * 2.4 + i;
+        x += Math.cos(a) * near * (0.7 + 0.25 * c);
+        y += Math.sin(a) * near * (0.7 + 0.25 * c);
       }
+      rx[i] = x;
+      ry[i] = y;
+    }
+    for (let i = 0; i < n; i++) {
+      const r = rv[i];
+      const px = rx[i];
+      const py = ry[i];
+      const a = PG.cars.turn(i, r.hx, r.hy, dtNow, false);
+      if (px < -40 || py < -40 || px > W + 40 || py > H + 40) continue;
+      PG.cars.draw(ctx, px, py, a, len, r.color || '#ffffff', 1, 'rival');
+    }
+    for (let i = 0; i < n; i++) {
+      const r = rv[i];
+      if (rx[i] < -40 || ry[i] < -40 || rx[i] > W + 40 || ry[i] > H + 40) continue;
+      tag(r.name || r.id || '', rx[i], ry[i] - len * 0.5 - 2, r.color || '#ffffff', ry[i] - len * 0.5 - 14 > zone.top);
     }
   }
 
-  function drawPlayer(G) {
+  function drawPlayer(G, tReal) {
     P(G.x, G.y);
     const px = pOut.x;
     const py = pOut.y;
-    let hx = G.hx;
-    let hy = G.hy;
-    if (!hx && !hy) { hx = Math.cos(carAngle.player); hy = Math.sin(carAngle.player); }
-    else carAngle.player = Math.atan2(hy, hx);
-    drawCar(px, py, hx, hy, 22, 12, COL_MINT, 1, 20);
-    ctx.strokeStyle = 'rgba(61,245,176,0.55)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(px, py, 16, 0, TAU);
-    ctx.stroke();
-  }
-
-  function drawFloats(G) {
-    const fl = G.floats;
-    if (!fl || !fl.length) return;
-    ctx.font = FONT_FLOAT;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    for (let i = 0; i < fl.length; i++) {
-      const f = fl[i];
-      const age = G.t - f.born;
-      if (age < 0 || age > FLOAT_LIFE) continue;
-      const k = age / FLOAT_LIFE;
-      P(f.x, f.y);
-      const y = pOut.y - 18 - k * 34;
-      ctx.globalAlpha = 1 - k * k;
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(7,11,20,0.85)';
-      ctx.strokeText(f.text, pOut.x, y);
-      ctx.fillStyle = f.color || COL_MINT;
-      ctx.fillText(f.text, pOut.x, y);
-    }
-    ctx.globalAlpha = 1;
+    const len = carLen('hero');
+    const a = PG.cars.turn(9, G.hx, G.hy, dtNow, false);
+    const moving = G.mode !== 'idle' && !G.paused;
+    const pulse = PG.REDUCED ? 0 : 0.5 + 0.5 * Math.sin(tReal * 4);
+    ring(px, py, len * 0.62 + pulse * 3, 2, COL_MINT, moving ? 0.5 : 0.3 + 0.3 * pulse);
+    PG.cars.draw(ctx, px, py, a, len, COL_MINT, 1, 'hero');
   }
 
   function updateCenterBtn(show) {
@@ -825,6 +875,7 @@
     let dt = t - lastClock;
     lastClock = t;
     if (dt > 0.1 || dt < 0) dt = 0.1;
+    dtNow = dt;
 
     const G = PG.engine && PG.engine.G;
     const play = PG.screen === 'play' && !!G && !!G.sh;
@@ -857,18 +908,20 @@
     }
 
     labelN = 0;
-    collectPins(G);
+    collectPins(G, t);
     drawFaint(G);
     drawRoutes(G);
     drawPinDots(G, t);
     drawTrail(G);
     drawGhost(G);
     P(G.x, G.y);
-    addLabelRect(pOut.x - 30, pOut.y - 30, 60, 60);   // keep labels off the player's car
-    drawPinLabels(pOut.x, pOut.y);
-    drawRivals(G);
-    drawPlayer(G);
-    drawFloats(G);
+    const hx = pOut.x;
+    const hy = pOut.y;
+    const hl = carLen('hero');
+    addLabelRect(hx - hl * 0.8, hy - hl * 0.8, hl * 1.6, hl * 1.6);   // keep labels off the player's car
+    drawPinLabels(hx, hy);
+    drawRivals(G, hx, hy);
+    drawPlayer(G, t);
     runLayers(now, false);
   }
 
@@ -905,7 +958,18 @@
         ghostTrailT = -1e9;
         lastPanClock = -1e9;
         recenterUntil = 0;
+        born.clear();
+        prevPins.clear();
+        expired.length = 0;
+        punch = 0;
+        PG.cars.reset();
         resetCamera(G ? G.x : HOME_X, G ? G.y : HOME_Y);
+        if (!PG.REDUCED) {                       // ease in from a wider view
+          zoomEaseTo = view.scale;
+          zoomEaseUntil = clock() + 1.6;
+          view.scale *= 0.7;
+          clampView();
+        }
       });
     }
   }
@@ -919,6 +983,10 @@
     view: view,
     onDraw: onDraw,
     drawsRivals: true,
+    zone: zone,
+    kick: kick,
+    // for other modules (party mode): a car sprite at screen px with a smoothed heading
+    carLen: carLen,
     // helpers used by 70_input.js
     nearestPin: nearestPin,
     panBy: panBy,
