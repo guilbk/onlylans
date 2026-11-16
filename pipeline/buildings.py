@@ -6,6 +6,11 @@ is seeded by position, so the output bytes are identical between runs. Result:
 ``game/src/js/37_buildings_data.js`` (``PG.buildings``).
 Each building is 8 whole numbers in ``b``: x, y, width, height (m), rotation (deg), district id,
 colour index, roof shape. ``trees`` is a flat ``[x, y, ...]`` list.
+
+Dense Porto blocks: ``rows`` holds terraced rows that run wall to wall along both sides of every
+street. A row is 6 whole numbers: x, y (start of its centre line, m), length (m), rotation (deg),
+depth (m), district id. The client cuts a row into houses; the rows never touch a street, the
+river, a park or a landmark, and thin out with the distance from the centre.
 """
 
 from __future__ import annotations
@@ -16,7 +21,7 @@ import math
 import sys
 from pathlib import Path
 
-from pipeline import basemap
+from pipeline import basemap, landmarks
 from pipeline.basemap import Pt, inside_poly, to_m
 from pipeline.landmarks import DATA_DEFAULT, map_size_m
 
@@ -44,6 +49,28 @@ GAP = {BAIXA: 3, BOAVISTA: 22, FOZ: 34, MATOSINHOS: 14, CAMPANHA: 18, BONFIM: 6,
 STEP = {RIBEIRA: 10, BAIXA: 22, BOAVISTA: 62, FOZ: 40, MATOSINHOS: 40, CAMPANHA: 56, BONFIM: 36,
         OTHER: 90}  # fmt: skip
 Seg = tuple[float, float, float, float]
+CELL_M = 6.0  # house width unit along a street; rows are runs of whole cells
+DEPTHS = (
+    70.0,
+    55.0,
+    46.0,
+    38.0,
+    30.0,
+    23.0,
+    17.0,
+    13.0,
+    10.0,
+    7.5,
+    5.0,
+)  # deepest first; the street grid is wide, so rows fill the block
+EDGE_DEPTH = 17.0  # thin zones build only this deep
+EDGE_GAP_M = 0.8  # clearance between a row and the next street's edge
+CAP_ROWS = 9000
+MAX_RUN = 20  # cells per row, so a row stays inside the client's culling tile (120 m)
+DENSE_KM = 1.7  # fully built within this distance of the centre (Baixa), thinner beyond
+THIN_KM = 6.0  # beyond this only a sparse fringe is built
+LM_CLEAR = {"square": 70.0, "market": 40.0, "station": 45.0, "cathedral": 40.0, "palace": 40.0}
+LM_CLEAR_DEFAULT = 22.0
 
 
 def hsh(ix: int, iy: int, salt: int = 0) -> float:
@@ -304,6 +331,108 @@ def build(data_path: Path = DATA_DEFAULT, roads_path: Path = ROADS_DEFAULT) -> d
                         if roof0 in (HIP, FLAT) and hl > 0.8:
                             roof = FLAT if roof0 == HIP else HIP
                         out.append((round(x), round(y), bw, bh, ang, d, col, roof))
+    out = [
+        b for b in out if b[5] == FOZ or (b[5] == MATOSINHOS and b[0] <= port_x) or b[5] == RIBEIRA
+    ]  # keep villas, the port sheds and the quay row; terraces come from the rows below
+    lms = [
+        (*landmarks.project(lm), LM_CLEAR.get(lm.kind, LM_CLEAR_DEFAULT))
+        for lm in landmarks.LANDMARKS
+    ]
+    baixa = next(pl for d, pl in zones if d == BAIXA)
+    cx0 = sum(q[0] for q in baixa) / len(baixa)
+    cy0 = sum(q[1] for q in baixa) / len(baixa)
+    dense_zones = [pl for d, pl in zones if d in (RIBEIRA, BAIXA, BONFIM)]
+
+    def free(x: float, y: float) -> bool:
+        """Point is on land, off parks, clear of landmarks and of every street."""
+        if not (0 <= x <= w and 0 <= y <= h):
+            return False
+        if any(math.hypot(x - lx, y - ly) < r for lx, ly, r in lms):
+            return False
+        if nearest(x, y, segs, grid)[0] < ROAD_HALF_M + EDGE_GAP_M:
+            return False
+        return not any(inside_poly((x, y), pl) for pl in water + parks)
+
+    def density(x: float, y: float) -> float:
+        """Share of the street front that is built here: 1 in the old centre, less outside."""
+        if any(inside_poly((x, y), pl) for pl in dense_zones):
+            return 1.0
+        km = math.hypot(x - cx0, y - cy0) / 1000.0
+        if km <= DENSE_KM:
+            return 1.0
+        return max(0.12, 0.85 * (1 - (km - DENSE_KM) / (THIN_KM - DENSE_KM)))
+
+    def zone_of(x: float, y: float) -> int:
+        """District id of a point (OTHER outside every polygon)."""
+        return next((d for d, pl in zones if inside_poly((x, y), pl)), OTHER)
+
+    rows: list[tuple[int, int, int, int, int, int]] = []
+
+    def close(run: list[int], depth: float, geo: tuple[float, ...]) -> None:
+        """Turn a run of street cells into one row (dropped in the villa / port-shed zones)."""
+        if not run:
+            return
+        x0, y0, ux, uy, nx, ny, ang, flip = geo
+        off = ROAD_HALF_M + EDGE_GAP_M + depth / 2
+        ln = len(run) * CELL_M
+        px = x0 + ux * run[0] * CELL_M + nx * off
+        py = y0 + uy * run[0] * CELL_M + ny * off
+        mx, my = px + ux * ln / 2, py + uy * ln / 2
+        d = zone_of(mx, my)
+        run.clear()
+        if d == FOZ or (d == MATOSINHOS and mx <= port_x):
+            return
+        if d == OTHER and math.hypot(mx - cx0, my - cy0) < 2500:
+            d = BONFIM
+        if flip:  # start from the far end so the row runs along its stored angle
+            px, py = px + ux * ln, py + uy * ln
+        rows.append((round(px), round(py), round(ln), int(ang), round(depth), d))
+
+    for si, (x0, y0, x1, y1) in enumerate(segs):
+        ln = math.hypot(x1 - x0, y1 - y0)
+        if ln < CELL_M:
+            continue
+        ux, uy = (x1 - x0) / ln, (y1 - y0) / ln
+        deg = round(math.degrees(math.atan2(uy, ux)))
+        ang, flip = deg % 180, not 0 <= deg < 180  # a row always runs along +angle
+        n = int(ln // CELL_M)
+        for side in (1, -1):
+            nx, ny = -uy * side, ux * side
+            run: list[int] = []
+            run_depth = 0.0
+            geo = (x0, y0, ux, uy, nx, ny, ang, flip)
+
+            for c in range(n):
+                t0 = c * CELL_M
+                mx, my = x0 + ux * (t0 + CELL_M / 2), y0 + uy * (t0 + CELL_M / 2)
+                if hsh(si, c // 5, 11 + side) > density(mx, my):
+                    close(run, run_depth, geo)
+                    continue
+                got = 0.0
+                dens = density(mx, my)
+                for dep in DEPTHS:
+                    if dep > EDGE_DEPTH and dens < 1.0:
+                        continue
+                    off = ROAD_HALF_M + EDGE_GAP_M
+                    m = math.ceil(dep / 8.0)  # sample every <= 8 m across the strip
+                    pts = [off + dep * i / m for i in range(m + 1)]
+                    if all(
+                        free(mx + nx * o + ux * e, my + ny * o + uy * e)
+                        for o in pts
+                        for e in (-CELL_M / 2 + 1, 0.0, CELL_M / 2 - 1)
+                    ):
+                        got = dep
+                        break
+                if not got or (run and (got != run_depth or len(run) >= MAX_RUN)):
+                    close(run, run_depth, geo)
+                if got:
+                    run_depth = got
+                    run.append(c)
+            close(run, run_depth, geo)
+    if len(rows) > CAP_ROWS:
+        rows.sort(key=lambda r: hsh(r[0], r[1], 12))
+        rows = rows[:CAP_ROWS]
+    rows.sort(key=lambda r: (r[1], r[0]))
     for p in lay["parks"]:  # type: ignore[union-attr]
         pl = [(p["poly"][i], p["poly"][i + 1]) for i in range(0, len(p["poly"]), 2)]  # type: ignore[index]
         for ty in range(int(min(q[1] for q in pl) // 22), int(max(q[1] for q in pl) // 22) + 1):
@@ -316,7 +445,12 @@ def build(data_path: Path = DATA_DEFAULT, roads_path: Path = ROADS_DEFAULT) -> d
         rest = sorted((b for b in out if b[5] == OTHER), key=lambda b: hsh(b[0], b[1], 9))
         out = (keep + rest)[:CAP]
     out.sort(key=lambda b: (b[1], b[0]))
-    return {"source": basemap.SOURCE, "b": [v for b in out for v in b], "trees": trees[:3000]}
+    return {
+        "source": basemap.SOURCE,
+        "b": [v for b in out for v in b],
+        "rows": [v for r in rows for v in r],
+        "trees": trees[:3000],
+    }
 
 
 def render_js(layer: dict[str, object]) -> str:

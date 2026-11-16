@@ -28,7 +28,14 @@
     tree: ['#5a9a5a', '#1d4a40'], ridge: ['rgba(255,255,255,0.45)', 'rgba(255,255,255,0.12)'],
     lit: 'rgba(255,208,120,0.9)', crane: ['#e8742a', '#b86030'],
   };
-  const TILE = 700;                              // metres per culling tile
+  // dense terraces (PG.buildings.rows): terracotta roof shades per row, darker at night; thin edges between houses
+  const ROOF = {
+    day: ['#c8693f', '#b95c38', '#d27d4e', '#ad5232', '#d89060', '#c1704a'],
+    night: ['#5e3030', '#522a2a', '#6a3b32', '#4a2528', '#5a3a30', '#4f2e2e'],
+    edge: ['rgba(110,50,30,0.55)', 'rgba(10,6,16,0.6)'], alt: ['rgba(255,225,190,0.16)', 'rgba(255,200,140,0.07)'],
+    win: 'rgba(255,196,110,0.95)',
+  };
+  const TILE = 700, MARG = 160, ZOOM_HOUSES = 0.14;   // metres per culling tile; margin; px/m where single houses show
   let built = null, bld = null;
 
   function isNight() {
@@ -72,12 +79,37 @@
   const R4 = [-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5], R_IN = [-0.25, -0.25, 0.25, -0.25, 0.25, 0.25, -0.25, 0.25];
   const R_L = [-0.5, -0.5, 0.5, -0.5, 0.5, 0, 0, 0, 0, 0.5, -0.5, 0.5];
 
+  function hash(x, y, s) {                         // cheap deterministic [0, 1) per position
+    let h = (Math.imul(x | 0, 73856093) ^ Math.imul(y | 0, 19349663) ^ Math.imul(s, 83492791)) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0; h = Math.imul(h ^ (h >>> 13), 3266489917) >>> 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+
+  function houses(t, rw) {           // lazily, per tile: edges between houses, a lighter alternate house, lit windows
+    t.div = { edge: new Path2D(), alt: new Path2D(), win: new Path2D() };
+    for (let q = 0; q < t.rr.length; q++) {
+      const i = t.rr[q], x = rw[i], y = rw[i + 1], L = rw[i + 2], a = rw[i + 3], D = rw[i + 4];
+      const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180), hx = -n * D / 2, hy = c * D / 2;
+      for (let s = 0, k = 0; s < L - 0.5; k++) {
+        const wd = Math.min(L - s, 4.6 + 3 * hash(x + k, y, 2)), ex = x + c * s, ey = y + n * s;
+        if (s > 0) { t.div.edge.moveTo(ex - hx, ey - hy); t.div.edge.lineTo(ex + hx, ey + hy); }
+        const r = hash(x + k, y, 3);
+        if (r < 0.28 || r > 0.9) {        // a lighter roof on some houses; a lit window on a few
+          const mx = ex + c * wd / 2, my = ey + n * wd / 2;
+          if (r < 0.28) { t.div.alt.moveTo(ex - hx, ey - hy); t.div.alt.lineTo(ex + c * wd - hx, ey + n * wd - hy); t.div.alt.lineTo(ex + c * wd + hx, ey + n * wd + hy); t.div.alt.lineTo(ex + hx, ey + hy); t.div.alt.closePath(); }
+          else t.div.win.rect(mx - 0.9, my - 0.9, 1.8, 1.8);
+        }
+        s += wd;
+      }
+    }
+  }
+
   function buildBuildings(Bd) {       // once: per tile, one Path2D per colour (+ridges, windows, gardens)
     const tiles = {}, b = Bd.b;
     const tile = function (x, y) {
       const key = Math.floor(x / TILE) + ',' + Math.floor(y / TILE);
       return tiles[key] || (tiles[key] = {
-        x0: Math.floor(x / TILE) * TILE - 80, y0: Math.floor(y / TILE) * TILE - 80, fills: {},
+        x0: Math.floor(x / TILE) * TILE - MARG, y0: Math.floor(y / TILE) * TILE - MARG, fills: {}, rows: {}, rr: [], div: null,
         ridge: new Path2D(), lit: new Path2D(), garden: new Path2D(), trees: new Path2D(), crane: new Path2D(),
       });
     };
@@ -100,6 +132,14 @@
         t.lit.moveTo(x + 2.5, y); t.lit.arc(x, y, 2.5, 0, Math.PI * 2);
       }
     }
+    const rw = Bd.rows || [];
+    for (let i = 0; i < rw.length; i += 6) {            // terraced rows: one quad per row, houses cut lazily when zoomed in
+      const x = rw[i], y = rw[i + 1], L = rw[i + 2], a = rw[i + 3], D = rw[i + 4];
+      const t = tile(x, y), sh = Math.floor(hash(x, y, 1) * 6);
+      const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180), hx = -n * D / 2, hy = c * D / 2, p = t.rows[sh] || (t.rows[sh] = new Path2D());
+      p.moveTo(x - hx, y - hy); p.lineTo(x + c * L - hx, y + n * L - hy); p.lineTo(x + c * L + hx, y + n * L + hy); p.lineTo(x + hx, y + hy); p.closePath();
+      t.rr.push(i);
+    }
     const tr = Bd.trees;
     for (let i = 0; i < tr.length; i += 2) { const t = tile(tr[i], tr[i + 1]); t.trees.moveTo(tr[i] + 4, tr[i + 1]); t.trees.arc(tr[i], tr[i + 1], 4, 0, Math.PI * 2); }
     const out = [];
@@ -111,7 +151,7 @@
     if (!PG.buildings) return;
     if (!bld) bld = buildBuildings(PG.buildings);
     const W = ctx.canvas.clientWidth || 800, H = ctx.canvas.clientHeight || 800, th = night ? 1 : 0;
-    const pal = night ? BP.night : BP.day, size = (TILE + 160) * k;
+    const pal = night ? BP.night : BP.day, size = (TILE + 2 * MARG) * k;
     ctx.save();
     ctx.translate(x0, y0);
     ctx.scale(k, k);
@@ -121,6 +161,14 @@
       ctx.fillStyle = BP.garden[th]; ctx.fill(t.garden);
       ctx.fillStyle = BP.tree[th]; ctx.fill(t.trees);
       for (const key in t.fills) { ctx.fillStyle = pal[key >> 3][key & 7]; ctx.fill(t.fills[key], 'evenodd'); }
+      const roof = night ? ROOF.night : ROOF.day;
+      for (const sh in t.rows) { ctx.fillStyle = roof[sh]; ctx.fill(t.rows[sh]); }
+      if (k > ZOOM_HOUSES) {
+        if (!t.div) houses(t, PG.buildings.rows);
+        ctx.fillStyle = ROOF.alt[th]; ctx.fill(t.div.alt);
+        ctx.strokeStyle = ROOF.edge[th]; ctx.lineWidth = 0.7 / k; ctx.stroke(t.div.edge);
+        if (night) { ctx.fillStyle = ROOF.win; ctx.fill(t.div.win); }
+      }
       ctx.fillStyle = BP.crane[th]; ctx.fill(t.crane);
       if (k > 0.1) { ctx.strokeStyle = BP.ridge[th]; ctx.lineWidth = 1.2; ctx.stroke(t.ridge); }
       if (night && k > 0.05) { ctx.fillStyle = BP.lit; ctx.fill(t.lit); }
