@@ -790,3 +790,17 @@ while ×3 is on), `lights` (xenon, yellow fog). An id is `<cat>_<name>`.
   the animation); `mods` undefined means the saved ones. `PG.cars.paint(ctx, id, px, py, len, color, mods)` takes mods too.
 
 Test: `node tools/cars_test.mjs`.
+
+## §20 Золоте замовлення (golden order)
+
+`47_gold.js`. Every `WINDOW` = 1800 game s (45 real s) one order becomes gold: window `w` (>= 1) starts at `T = w*1800`;
+candidates are the orders with `T < o.t` and `o.t - C.LEAD[o.c] <= T` (pin open, difficulty ignored); the winner has the
+lowest `fnv1a32(shiftId + '#gold#' + w + '#' + o.i)`. No random, no player position: every phone and the big screen
+pick the same order. A gold order stays gold until taken or expired.
+- Pin: gold glow, ring and «×2» badge (layer `onDraw` z 6). A toast «Золоте замовлення: ×2 до плати» through the `note`
+  event (the one-overlay manager shows it) and the `coin` sound.
+- Pay: on the player's `dropoff` the bonus (= the fare) is added to `payload.tip` and `G.tips`, once per order, with a
+  gold float «+€N ×2». Rivals never emit `dropoff`, so they get nothing. Party claims are unchanged.
+- API: `PG.gold = { WINDOW, pick(sh, w), golds(sh, t), isGold(o) }`. Not part of the engine tests or `pipeline/sim.py`.
+
+Test: `node tools/gold_test.mjs`.
