@@ -50,7 +50,7 @@ def test_rank_drivers_sorts_and_remaps_slots() -> None:
     orders = [[0] * 8 + [5.0, 0, 0, 1], [0] * 8 + [12.0, 0, 0, 0], [0] * 8 + [4.0, 0, 0, 1]]
     taxis, ranking = mf.rank_drivers(orders, [111, 222])
     assert taxis == [111, 222] and ranking == [12.0, 9.0]
-    assert [o[11] for o in orders] == [1, 0, 1]  # slot 0 (12.0 EUR) is rank 0, slot 1 (9.0 EUR) is rank 1
+    assert [o[11] for o in orders] == [1, 0, 1]  # slot 0 is rank 0, slot 1 is rank 1
 
 
 def test_rank_drivers_ties_go_to_the_smaller_taxi_id() -> None:
