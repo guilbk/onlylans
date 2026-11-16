@@ -95,7 +95,7 @@
         onState(d.state);
         startPoll();
       });
-    }).catch(function () { ui.err.textContent = 'Немає зв’язку з сервером гри. Запусти python tools/party.py'; });
+    }).catch(function () { ui.err.textContent = 'Немає зв’язку з сервером гри. «Гра разом» працює, коли гру відкрито з ноутбука ведучого.'; });
   }
 
   function buildEntry(fixed) {
