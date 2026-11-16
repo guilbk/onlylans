@@ -75,6 +75,7 @@
     if (PG.orders && PG.orders.blocks && PG.orders.blocks(ev.clientX, ev.clientY)) return;  // next to the open card
     const pin = PG.render.nearestPin(tapPt.x, tapPt.y, touch ? PICK_TOUCH : PICK_MOUSE);
     if (PG.bus) PG.bus.emit('tap:fx', { x: tapPt.x, y: tapPt.y, pin: !!pin });
+    PG.render.peek(tapPt.x, tapPt.y);      // a rival under the finger shows its name
     if (pin) { tapPin(pin); return; }
     const e = liveGame();
     if (!e) return;
@@ -160,7 +161,10 @@
     const t = ev.target;
     const blocked = t && t.closest && t.closest(INTERACTIVE);
     let pin = null;
-    if (!blocked && localXY(ev, movePt).inside) pin = PG.render.nearestPin(movePt.x, movePt.y, PICK_MOUSE);
+    if (!blocked && localXY(ev, movePt).inside) {
+      pin = PG.render.nearestPin(movePt.x, movePt.y, PICK_MOUSE);
+      PG.render.peek(movePt.x, movePt.y);
+    }
     mapEl.classList.toggle('over-pin', !!pin);
     const o = pin ? pin.o : null;
     if (o === hoverO) return;
@@ -197,6 +201,8 @@
       return;
     }
     if (PG.screen !== 'play' || !e || !e.G || e.G.over) return;
+    if (k === '+' || k === '=') { PG.render.zoomStep(1.45); return; }
+    if (k === '-' || k === '_') { PG.render.zoomStep(1 / 1.45); return; }
     if (k === ' ' || k === 'Spacebar') {
       ev.preventDefault();
       pressHud(PG.hud && PG.hud.togglePause, 'btn-pause', function () {

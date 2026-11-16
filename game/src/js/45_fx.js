@@ -213,12 +213,12 @@
       if (k === 'vip') {
         const pulse = 0.5 + 0.5 * Math.sin(t * 3 + i);
         ctx.fillStyle = GOLD;
-        ctx.globalAlpha = 0.14 + 0.14 * pulse;
-        ctx.beginPath(); ctx.arc(x, y, r + 12 + pulse * 3, 0, TAU); ctx.fill();
+        ctx.globalAlpha = 0.1 + 0.05 * pulse;
+        ctx.beginPath(); ctx.arc(x, y, r + 10 + pulse * 2, 0, TAU); ctx.fill();
         ctx.strokeStyle = GOLD;
         ctx.lineWidth = 2;
-        ctx.globalAlpha = 0.5 + 0.4 * pulse;
-        ctx.beginPath(); ctx.arc(x, y, r + 12 + pulse * 3, 0, TAU); ctx.stroke();
+        ctx.globalAlpha = 0.55 + 0.2 * pulse;
+        ctx.beginPath(); ctx.arc(x, y, r + 10 + pulse * 2, 0, TAU); ctx.stroke();
       } else if (k === 'tourist') {
         // small suitcase above the pin
         const cx = x + r * 0.9, cy = y - r - 5;

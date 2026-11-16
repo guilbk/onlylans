@@ -356,9 +356,9 @@ skipping the missing ones. `10_data` uses `PG.DATA` if set, `12_roads` uses `PG.
 | `SLOTS` | `{am:{h:8,label:"08–10"}, lunch:{h:12,label:"12–14"}, pm:{h:17,label:"17–19"}, night:{h:22,label:"22–24"}}`; `sat-night` starts at hour 0 |
 | `DAYS` | `mon tue wed thu fri sat sun` = понеділок, вівторок, середа, четвер, п'ятниця, субота, неділя |
 | `CALL` | `0 = A` dispatch call, `1 = B` taxi stand, `2 = C` street hail (`CALL_NAMES = ["Виклик","Стоянка","З вулиці"]`) |
-| `LEAD` (game s) | `[310, 310, 310]` for A, B, C — pin visible from `t − LEAD[c]·DIFF_K·leadK` (tuned by `python -m pipeline.tune`: the shortest windows the 200-s measuring bot can still use; below `delay + BOARD_S + 30` s over `DIFF_K` a call type is invisible to it) |
-| `RADIUS` (m) | `[5000, 3500, 2500]` — pin visible only within `RADIUS[c]·DIFF_K` of the car |
-| `DIFF_K` | `{easy:1.0, normal:1, hard:0.9}` |
+| `LEAD` (game s) | `[1200, 1200, 900]` for A, B, C — pin visible from `t − LEAD[c]·DIFF_K·leadK`. Tuned for people on phones, no longer for the 200-s measuring bot: a type A pin lives 30 real s on normal (1200 / `BASE_SCALE`), at least 24 real s on hard (rush calls, `leadK` 0.6, are shorter); with it, a greedy scripted player over the 28 shifts sees on average 4.8 bright (takeable) pins on a 2.8 km phone view on normal (median 2: demand comes in bursts), easy 4.9, hard 3.0. The wave-3 values were `[310, 310, 310]` |
+| `RADIUS` (m) | `[6000, 4500, 3000]` — pin visible only within `RADIUS[c]·DIFF_K` of the car (was `[5000, 3500, 2500]`) |
+| `DIFF_K` | `{easy:1.3, normal:1, hard:0.8}` — easy shows more pins for longer, hard fewer (was `1.0 / 1 / 0.9`) |
 | `BOARD_S` | 30 (boarding seconds added to eta) |
 | `HOME` | `{x: 9110, y: 12443}` metres |
 | `MAP` | `{w: 15000, h: 19000}` metres |
@@ -551,10 +551,13 @@ near 5000 m at ×0.35`. `duty` is the share of a 1500 s cycle a rival works, the
 hard 8 %, easy 40 % of the shift on break; it was 34–60 %). Rivals hardly take orders away from the measuring bot (0 to 0.1
 per shift; the bot's income barely moves even if the rivals drive twice as fast, see the report of the balance
 sweep), so the medal shares are set by `LEAD` and `DIFF_K`; the rivals make the race table and the place.
-Shipped medal shares of the 200-s bot on the 28 shifts (`node tools/engine_test.mjs`, equal to `pipeline.sim`):
-easy bronze+ 100 %, gold+ 64 %, legend 25 %; normal bronze+ 100 %, gold+ 50 %, legend 18 % (target ≤ 15 %: one
-shift over); hard bronze+ 86 %, gold+ 21 %, legend 7 %. `RADIUS` does not move the bot (a sweep down to 40 % of the
-values changes nothing), and below `LEAD` 310 s the 200-s bot cannot take a pin at all.
+Medal shares of the 200-s bot on the 28 shifts (`node tools/engine_test.mjs`, equal to `pipeline.sim`) with the
+wave-4 `LEAD` / `RADIUS` / `DIFF_K` (§9): easy gold+ 96 %, legend 96 %; normal gold+ 100 %, legend 100 %; hard gold+ 100 %,
+legend 93 % (bot € 55 / 52 / 51). The wave-3 shares (normal legend 18 %, hard legend 7 %) are gone on purpose: with
+pin windows 4× longer the perfect scripted bot sees almost everything, so its medals say little; the targets are now
+about the player (more pins to choose from, enough time to reach one) and the bot is only the equality check between
+`pipeline.sim` and the engine. `RADIUS` hardly moves the bot. Rivals: on hard the weakest of the 7 can be Руй
+instead of Нуну (his long trips pay less when pins are plentiful), `engine_test` accepts both.
 
 Arrival-first claims, toasts: brief K6. Race table «Перегони 7 ланосів» on the
 result: Ріїн + 7, by €, colour dot, nickname, rides.
