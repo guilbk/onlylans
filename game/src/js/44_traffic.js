@@ -11,8 +11,8 @@
   const MAX_SAMPLES = 40;
   const DASH_SPEED = 14;                   // metres per second the dashes crawl
   const COL = {
-    day: { 1: 'rgba(240,170,20,0.9)', 2: 'rgba(214,40,52,0.9)', dash: 'rgba(255,255,255,0.75)' },
-    night: { 1: 'rgba(255,196,60,0.95)', 2: 'rgba(255,72,88,0.95)', dash: 'rgba(255,255,255,0.8)' },
+    day: { 1: 'rgba(240,170,20,0.45)', 2: 'rgba(214,40,52,0.45)', dash: 'rgba(255,255,255,0.4)' },
+    night: { 1: 'rgba(255,196,60,0.5)', 2: 'rgba(255,72,88,0.5)', dash: 'rgba(255,255,255,0.45)' },
   };
   const cells = new Map();                 // cell key -> [[segment, ...]]
   const paths = [];                        // [window][level] -> Path2D
