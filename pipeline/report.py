@@ -148,6 +148,17 @@ HEAT_RAMP = (
 )
 
 
+# Title and opening paragraph of STATS.md.
+STATS_INTRO = (
+    "# 7 ланосів: дані тижня",
+    "",
+    "Зведення з реальних поїздок Порту (UCI 339, CC BY 4.0), 12–18 травня 2014. "
+    "Усе тут пораховано з даних; тариф, час ×40 та інше — вигадка гри. "
+    "Файл створює `python -m pipeline.report`.",
+    "",
+)
+
+
 class StandRow(NamedTuple):
     """One taxi stand: id, trips from it, share of all stand trips, nearest place name."""
 
@@ -772,12 +783,7 @@ def build_markdown(
     in_shifts = sum(r["orders"] for r in shift_table)
     lead = ghost_lead(shift_table)
     lines = [
-        "# 7 ланосів: дані тижня",
-        "",
-        "Зведення з реальних поїздок Порту (UCI 339, CC BY 4.0), 12–18 травня 2014. "
-        "Усе тут пораховано з даних; тариф, час ×40 та інше — вигадка гри. "
-        "Файл створює `python -m pipeline.report`.",
-        "",
+        *STATS_INTRO,
         *md_week(totals, rows, in_shifts),
         *md_shifts(shift_table, lead),
         *md_demand(counts),
@@ -820,119 +826,228 @@ def text_w(draw: ImageDraw.ImageDraw, text: str, fnt: ImageFont.FreeTypeFont) ->
     return math.ceil(draw.textlength(text, font=fnt))
 
 
-def render_hours(counts: Sequence[int]) -> Image.Image:
-    """Draw demand by local hour of day as 24 vertical bars; return an RGB image (720 x 440 px)."""
-    img = Image.new("RGB", (IMG_W, HOURS_H), BG)
-    d = ImageDraw.Draw(img)
+def draw_hours_header(d: ImageDraw.ImageDraw, peak: int) -> None:
+    """Draw the title and the peak value of the hours chart.
+
+    Args:
+        d: Drawing context of the chart.
+        peak: Largest hourly count (trips), at least 1.
+    """
     big, small = font(FONT_PX), font(FONT_SMALL_PX)
-    peak = max(max(counts, default=0), 1)
-    d.text((MARGIN, 14), "Trips by hour of day", font=big, fill=TEXT)
+    d.text((MARGIN, HOURS_TITLE_Y), "Trips by hour of day", font=big, fill=TEXT)
     d.text(
-        (IMG_W - MARGIN - text_w(d, f"max {peak}", small), 18),
+        (IMG_W - MARGIN - text_w(d, f"max {peak}", small), HOURS_PEAK_Y),
         f"max {peak}",
         font=small,
         fill=MUTED,
     )
+
+
+def draw_hours_bars(d: ImageDraw.ImageDraw, counts: Sequence[int], peak: int) -> None:
+    """Draw one bar per hour (the busiest in amber), the hour labels, the axis and the footer.
+
+    Args:
+        d: Drawing context of the chart.
+        counts: Trips per local hour 0..23.
+        peak: Largest hourly count (trips), at least 1; it sets the bar scale.
+    """
+    small = font(FONT_SMALL_PX)
     left, right = MARGIN, IMG_W - MARGIN
     top, bottom = HOURS_PLOT_TOP, HOURS_H - HOURS_PLOT_BOTTOM
-    slot = (right - left) / 24
+    slot = (right - left) / HOURS_PER_DAY
     busiest = counts.index(max(counts)) if counts else -1
     for h, n in enumerate(counts):
-        x0 = left + h * slot + 2
+        x0 = left + h * slot + HOURS_BAR_INSET
         y0 = bottom - (bottom - top) * n / peak
-        d.rectangle((x0, y0, x0 + slot - 4, bottom), fill=AMBER if h == busiest else CYAN)
+        bar_w = slot - 2 * HOURS_BAR_INSET
+        d.rectangle((x0, y0, x0 + bar_w, bottom), fill=AMBER if h == busiest else CYAN)
         if h % HOURS_LABEL_STEP == 0:
             label = f"{h:02d}"
             d.text(
-                (x0 + (slot - 4 - text_w(d, label, small)) / 2, bottom + 10),
+                (x0 + (bar_w - text_w(d, label, small)) / 2, bottom + HOURS_LABEL_GAP),
                 label,
                 font=small,
                 fill=MUTED,
             )
     d.line((left, bottom, right, bottom), fill=MUTED, width=1)
-    d.text((MARGIN, HOURS_H - 28), "local hour of pickup", font=small, fill=MUTED)
+    d.text((MARGIN, HOURS_H - HOURS_FOOTER_UP), "local hour of pickup", font=small, fill=MUTED)
+
+
+def render_hours(counts: Sequence[int]) -> Image.Image:
+    """Draw demand by local hour of day as 24 vertical bars.
+
+    Args:
+        counts: Trips per local hour 0..23.
+
+    Returns:
+        RGB image, ``IMG_W`` x ``HOURS_H`` pixels.
+    """
+    img = Image.new("RGB", (IMG_W, HOURS_H), BG)
+    d = ImageDraw.Draw(img)
+    peak = max(max(counts, default=0), 1)
+    draw_hours_header(d, peak)
+    draw_hours_bars(d, counts, peak)
     return img
 
 
+def draw_shifts_legend(d: ImageDraw.ImageDraw) -> None:
+    """Draw the title and the colour legend of the shifts chart.
+
+    Args:
+        d: Drawing context of the chart.
+    """
+    big, small = font(FONT_PX), font(FONT_SMALL_PX)
+    d.text((MARGIN, SHIFT_TITLE_Y), "Shift totals, EUR", font=big, fill=TEXT)
+    x = MARGIN
+    top, bottom = SHIFT_LEGEND_BOX_Y
+    for label, colour in (("ghost", GHOST), ("top 10%", MINT), ("median", MUTED)):
+        d.rectangle((x, top, x + SHIFT_LEGEND_BOX_W, bottom), fill=colour)
+        d.text((x + SHIFT_LEGEND_TEXT_X, SHIFT_LEGEND_TEXT_Y), label, font=small, fill=colour)
+        x += SHIFT_LEGEND_TEXT_X + text_w(d, label, small) + SHIFT_LEGEND_GAP
+
+
+def draw_shift_row(
+    d: ImageDraw.ImageDraw, row: Mapping[str, Any], y: int, left: int, span: float, peak: float
+) -> None:
+    """Draw the three bars of one shift, its id and the ghost's value.
+
+    Args:
+        d: Drawing context of the chart.
+        row: One entry of ``shift_rows`` (money in EUR).
+        y: Top edge of the row, pixels.
+        left: Left edge of the bars, pixels.
+        span: Bar length of the largest value, pixels.
+        peak: Largest value of any bar, EUR, greater than zero.
+    """
+    small = font(FONT_SMALL_PX)
+    d.text((MARGIN, y + SHIFT_TEXT_DY), str(row["id"]), font=small, fill=TEXT)
+    for j, (key, colour) in enumerate((("ghost", GHOST), ("top10", MINT), ("median", MUTED))):
+        y0 = y + j * SHIFT_BAR_H
+        d.rectangle(
+            (left, y0, left + max(1, span * row[key] / peak), y0 + SHIFT_BAR_H - 2), fill=colour
+        )
+    d.text(
+        (left + span * row["ghost"] / peak + SHIFT_VALUE_DX, y + SHIFT_TEXT_DY),
+        f"{row['ghost']:.0f}",
+        font=small,
+        fill=GHOST,
+    )
+
+
 def render_shifts(rows: Sequence[Mapping[str, Any]]) -> Image.Image:
-    """Draw ghost / top 10 % / median totals per shift as grouped horizontal bars (RGB, 720 px)."""
-    row_h = 3 * SHIFT_BAR_H + SHIFT_ROW_GAP
+    """Draw ghost / top 10 % / median totals per shift as grouped horizontal bars.
+
+    Args:
+        rows: Result of ``shift_rows`` (money in EUR).
+
+    Returns:
+        RGB image, ``IMG_W`` pixels wide; the height grows with the number of shifts.
+    """
+    row_h = SHIFT_SERIES * SHIFT_BAR_H + SHIFT_ROW_GAP
     height = SHIFT_HEADER_H + row_h * len(rows) + MARGIN
     img = Image.new("RGB", (IMG_W, height), BG)
     d = ImageDraw.Draw(img)
-    big, small = font(FONT_PX), font(FONT_SMALL_PX)
-    d.text((MARGIN, 12), "Shift totals, EUR", font=big, fill=TEXT)
-    x = MARGIN
-    for label, colour in (("ghost", GHOST), ("top 10%", MINT), ("median", MUTED)):
-        d.rectangle((x, 46, x + 14, 58), fill=colour)
-        d.text((x + 20, 41), label, font=small, fill=colour)
-        x += 20 + text_w(d, label, small) + 22
+    draw_shifts_legend(d)
     left = MARGIN + SHIFT_LABEL_W
-    span = IMG_W - MARGIN - 70 - left
+    span = IMG_W - MARGIN - SHIFT_VALUE_W - left
     peak = max((max(r["ghost"], r["top10"], r["median"]) for r in rows), default=1.0) or 1.0
     for i, r in enumerate(rows):
-        y = SHIFT_HEADER_H + i * row_h
-        d.text((MARGIN, y + 2), str(r["id"]), font=small, fill=TEXT)
-        for j, (key, colour) in enumerate((("ghost", GHOST), ("top10", MINT), ("median", MUTED))):
-            y0 = y + j * SHIFT_BAR_H
-            d.rectangle(
-                (left, y0, left + max(1, span * r[key] / peak), y0 + SHIFT_BAR_H - 2), fill=colour
-            )
-        d.text(
-            (left + span * r["ghost"] / peak + 8, y + 2),
-            f"{r['ghost']:.0f}",
-            font=small,
-            fill=GHOST,
-        )
+        draw_shift_row(d, r, SHIFT_HEADER_H + i * row_h, left, span, peak)
     return img
 
 
 def heat_palette() -> list[tuple[int, int, int]]:
-    """Return 256 RGB colours interpolated along HEAT_RAMP (dark blue, cyan, amber, white)."""
+    """Interpolate the heat palette along ``HEAT_RAMP`` (dark blue, cyan, amber, white).
+
+    Returns:
+        ``PALETTE_LEVELS`` RGB colours, 0..255 per channel, from the coldest to the hottest.
+    """
     out = []
     segs = len(HEAT_RAMP) - 1
-    for i in range(256):
-        pos = i / 255 * segs
+    for i in range(PALETTE_LEVELS):
+        pos = i / LEVEL_MAX * segs
         k = min(int(pos), segs - 1)
         f = pos - k
         a, b = HEAT_RAMP[k], HEAT_RAMP[k + 1]
-        out.append(tuple(round(a[c] + (b[c] - a[c]) * f) for c in range(3)))
+        out.append(tuple(round(a[c] + (b[c] - a[c]) * f) for c in range(RGB_CHANNELS)))
     return out
 
 
 def heat_levels(grid: np.ndarray) -> np.ndarray:
-    """Blur a count grid and return uint8 levels 0..255 on a log scale (max cell = 255)."""
+    """Blur a count grid and scale it to 8-bit levels on a log scale.
+
+    Args:
+        grid: Pickup counts per cell, shape (rows y, cols x).
+
+    Returns:
+        ``uint8`` array of the same shape, 0..255; the fullest blurred cell is 255, an empty
+        grid gives all zeros.
+    """
     blurred = gaussian_filter(grid, HEAT_BLUR_CELLS)
     top = float(blurred.max())
     if top <= 0.0:
         return np.zeros(grid.shape, dtype=np.uint8)
-    return np.round(255.0 * np.log1p(blurred) / math.log1p(top)).astype(np.uint8)
+    return np.round(float(LEVEL_MAX) * np.log1p(blurred) / math.log1p(top)).astype(np.uint8)
+
+
+def draw_landmarks(d: ImageDraw.ImageDraw, px_per_m: float) -> None:
+    """Mark the landmark places of ``HEAT_LANDMARKS`` with a ring and an ASCII label.
+
+    Args:
+        d: Drawing context of the heatmap.
+        px_per_m: Heatmap pixels per metre of the map frame.
+    """
+    fnt = font(FONT_SMALL_PX)
+    r = HEAT_MARK_R
+    for name, x, y in places.place_points():
+        if name not in HEAT_LANDMARKS:
+            continue
+        cx, cy = x * px_per_m, y * px_per_m
+        d.ellipse((cx - r, cy - r, cx + r, cy + r), outline=TEXT, width=HEAT_MARK_W)
+        d.text((cx + HEAT_LABEL_DX, cy + HEAT_LABEL_DY), ascii_fold(name), font=fnt, fill=TEXT)
+
+
+def draw_scale_bar(d: ImageDraw.ImageDraw, height: int, px_per_m: float) -> None:
+    """Draw the 5 km scale bar and its label in the lower left corner.
+
+    Args:
+        d: Drawing context of the heatmap.
+        height: Heatmap height, pixels.
+        px_per_m: Heatmap pixels per metre of the map frame.
+    """
+    bar = SCALE_BAR_M * px_per_m
+    d.line((MARGIN, height - MARGIN, MARGIN + bar, height - MARGIN), fill=TEXT, width=SCALE_BAR_W)
+    d.text((MARGIN, height - MARGIN - SCALE_LABEL_UP), "5 km", font=font(FONT_SMALL_PX), fill=TEXT)
 
 
 def render_heatmap(grid: np.ndarray) -> Image.Image:
-    """Draw the pickup heatmap over the map frame (RGB, 1 grid cell = HEAT_SCALE px)."""
+    """Draw the pickup heatmap over the map frame.
+
+    Args:
+        grid: Pickup counts per cell of ``HEAT_CELL_M`` metres, shape (rows y, cols x).
+
+    Returns:
+        RGB image, one grid cell = ``HEAT_SCALE`` pixels, with landmarks and a scale bar.
+    """
     levels = heat_levels(grid)
     lut = np.array(heat_palette(), dtype=np.uint8)
     small = Image.fromarray(lut[levels], "RGB")
     size = (grid.shape[1] * HEAT_SCALE, grid.shape[0] * HEAT_SCALE)
     img = small.resize(size, Image.Resampling.BICUBIC)
     d = ImageDraw.Draw(img)
-    fnt = font(FONT_SMALL_PX)
     px_per_m = HEAT_SCALE / HEAT_CELL_M
-    for name, x, y in places.place_points():
-        if name not in HEAT_LANDMARKS:
-            continue
-        cx, cy = x * px_per_m, y * px_per_m
-        d.ellipse((cx - 4, cy - 4, cx + 4, cy + 4), outline=TEXT, width=2)
-        d.text((cx + 8, cy - 10), ascii_fold(name), font=fnt, fill=TEXT)
-    bar = 5000 * px_per_m
-    d.line((MARGIN, size[1] - MARGIN, MARGIN + bar, size[1] - MARGIN), fill=TEXT, width=3)
-    d.text((MARGIN, size[1] - MARGIN - 26), "5 km", font=fnt, fill=TEXT)
+    draw_landmarks(d, px_per_m)
+    draw_scale_bar(d, size[1], px_per_m)
     return img
 
 
 def save_png(img: Image.Image, path: Path) -> None:
-    """Write an image as an optimised PNG, creating the folder; no timestamps are stored."""
+    """Write an image as an optimised PNG, creating the folder; no timestamps are stored.
+
+    Args:
+        img: The image.
+        path: Target file.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path, format="PNG", optimize=True)
 
@@ -943,13 +1058,24 @@ def save_png(img: Image.Image, path: Path) -> None:
 
 
 def load_game_data(path: Path) -> dict[str, Any]:
-    """Read game_data.json and return the parsed dict."""
+    """Read game_data.json.
+
+    Args:
+        path: Path of the file.
+
+    Returns:
+        The parsed document.
+    """
     with path.open(encoding="utf-8") as fh:
         return json.load(fh)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the command-line parser."""
+    """Build the command-line parser.
+
+    Returns:
+        Parser with ``--week``, ``--data`` and ``--out``.
+    """
     p = argparse.ArgumentParser(prog="pipeline.report", description=__doc__.splitlines()[0])
     p.add_argument("--week", type=Path, default=DEFAULT_WEEK, help="week.csv (default %(default)s)")
     p.add_argument("--data", type=Path, default=DEFAULT_DATA, help="game_data.json")
@@ -958,7 +1084,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def write_report(week: Path, data: Path, out: Path) -> list[Path]:
-    """Compute everything and write STATS.md and the PNG charts; return the written paths."""
+    """Compute everything and write STATS.md and the PNG charts.
+
+    Args:
+        week: Path of ``week.csv``.
+        data: Path of ``game_data.json``.
+        out: Output folder (``STATS.md`` and ``img/``).
+
+    Returns:
+        The written paths: STATS.md first, then the charts.
+    """
     trips, rows, rejected = scan_week(week)
     shift_list = load_game_data(data)["shifts"]
     shift_table = shift_rows(shift_list)
@@ -986,7 +1121,14 @@ def write_report(week: Path, data: Path, out: Path) -> list[Path]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the report CLI; exit 0 on success, 1 if an input file is missing."""
+    """Run the report CLI.
+
+    Args:
+        argv: Arguments (default ``sys.argv[1:]``).
+
+    Returns:
+        0 on success, 1 if an input file is missing.
+    """
     args = build_parser().parse_args(argv)
     for path in (args.week, args.data):
         if not path.is_file():
