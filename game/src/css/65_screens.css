@@ -70,3 +70,22 @@ body:not([data-screen="play"]) #hud, body:not([data-screen="play"]) #dispatch { 
 .race-total { width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
 .res-buttons { display: flex; gap: 8px; }
 .res-buttons .btn-big { flex: 1; padding: 0 8px; font-size: 16px; }
+
+/* Difficulty, how to play, result extras, hints */
+.diff-choice { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.diff-label { color: #8a96b3; font-size: 14px; margin-right: 4px; }
+.diff-btn { min-height: 44px; padding: 0 14px; border: 1px solid #2a3350; border-radius: 10px; background: rgba(14, 20, 36, .85);
+  color: #e8eefc; font: 600 14px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; }
+.diff-btn.on { border-color: #3df5b0; color: #3df5b0; }
+.howto { padding: 10px 12px; border-radius: 10px; background: rgba(14, 20, 36, .85); border-left: 3px solid #3df5b0; }
+.howto h2 { margin: 0 0 6px; font-size: 15px; }
+.howto p { margin: 0 0 4px; font-size: 13px; line-height: 1.4; color: #c4cde4; }
+.shift-card.next { border-color: #3df5b0; }
+.res-record { text-align: center; color: #ffd700; font-weight: 800; font-size: 18px; }
+.res-best, .res-place { text-align: center; color: #8a96b3; font-size: 14px; }
+.res-unlock { text-align: center; color: #3df5b0; font-weight: 700; font-size: 15px; }
+.hint-card { position: absolute; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  width: min(92%, 420px); box-sizing: border-box; padding: 10px 14px; border-radius: 12px; background: rgba(14, 20, 36, .92);
+  border: 1px solid #3df5b0; color: #e8eefc; font: 600 14px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  text-align: center; pointer-events: none; opacity: 0; transition: opacity .25s; z-index: 6; }
+.hint-card.on { opacity: 1; }
