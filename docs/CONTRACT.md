@@ -744,3 +744,27 @@ toast «🏅 Досягнення: <title>» (queued, one per 3 s). On `ui:scree
 progress bar, `n / goal`, locked or unlocked). Storage: localStorage `porto-lanosiv-achievements-v1` =
 `{v:1, p:{<id>:progress}, done:{<id>:1}, seen:[district names], days:[day prefixes]}` (memory only if blocked).
 Colours follow the theme variables of `00_base.css`. Test: `node tools/achievements_test.mjs`.
+
+## §19 Тюнінг машинки (car mods)
+
+Visual tuning for the hero's car, drawn by `41_cars.js` over any skin; no brands. Readable at 30-40 px, both themes.
+The shop UI (`68_shop.*`) is not part of this piece: it sells the mods through the API below.
+
+**Catalog `PG.cars.MODS`**: array of `{id, name (Ukrainian), cat, price (€), c?}`; `PG.cars` has no category names, they
+are `paint` (6: red, blue, lime, violet, matte black, pearl), `decal` (3: flames, azulejo, racing stripes), `spoiler` (2),
+`rims` (3), `glow` (4 neon colours, soft pulse), `roof` (classic, LED «ТАКСІ», disco), `exhaust` (3 smoke colours; flames
+while ×3 is on), `lights` (xenon, yellow fog). An id is `<cat>_<name>`.
+
+**Selection**: an object with at most one id per category, `{paint:'paint_red', glow:'glow_pink'}`.
+- `PG.cars.setMods(obj)` sanitises (unknown ids and ids in the wrong category are dropped), stores it in localStorage
+  `lanos.mods` (memory only if blocked) and returns it. `setMods({})` removes all mods. The shop owns what is bought:
+  it should pass only owned ids.
+- `PG.cars.mods()` returns a copy of the current selection.
+- `PG.cars.draw(ctx, px, py, a, len, color, alpha, kind, skin, mods)`: for the hero (`kind === 'hero'` or `skin` given)
+  `mods` undefined means the saved ones, `null` or `{}` none; any object shows that selection, so other players' cars can
+  wear theirs. Non-hero cars ignore mods. Static layers are cached per skin, colour and static mods; neon, exhaust and
+  disco lights are drawn per frame.
+- `PG.cars.preview(canvas, skin, mods)` renders a big picture centred in the canvas (all layers; call it every frame for
+  the animation); `mods` undefined means the saved ones. `PG.cars.paint(ctx, id, px, py, len, color, mods)` takes mods too.
+
+Test: `node tools/cars_test.mjs`.
