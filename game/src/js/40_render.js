@@ -519,10 +519,12 @@
         const cl = G.claim && G.claim.get(o.i);
         let label = '', rival = false;
         if (cl && cl.by !== 'player' && cl.t1 <= G.t) {
-          let nick = '';
-          for (let i = 0; i < G.rivals.length; i++) if (G.rivals[i].id === cl.by) nick = G.rivals[i].nick || G.rivals[i].name;
+          let nick = '', fem = false;
+          for (let i = 0; i < G.rivals.length; i++) {
+            if (G.rivals[i].id === cl.by) { nick = G.rivals[i].nick || G.rivals[i].name; fem = !!G.rivals[i].f; }
+          }
           rival = true;
-          label = 'Забрав ' + (nick || 'суперник');
+          label = (fem ? 'Забрала ' : 'Забрав ') + (nick || 'суперник');
         } else if (o.t <= G.t + 30) label = 'Минув час';
         else return;                  // only scrolled or driven out of range: not gone
         if (expired.length >= EXPIRE_N) expired.shift();
