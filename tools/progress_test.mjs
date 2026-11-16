@@ -8,7 +8,7 @@ assert(!P.isOpen(1));
 assert(P.record({idx:0,shiftId:'a',earned:40,medal:1,rank:9})===false);
 assert(P.isOpen(1)&&P.nextIdx()===1&&P.best(0).earned===50&&P.best(0).medal===1);
 P.setDifficulty('hard'); assert(PG.engine.config.difficulty==='hard');
-const rows=P.raceTable({rivals:[{id:'ze',name:'Зé',nick:'Акула',color:'#f',total:60,rides:3}]},{earned:50,rides:2});
+const rows=P.raceTable({rivals:[{id:'ze',name:'Ашот',nick:'Акула',color:'#f',total:60,rides:3}]},{earned:50,rides:2});
 assert(rows[0].id==='ze'&&rows[1].player);
 assert(P.placeText({racePlace:2,raceSize:8})==='2-е місце серед 8 таксі на мапі');
 P.reset(); assert(P.hintDue({pin:false,ghost:true,bar:true})===null);

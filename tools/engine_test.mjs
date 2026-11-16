@@ -362,21 +362,21 @@ if (PG.ai) {
       if (avg > mx) mx = avg;
     }
     check(mx - mn > 1, diff + ': the 7 differ in average € (spread ' + (mx - mn).toFixed(2) + ')');
-    // hard with the long pin lifetimes (LEAD 1200/1200/900): Руй, who only takes long trips, can fall below Нуну
-    check(weakest === 'nuno' || (diff === 'hard' && weakest === 'rui'), diff + ': Нуну is the weakest (weakest: ' + weakest + ')');
+    // hard with the long pin lifetimes (LEAD 1200/1200/900): Камран, who only takes long trips, can fall below Стьопа
+    check(weakest === 'nuno' || (diff === 'hard' && weakest === 'rui'), diff + ': Стьопа is the weakest (weakest: ' + weakest + ')');
     // every tactic of CONTRACT §11 shows in the numbers
     const m = (id, k) => st[id][k] / Math.max(1, st[id].picks);
     const others = (id, f) => RIV_IDS.filter(x => x !== id).reduce((acc, x) => acc + f(x), 0) / 6;
     const eph = (id) => st[id].eur / Math.max(1, st[id].work * 7.2 / 3600);
-    check(m('rui', 'km') > 1.4 * others('rui', x => m(x, 'km')), diff + ': Руй takes long trips (' + m('rui', 'km').toFixed(1) + ' km vs ' + others('rui', x => m(x, 'km')).toFixed(1) + ')');
-    check(m('rui', 'air') > 2 * others('rui', x => m(x, 'air')), diff + ': Руй flies to the airport (' + m('rui', 'air').toFixed(2) + ' vs ' + others('rui', x => m(x, 'air')).toFixed(2) + ')');
-    check(m('fatima', 'stand') > 0.65 && m('fatima', 'stand') > 1.25 * others('fatima', x => m(x, 'stand')), diff + ': Фатіма stays on stand calls (' + m('fatima', 'stand').toFixed(2) + ' vs ' + others('fatima', x => m(x, 'stand')).toFixed(2) + ')');
-    check(m('ines', 'react') < 0.6 * others('ines', x => m(x, 'react')), diff + ': Інеш reacts fastest (' + m('ines', 'react').toFixed(0) + ' s vs ' + others('ines', x => m(x, 'react')).toFixed(0) + ' s)');
-    check(st.ines.maxKm <= 5 && st.nuno.maxKm <= 4, diff + ': Інеш takes short rides, Нуну nothing long (' + st.ines.maxKm.toFixed(1) + ', ' + st.nuno.maxKm.toFixed(1) + ' km)');
-    check(m('nuno', 'dist') < others('nuno', x => m(x, 'dist')), diff + ': Нуну takes the nearest (' + m('nuno', 'dist').toFixed(2) + ' km to the pickup)');
-    check(m('lurdes', 'surge') > 1.5 * others('lurdes', x => m(x, 'surge')), diff + ': Лурдеш rides the demand waves (' + m('lurdes', 'surge').toFixed(2) + ' vs ' + others('lurdes', x => m(x, 'surge')).toFixed(2) + ')');
-    if (diff !== 'easy') check(m('tiago', 'near') > 0.8, diff + ': Тіаго hunts near the player (' + m('tiago', 'near').toFixed(2) + ')');
-    check(eph('ze') >= 0.97 * Math.max(...RIV_IDS.filter(x => x !== 'ze').map(eph)), diff + ': Зé earns the most per working hour (' + eph('ze').toFixed(1) + ' €/h)');
+    check(m('rui', 'km') > 1.4 * others('rui', x => m(x, 'km')), diff + ': Камран takes long trips (' + m('rui', 'km').toFixed(1) + ' km vs ' + others('rui', x => m(x, 'km')).toFixed(1) + ')');
+    check(m('rui', 'air') > 2 * others('rui', x => m(x, 'air')), diff + ': Камран flies to the airport (' + m('rui', 'air').toFixed(2) + ' vs ' + others('rui', x => m(x, 'air')).toFixed(2) + ')');
+    check(m('fatima', 'stand') > 0.65 && m('fatima', 'stand') > 1.25 * others('fatima', x => m(x, 'stand')), diff + ': Тьотя Валя stays on stand calls (' + m('fatima', 'stand').toFixed(2) + ' vs ' + others('fatima', x => m(x, 'stand')).toFixed(2) + ')');
+    check(m('ines', 'react') < 0.6 * others('ines', x => m(x, 'react')), diff + ': Зіна reacts fastest (' + m('ines', 'react').toFixed(0) + ' s vs ' + others('ines', x => m(x, 'react')).toFixed(0) + ' s)');
+    check(st.ines.maxKm <= 5 && st.nuno.maxKm <= 4, diff + ': Зіна takes short rides, Стьопа nothing long (' + st.ines.maxKm.toFixed(1) + ', ' + st.nuno.maxKm.toFixed(1) + ' km)');
+    check(m('nuno', 'dist') < others('nuno', x => m(x, 'dist')), diff + ': Стьопа takes the nearest (' + m('nuno', 'dist').toFixed(2) + ' km to the pickup)');
+    check(m('lurdes', 'surge') > 1.5 * others('lurdes', x => m(x, 'surge')), diff + ': Люда rides the demand waves (' + m('lurdes', 'surge').toFixed(2) + ' vs ' + others('lurdes', x => m(x, 'surge')).toFixed(2) + ')');
+    if (diff !== 'easy') check(m('tiago', 'near') > 0.8, diff + ': ОлеКсій hunts near the player (' + m('tiago', 'near').toFixed(2) + ')');
+    check(eph('ze') >= 0.97 * Math.max(...RIV_IDS.filter(x => x !== 'ze').map(eph)), diff + ': Ашот earns the most per working hour (' + eph('ze').toFixed(1) + ' €/h)');
     check(RIV_IDS.every(id => 1 - st[id].work / st[id].ticks <= (diff === 'easy' ? 0.55 : 0.15)), diff + ': breaks are short (' + RIV_IDS.map(id => (100 * (1 - st[id].work / st[id].ticks)).toFixed(0) + '%').join(' ') + ')');
     if (diff === 'easy') check(lostToRivals === 0, 'easy shields the player: no order lost to a rival (' + lostToRivals + ')');
     rivalTable[diff] = st;
@@ -422,13 +422,13 @@ if (PG.ai) {
     }
   }
 
-  // (9) Лурдеш: chases a surge from t0 - 240, and camps at hotspots when there are no surges
+  // (9) Люда: chases a surge from t0 - 240, and camps at hotspots when there are no surges
   {
     let si = -1;
     for (let s = 0; s < nShifts && si < 0; s++) if (PG.data.shifts[s].surgesM && PG.data.shifts[s].surgesM.length) si = s;
-    check(si >= 0, 'some shift has surges for the Лурдеш test');
+    check(si >= 0, 'some shift has surges for the Люда test');
     if (si >= 0) {
-      // pickups inside an active surge circle: Лурдеш against the mean of the other six
+      // pickups inside an active surge circle: Люда against the mean of the other six
       const inside = {}; for (const id of RIV_IDS) inside[id] = 0;
       const onRP = (p) => {
         const o = p.o;
@@ -443,7 +443,7 @@ if (PG.ai) {
       }
       PG.bus.off('rival:pickup', onRP);
       let others = 0; for (const id of RIV_IDS) if (id !== 'lurdes') others += inside[id] / 6;
-      if (nShifts >= 8) check(inside.lurdes > 1.5 * others, 'Лурдеш takes more surge pickups than the others (' + inside.lurdes + ' vs mean ' + others.toFixed(1) + ')');
+      if (nShifts >= 8) check(inside.lurdes > 1.5 * others, 'Люда takes more surge pickups than the others (' + inside.lurdes + ' vs mean ' + others.toFixed(1) + ')');
     }
     const sh0 = PG.data.shifts[0], saved = sh0.surgesM;
     sh0.surgesM = [];
@@ -456,7 +456,7 @@ if (PG.ai) {
       if (L.mode === 'idle' || L.mode === 'cruise') { n0++; for (const h of hot) minH = Math.min(minH, Math.hypot(L.x - h.x, L.y - h.y)); }
     }
     sh0.surgesM = saved;
-    check(hot.length > 0 && minH < 900, 'no surges: Лурдеш camps at hotspots (closest ' + Math.round(minH) + ' m over ' + n0 + ' idle samples)');
+    check(hot.length > 0 && minH < 900, 'no surges: Люда camps at hotspots (closest ' + Math.round(minH) + ' m over ' + n0 + ' idle samples)');
   }
 }
 

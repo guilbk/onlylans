@@ -382,7 +382,7 @@ Night (fare, rivals' «Сова», music = 21–05 for audio only) is by the loc
 | Aeroporto | −8.6814 | 41.2481 | Gaia (Cais) | −8.6160 | 41.1370 |
 | Santo Ovídio | −8.6040 | 41.1170 | Campo 24 de Agosto | −8.5990 | 41.1495 |
 
-Stand hint: call type B pins near these are where «Фатіма» camps; «Руй» uses Aeroporto.
+Stand hint: call type B pins near these are where «Тьотя Валя» camps; «Камран» uses Aeroporto.
 
 ## §10 JS `PG.data`
 
@@ -524,13 +524,13 @@ Medals: 0 none, 1 бронза, 2 срібло, 3 золото, 4 легенда
 
 | id | Name | Nick | Colour | Gender | Tactic |
 |---|---|---|---|---|---|
-| ze | Зé | «Акула» | `#ff8a3d` | m | best € per minute |
-| fatima | Дона Фатіма | «Королева стоянки» | `#f4d03f` | f | stands, hotspots |
-| rui | Руй | «Сова» | `#4db8ff` | m | long trips, airport, night |
-| ines | Інеш | «Блискавка» | `#ff4d6a` | f | fastest reaction, short rides |
-| tiago | Тіаго | «Снайпер» | `#ff6ec7` | m | hunts orders near the player |
-| lurdes | Лурдеш | «Хвиля» | `#a0e85b` | f | demand waves (surges) |
-| nuno | Нуну | «Новачок» | `#ffffff` | m | slow, nearest first |
+| ze | Ашот | «Акула» | `#ff8a3d` | m | best € per minute |
+| fatima | Тьотя Валя | «Королева стоянки» | `#f4d03f` | f | stands, hotspots |
+| rui | Камран | «Сова» | `#4db8ff` | m | long trips, airport, night |
+| ines | Зіна | «Блискавка» | `#ff4d6a` | f | fastest reaction, short rides |
+| tiago | ОлеКсій | «Снайпер» | `#ff6ec7` | m | hunts orders near the player |
+| lurdes | Люда | «Хвиля» | `#a0e85b` | f | demand waves (surges) |
+| nuno | Стьопа | «Новачок» | `#ffffff` | m | slow, nearest first |
 
 **Tactics in numbers** (`PG.ai.PERS`; `python -m pipeline.sim --tactics` prints them, `tools/engine_test.mjs`
 checks them on every difficulty). A score ≤ 0 means «never take this pin».
@@ -556,8 +556,8 @@ wave-4 `LEAD` / `RADIUS` / `DIFF_K` (§9): easy gold+ 96 %, legend 96 %; normal 
 legend 93 % (bot € 55 / 52 / 51). The wave-3 shares (normal legend 18 %, hard legend 7 %) are gone on purpose: any
 `LEAD` of 540 s or more lets the perfect scripted bot see nearly everything, so its medals say little; the targets are
 now about the player (enough pins, enough time to reach one) and the bot is mostly the equality check between
-`pipeline.sim` and the engine. `RADIUS` hardly moves the bot. Rivals: on hard the weakest of the 7 can be Руй
-instead of Нуну (his long trips pay less when pins are plentiful), `engine_test` accepts both.
+`pipeline.sim` and the engine. `RADIUS` hardly moves the bot. Rivals: on hard the weakest of the 7 can be Камран
+instead of Стьопа (his long trips pay less when pins are plentiful), `engine_test` accepts both.
 
 Arrival-first claims, toasts: brief K6. Race table «Перегони 7 ланосів» on the
 result: Ріїн + 7, by €, colour dot, nickname, rides.

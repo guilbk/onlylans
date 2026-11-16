@@ -5,13 +5,13 @@
   // ---- static tables ------------------------------------------------------------------------
   // f = true for female rivals (verb forms in toasts).
   const RIVALS = [
-    { id: 'ze', name: 'Зé', nick: 'Акула', color: '#ff8a3d', f: false },
-    { id: 'fatima', name: 'Дона Фатіма', nick: 'Королева стоянки', color: '#f4d03f', f: true },
-    { id: 'rui', name: 'Руй', nick: 'Сова', color: '#4db8ff', f: false },
-    { id: 'ines', name: 'Інеш', nick: 'Блискавка', color: '#ff4d6a', f: true },
-    { id: 'tiago', name: 'Тіаго', nick: 'Снайпер', color: '#ff6ec7', f: false },
-    { id: 'lurdes', name: 'Лурдеш', nick: 'Хвиля', color: '#a0e85b', f: true },
-    { id: 'nuno', name: 'Нуну', nick: 'Новачок', color: '#ffffff', f: false },
+    { id: 'ze', name: 'Ашот', nick: 'Акула', color: '#ff8a3d', f: false },
+    { id: 'fatima', name: 'Тьотя Валя', nick: 'Королева стоянки', color: '#f4d03f', f: true },
+    { id: 'rui', name: 'Камран', nick: 'Сова', color: '#4db8ff', f: false },
+    { id: 'ines', name: 'Зіна', nick: 'Блискавка', color: '#ff4d6a', f: true },
+    { id: 'tiago', name: 'ОлеКсій', nick: 'Снайпер', color: '#ff6ec7', f: false },
+    { id: 'lurdes', name: 'Люда', nick: 'Хвиля', color: '#a0e85b', f: true },
+    { id: 'nuno', name: 'Стьопа', nick: 'Новачок', color: '#ffffff', f: false },
   ];
 
   // react scales the personal reaction, attn = share of pins a rival ever notices, duty = share of the
@@ -22,11 +22,11 @@
     hard: { react: 0.55, radius: 1.25, attn: 0.5, duty: 0.9, speed: 1.6, near: 5000, nearReact: 0.35 },
   };
 
-  const HUNT_M = 1500;       // Тіаго only takes pins this close to the player
-  const SHORT_KM = 5;        // Інеш takes nothing longer
-  const NUNO_KM = 4;         // Нуну takes nothing longer
-  const LONG_KM = 3.5;       // Руй takes nothing shorter (unless it touches the airport)
-  const STAND_ETA = 120;     // Фатіма leaves her stand for a street pin only this close in time
+  const HUNT_M = 1500;       // ОлеКсій only takes pins this close to the player
+  const SHORT_KM = 5;        // Зіна takes nothing longer
+  const NUNO_KM = 4;         // Стьопа takes nothing longer
+  const LONG_KM = 3.5;       // Камран takes nothing shorter (unless it touches the airport)
+  const STAND_ETA = 120;     // Тьотя Валя leaves her stand for a street pin only this close in time
   const STAND_WAIT = 420;    // ... and for a stand call at most this far away in time
 
   // S = per-candidate scratch: S.pdist (pickup to player, m), S.inSurge, S.live (a surge runs or is about
