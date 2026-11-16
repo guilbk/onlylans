@@ -3,15 +3,23 @@
 // Drawn translucent so the streets from 40_render.js stay readable; the landmarks (42) go above.
 (function (root) {
   const PG = root.PG = root.PG || {};
+  // Every district has its own ground colour so the player learns the city by sight (day, night).
+  // order of ids = pipeline/buildings.py: Ribeira, Baixa, Boavista, Foz, Matosinhos, Campanhã, Bonfim
+  const GROUND = {
+    Ribeira: ['#efc19a', '#3d2a46'], Baixa: ['#f2dc9e', '#2a3560'], Boavista: ['#d3dbe6', '#1f3b5c'],
+    Foz: ['#e4edcd', '#1c4046'], Matosinhos: ['#c7dbe3', '#173a52'], 'Campanhã': ['#dccdc4', '#33284e'],
+    Bonfim: ['#eab9aa', '#4a2a44'],
+  };
   const DAY = {
-    land: 'rgba(238,234,226,0.7)', sea: 'rgba(104,168,226,0.95)', river: 'rgba(112,176,232,0.95)', park: 'rgba(142,206,138,0.95)',
-    d0: 'rgba(226,218,200,0.25)', d1: 'rgba(230,208,180,0.25)', bridge: '#fffaf0', arch: '#8a7f70', text: 'rgba(85,98,127,0.75)',
+    land: '#f1e9d8', sea: '#5d9fdc', shore: '#a9d2f2', river: '#6fb2ea', bank: '#b4d9f4', park: '#a9d98e', bridge: '#fffdf6', arch: '#7a6f60',
+    casing: '#d8c7a4', main: '#fffdf6', mid: '#fbf2de', minor: '#ede1c8', text: 'rgba(60,48,40,0.85)', halo: 'rgba(255,250,240,0.8)',
   };
   const NIGHT = {
-    sea: 'rgba(12,32,80,0.92)', river: 'rgba(16,40,90,0.92)', park: 'rgba(18,58,58,0.8)',
-    land: null, d0: 'rgba(22,36,77,0.55)', d1: 'rgba(27,44,94,0.5)', bridge: '#b9cdf0', arch: '#5f86c6', text: 'rgba(147,163,204,0.8)',
+    land: '#0c1634', sea: '#0a2a62', shore: '#1b4a96', river: '#0f3a80', bank: '#1f5cb0', park: '#12483f', bridge: '#cfe0ff', arch: '#6b90d0',
+    casing: '#07102a', main: '#6fb4ff', mid: '#3a73c4', minor: '#1d3770', text: 'rgba(214,226,255,0.9)', halo: 'rgba(8,15,36,0.7)',
   };
-  const LABEL_LO = 0.03, LABEL_FADE = 0.09;      // px per metre: district names fade out when zoomed in
+  const STREET_PX = {main: [15, 2.6], mid: [7, 1.4], minor: [3.5, 0.7]};   // [width in metres, minimum width in px]
+  const LABEL_LO = 0.05, LABEL_FADE = 0.12;      // px per metre: district names fade out when zoomed in
   // buildings: per district id (see pipeline/buildings.py) colours [day..., night...]; roofs 0 flat 1 hip 2 court 3 L 4 villa 5 shed 6 crane
   const BP = {
     day: [
@@ -47,11 +55,22 @@
     return p;
   }
 
+  function multi(lines) {        // many polylines in one Path2D (one stroke call per class)
+    const p = new Path2D();
+    for (let i = 0; i < lines.length; i++) {
+      const f = lines[i];
+      p.moveTo(f[0], f[1]);
+      for (let j = 2; j < f.length; j += 2) p.lineTo(f[j], f[j + 1]);
+    }
+    return p;
+  }
+
   function build(B) {      // once: Path2D objects in world metres, so a frame allocates nothing
     return {
       sea: path(B.sea, true), river: path(B.river, true),
       parks: B.parks.map(function (q) { return path(q.poly, true); }),
       districts: B.districts.map(function (q) { return path(q.poly, true); }),
+      streets: PG.streets ? {main: multi(PG.streets.main), mid: multi(PG.streets.mid), minor: multi(PG.streets.minor)} : null,
       bridges: B.bridges.map(function (q) { return path(q.line, false); }),
       arches: B.bridges.map(function (q) {          // small arch hint: a bow across the deck
         const l = q.line, a = new Path2D(), mx = (l[0] + l[2]) / 2, my = (l[1] + l[3]) / 2;
@@ -138,23 +157,35 @@
     ctx.save();
     ctx.translate(x0, y0);
     ctx.scale(k, k);
-    if (p.land) { ctx.fillStyle = p.land; ctx.fillRect(-4000, -4000, 40000, 40000); }
+    ctx.fillStyle = p.land; ctx.fillRect(-4000, -4000, 40000, 40000);
+    const th = p === NIGHT ? 1 : 0;
     for (let i = 0; i < built.districts.length; i++) {
-      ctx.fillStyle = i % 2 ? p.d1 : p.d0;
+      ctx.fillStyle = (GROUND[B.districts[i].name] || [p.land, p.land])[th];
       ctx.fill(built.districts[i]);
     }
     ctx.fillStyle = p.park;
     for (let i = 0; i < built.parks.length; i++) ctx.fill(built.parks[i]);
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = p.shore; ctx.lineWidth = 26 / k; ctx.stroke(built.sea);       // light shallows along the coast
     ctx.fillStyle = p.sea;
     ctx.fill(built.sea);
+    ctx.strokeStyle = p.bank; ctx.lineWidth = 12 / k; ctx.stroke(built.river);      // light banks of the Douro
     ctx.fillStyle = p.river;
     ctx.fill(built.river);
+    ctx.lineCap = 'round';
+    if (built.streets) {
+      const S = built.streets, wpx = function (c) { return Math.max(STREET_PX[c][0] * k, STREET_PX[c][1]) / k; };
+      if (k > 0.04) { ctx.strokeStyle = p.minor; ctx.lineWidth = wpx('minor'); ctx.stroke(S.minor); }
+      ctx.strokeStyle = p.mid; ctx.lineWidth = wpx('mid'); ctx.stroke(S.mid);
+      ctx.strokeStyle = p.casing; ctx.lineWidth = wpx('main') + 1.6 / k; ctx.stroke(S.main);   // arteries: lighter and wider, with a thin edge
+      ctx.strokeStyle = p.main; ctx.lineWidth = wpx('main'); ctx.stroke(S.main);
+    }
     ctx.lineCap = 'butt';
-    ctx.strokeStyle = p.arch; ctx.lineWidth = 8 / k;               // dark casing under the light deck
+    ctx.strokeStyle = p.arch; ctx.lineWidth = 11 / k;               // dark casing under the light deck
     for (let i = 0; i < built.bridges.length; i++) ctx.stroke(built.bridges[i]);
-    ctx.strokeStyle = p.bridge; ctx.lineWidth = 5.5 / k;
+    ctx.strokeStyle = p.bridge; ctx.lineWidth = 8 / k;
     for (let i = 0; i < built.bridges.length; i++) ctx.stroke(built.bridges[i]);
-    ctx.strokeStyle = p.arch; ctx.lineWidth = 2 / k;
+    ctx.strokeStyle = p.arch; ctx.lineWidth = 3 / k;
     for (let i = 0; i < built.arches.length; i++) ctx.stroke(built.arches[i]);
     ctx.restore();
     drawBuildings(ctx, p, p === NIGHT, k, x0, y0);
@@ -162,12 +193,15 @@
     if (f > 0) {
       ctx.save();
       ctx.globalAlpha = f;
-      ctx.font = '700 10px Trebuchet MS, Helvetica Neue, system-ui, sans-serif';
+      ctx.font = '800 12px Trebuchet MS, Helvetica Neue, system-ui, sans-serif';
+      ctx.lineJoin = 'round'; ctx.lineWidth = 3.5; ctx.strokeStyle = p.halo;
       ctx.textAlign = 'center';
       ctx.fillStyle = p.text;
       for (let i = 0; i < B.districts.length; i++) {
         const d = B.districts[i];
-        ctx.fillText(d.name.toUpperCase(), x0 + d.x * k, y0 + d.y * k);
+        const tx = (d.ua || d.name).toUpperCase();
+        ctx.strokeText(tx, x0 + d.x * k, y0 + d.y * k);
+        ctx.fillText(tx, x0 + d.x * k, y0 + d.y * k);
       }
       ctx.restore();
     }
