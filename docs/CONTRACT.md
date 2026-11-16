@@ -566,3 +566,54 @@ the rest, `#dispatch` buttons ≥ 44 px at the bottom with `env(safe-area-inset-
 docks at the bottom, never over the car. **Hero**: Ріїн Гіслінг is our own drawn flat icon (a driver with a
 cap); shown on the menu («Ріїн Гіслінг проти 7 ланосів») and on the result («Ріїн Гіслінг заробив €N»);
 never a photo or likeness of a real person, no film stills, quotes, music or logos.
+
+## §15 Гра разом (party mode)
+
+Everyone at the presentation plays one shift on one map, from their phones. Single player is unchanged:
+without `?party=1` (and in the offline single file) `80_party.js` returns at once and `PG.engine.party` stays `null`.
+
+**Run**: `python tools/party.py [--port 8090] [--build] [--dir game] [--host IP] [--open-host]` (stdlib only; reuses
+`tools/serve.py` and `tools/qr.py`). It prints the QR of `http://<LAN-IP>:<port>/?party=1` and the host URL
+`http://127.0.0.1:<port>/?party=1&host=1`. `/api/start` and `/api/reset` are accepted only from the server's own machine
+(`127.0.0.1`, `::1`, the LAN IP) unless `--open-host`.
+
+**State** (`tools/party.py`, class `Party`, pure, injected clock, one lock): phase `lobby` → `running` → `done`
+(`done` at `start_at + duration + 2 s`; `running` includes the countdown before `start_at`); players
+`{id, key (secret), name ≤ 20, colour, x, y (null until the first sync), hx, hy, money, trips, seen}`; `claims`
+(order index → player id); `shift`, `difficulty`, `duration` (real s, the client sends `SHIFT / BASE_SCALE` = 180),
+`start_at` (server time). At most 60 players. A name is cleaned to one printable line; an empty name becomes
+«Таксист N», a taken one gets a number. Server time is `time.time()`.
+
+**API** (JSON; replies carry the public state, never the keys):
+
+| Call | Body | Reply |
+|---|---|---|
+| `GET /api/party` | | `{phase, now, start_at, duration, shift, difficulty, players[{id, name, color, x, y, hx, hy, money, trips, online}], claims{order: id}}` |
+| `GET /api/qr` | | `{url, rows[]}`: the QR of the players' URL as strings of `1`/`0` (host draws it on a canvas) |
+| `POST /api/join` | `{name, key?}` | `{id, key, state}`; a known `key` rejoins (409 `phase` when `done`, 409 `full`) |
+| `POST /api/sync` | `{key, x, y, hx, hy, money, trips}` | state; polled every 500 ms (403 `unknown_player`) |
+| `POST /api/claim` | `{key, order}` | `{ok: true}` or `{ok: false, by: name}`; the first claim wins, the owner may repeat; 409 unless `running` |
+| `POST /api/release` | `{key, order}` | `{ok}`; only the owner can give an order back |
+| `POST /api/start` | `{shift, difficulty, duration?, countdown?}` | state; host only; `start_at = now + countdown` (5 s) |
+| `POST /api/reset` | | state; host only; back to `lobby`, claims and money cleared, offline phones dropped |
+
+**Clock**: each reply has `now`; the client keeps the offset of the lowest-latency sample, so the phones agree to
+a few tens of ms. Game time `t = (server now − start_at) × BASE_SCALE`; every phone builds the same shift
+(`snap.shift`, `snap.difficulty`) at `start_at`.
+
+**Engine hooks** (`20_engine.js`, all inert when `PG.engine.party` is `null`): `party = {clock()}` makes `step()` go to
+`clock()` instead of adding `dt`; `G.paused` and `G.fast` become read-only `false` (pause and ×3 off); `PG.ai.init`
+is skipped, so `G.rivals` is empty and the 7 rivals are off (the ghost stays). Orders claimed by others are put into
+`G.taken` (the pin disappears, feasibility says taken); a claim someone gave back is removed again.
+
+**Claims** (`80_party.js`): `startPickup`, `bookNext` and `cruiseTo` are wrapped. A pickup or booking that passes the
+engine's own check sends `/api/claim` first and calls the engine only on `ok` (the tap card closes at once); a refusal
+shows «Вже забрав <ім'я>» and removes the pin. Giving up a pickup or a booked order sends `/api/release`.
+
+**Screens** (`?party=1`): name entry (default «Таксист N») → lobby with the names and «Чекаємо на старт» → countdown →
+the game (HUD without pause, ×3 and menu; a chip «#N з M» with the leader) → the result with the extra block
+«Перегони гравців». Other players are cars with name labels drawn through `PG.render.onDraw` (positions smoothed
+between polls). The host (`&host=1`) sees the QR, the players, a shift and difficulty choice and «Старт»; then the
+whole map with every car and name, a live leaderboard with the time left, and at the end «Фінал» and «Нова гра».
+A phone that reloads keeps its player (key in `sessionStorage`) but restarts its shift at the server time with its
+money at 0.

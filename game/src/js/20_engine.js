@@ -11,7 +11,8 @@
   const FLOAT_COLOR = '#3df5b0';
 
   const DIFF_K = C.DIFF_K;
-  const E = PG.engine = { config: { difficulty: 'normal' }, G: null, DIFF_K: DIFF_K };
+  // E.party = { clock() -> game seconds } in party mode (80_party.js): server clock, no pause or x3, no AI rivals
+  const E = PG.engine = { config: { difficulty: 'normal' }, G: null, DIFF_K: DIFF_K, party: null };
   let G = null;
 
   // reused scratch objects (no per-call allocation)
@@ -326,7 +327,9 @@
 
   /** Advances the game by dt game seconds (clamped to the shift end); events are processed in time order. */
   function step(dt) {
-    if (!G || G.over || !(dt > 0)) return;
+    if (!G || G.over) return;
+    if (E.party) dt = E.party.clock() - G.t;
+    if (!(dt > 0)) return;
     let tEnd = G.t + dt;
     if (tEnd > C.SHIFT - 1e-6) tEnd = C.SHIFT;
     for (let guard = 0; guard < MAX_EVENTS_PER_STEP; guard++) {
@@ -398,7 +401,10 @@
     for (let k = 0; k < n; k++) G.spawnT[k] = sh.orders[idxs[k]].t - G.lead[idxs[k]];
     while (G.spawnPtr < n && G.spawnT[G.spawnPtr] <= EPS) G.spawnPtr++; // already on screen at the start
     G.trail.push(G.x, G.y);
-    if (PG.ai && PG.ai.init) PG.ai.init(G);
+    if (E.party) {
+      const locked = { get: function () { return false; }, set: function () {} };
+      Object.defineProperties(G, { paused: locked, fast: locked });
+    } else if (PG.ai && PG.ai.init) PG.ai.init(G);
     emit('shift:start', { idx: idx, sh: sh });
     return G;
   }
