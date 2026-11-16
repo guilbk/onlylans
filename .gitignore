@@ -1,0 +1,10 @@
+data/work/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+.venv/
+node_modules/
+game/index.html
+test-screenshots/
+.DS_Store
