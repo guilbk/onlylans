@@ -1,0 +1,36 @@
+/* HUD and dispatch buttons */
+#hud { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #e8eefc;
+  padding: 6px 10px 4px; box-sizing: border-box; background: rgba(14, 20, 36, .85); }
+#hud .hud-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#hud .hud-clock { font-size: 15px; color: #8a96b3; font-variant-numeric: tabular-nums; }
+#hud .hud-money { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; transition: color .2s; }
+#hud .hud-rank-wrap { font-size: 15px; font-variant-numeric: tabular-nums; }
+#hud .hud-label { color: #8a96b3; }
+#hud .hud-ghost { font-size: 13px; margin-top: 2px; color: #b48cff; font-variant-numeric: tabular-nums; }
+#hud .hud-ghost .hud-label { color: #8a96b3; }
+#hud .ahead { color: #3df5b0; }
+#hud .behind { color: #ff6b6b; }
+#hud .hud-money.ahead { color: #3df5b0; }
+#hud .hud-money.behind { color: #e8eefc; }
+#hud .hud-ghost.ahead .hud-delta { color: #3df5b0; }
+#hud .hud-ghost.behind .hud-delta { color: #ff6b6b; }
+#hud .hud-prog { height: 3px; margin-top: 5px; background: rgba(138, 150, 179, .25); border-radius: 2px; overflow: hidden; }
+#hud .hud-prog-fill { height: 100%; width: 0; background: #5aa9ff; }
+#hud .hud-ladder { margin: 8px 6px 4px; }
+#hud .hud-ladder-track { position: relative; height: 6px; background: rgba(138, 150, 179, .25); border-radius: 3px; }
+#hud .hud-ladder-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(61, 245, 176, .5); border-radius: 3px; }
+#hud .hud-tick { position: absolute; top: -3px; width: 4px; height: 12px; margin-left: -2px; border-radius: 2px; background: var(--c); }
+#hud .hud-mark { position: absolute; top: -4px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%;
+  background: #3df5b0; border: 2px solid var(--c, #8a96b3); box-sizing: border-box; box-shadow: 0 0 6px rgba(61, 245, 176, .6); }
+#hud-extra { display: flex; justify-content: flex-end; gap: 6px; min-height: 0; }
+
+#dispatch { display: flex; gap: 8px; justify-content: center; box-sizing: border-box;
+  padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); background: rgba(14, 20, 36, .85); }
+#dispatch .dsp-btn { flex: 1 1 0; min-width: 44px; min-height: 44px; max-width: 160px; border: 1px solid #2a3350; border-radius: 10px;
+  background: #0e1424; color: #e8eefc; font: 600 15px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; }
+#dispatch .dsp-btn.on { background: #1d2a4d; border-color: #5aa9ff; }
+#dispatch .dsp-btn:active { background: #1d2a4d; }
+
+#toast { pointer-events: none; opacity: 0; transition: opacity .2s; text-align: center; font: 600 14px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: #e8eefc; }
+#toast.on { opacity: 1; }
