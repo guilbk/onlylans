@@ -39,6 +39,7 @@ MIN_SPUR_M = 40.0  # dead-end edges shorter than this are pruned, metres
 DP_START_M = 6.0  # polyline simplification tolerance, metres
 DP_MAX_M = 10.0
 DP_STEP_M = 1.0
+DEFAULT_DEBUG = Path("data/work/roads_debug.png")
 MAX_BYTES = 400_000
 UNIT_M = 2.5  # coordinate unit of roads.json, metres
 EIGHT = np.ones((3, 3), dtype=int)  # 8-connectivity structure
@@ -479,6 +480,25 @@ def total_km(doc: dict) -> float:
     return units * doc["unit_m"] / 1000.0
 
 
+def draw_debug(doc: dict, grid: Grid, out: Path) -> None:
+    """Save the roads as white 1-pixel lines on black, one pixel per ``grid.cell_m`` metres.
+
+    Args:
+        doc: Roads document (coordinates in 2.5 m units).
+        grid: Raster geometry that sets the image size and scale.
+        out: PNG path; parent directories are created.
+    """
+    from PIL import Image, ImageDraw  # noqa: PLC0415 - only the debug view needs Pillow
+
+    k = doc["unit_m"] / grid.cell_m
+    img = Image.new("L", (grid.width, grid.height), 0)
+    draw = ImageDraw.Draw(img)
+    for edge in doc["edges"]:
+        draw.line([(x * k, y * k) for x, y in edge_points(doc, edge)], fill=255, width=1)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Command line entry point: week CSV in, ``roads.json`` out.
 
@@ -495,6 +515,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument(
         "--out", type=Path, default=DEFAULT_OUT, help="roads JSON (default %(default)s)"
     )
+    ap.add_argument(
+        "--debug", type=Path, default=DEFAULT_DEBUG, help="debug PNG (default %(default)s)"
+    )
     args = ap.parse_args(argv)
     t0 = time.perf_counter()
     grid = map_grid()
@@ -506,6 +529,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     payload, tol, doc = encode_within_budget(graph)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_bytes(payload)
+    draw_debug(doc, grid, args.debug)
     print(f"trips used: {len(trips)}  pixels kept: {kept}  DP tolerance: {tol:g} m")
     print(
         f"nodes: {len(doc['nodes']) // 2}  edges: {len(doc['edges'])}  road: {total_km(doc):.1f} km"
