@@ -26,6 +26,7 @@
   const POP_S = 0.4;              // real s of the pin pop-in
   const EXPIRE_S = 0.35;          // real s of the pin expiry fade
   const EXPIRE_N = 16;
+  const LABEL_S = 1.4;            // real s a «Забрав …» / «Минув час» label stays
   const PAN_HOLD_S = 4;           // camera stays put this long after a manual pan
   const VIEW_PHONE_M = 2800;      // metres across on a phone at start
   const VIEW_WIDE_M = 5000;       // metres across on a wide screen at start
@@ -74,6 +75,8 @@
   const born = new Map();         // order -> real s it first showed as a pin
   let prevPins = new Set();
   let curPins = new Set();
+  let prevBright = new Set();     // pins that were takeable one frame ago (they get a label when they go)
+  let curBright = new Set();
   const expired = [];             // fading pins: {x, y, c, r, t0} in world metres
   let punch = 0;                  // short zoom kick on pickup / drop-off
   let zoomEaseTo = 0;
@@ -505,15 +508,28 @@
   function noteExpired(G, tNow) {
     if (!PG.REDUCED) {
       prevPins.forEach(function (o) {
-        if (curPins.has(o) || o.t > G.t + 30 || G.cur === o || G.next === o) return;
+        if (curPins.has(o) || G.cur === o || G.next === o) return;
         if (G.taken && G.taken.has(o.i)) return;
+        // never a silent pop: say why a bright pin went (a rival took it, or its time ran out)
+        const cl = G.claim && G.claim.get(o.i);
+        let label = '', rival = false;
+        if (cl && cl.by !== 'player' && cl.t1 <= G.t) {
+          let nick = '';
+          for (let i = 0; i < G.rivals.length; i++) if (G.rivals[i].id === cl.by) nick = G.rivals[i].nick || G.rivals[i].name;
+          rival = true;
+          label = 'Забрав ' + (nick || 'суперник');
+        } else if (o.t <= G.t + 30) label = 'Минув час';
+        else return;                  // only scrolled or driven out of range: not gone
         if (expired.length >= EXPIRE_N) expired.shift();
-        expired.push({ x: o.x0, y: o.y0, c: o.c, t0: tNow });
+        expired.push({ x: o.x0, y: o.y0, c: o.c, t0: tNow, label: rival || prevBright.has(o) ? label : '' });
       });
     }
-    const t = prevPins;
+    let t = prevPins;
     prevPins = curPins;
     curPins = t;
+    t = prevBright;
+    prevBright = curBright;
+    curBright = t;
   }
 
   function collectPins(G, tNow) {
@@ -527,6 +543,7 @@
     faintN = 0;
     edge.length = 0;
     curPins.clear();
+    curBright.clear();
     const margin = 24;
     for (let i = firstAfter(orders, G.t); i < orders.length; i++) {
       const o = orders[i];
@@ -565,6 +582,7 @@
         p.k = popK(tNow - b);
         pins[n - 1] = p;
         curPins.add(o);
+        if (reach) curBright.add(o);
       } else if (faintN < MAX_FAINT) {
         faint[faintN * 2] = sx;
         faint[faintN * 2 + 1] = sy;
@@ -746,7 +764,7 @@
     }
     for (let i = expired.length - 1; i >= 0; i--) {     // shrinking, greying ghosts of expired pins
       const e = expired[i];
-      const f = (tReal - e.t0) / EXPIRE_S;
+      const f = (tReal - e.t0) / (e.label ? LABEL_S : EXPIRE_S);
       if (f >= 1) { expired.splice(i, 1); continue; }
       P(e.x, e.y);
       const r = 14 * (1 - f * 0.5);
@@ -756,6 +774,17 @@
       ctx.arc(pOut.x, pOut.y, r, 0, TAU);
       ctx.fill();
       ring(pOut.x, pOut.y, r + 4 + f * 10, 2, pal.dot, 0.6 * (1 - f));
+      if (e.label) {
+        ctx.font = FONT_LABEL;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const w = ctx.measureText(e.label).width + 16;
+        ctx.globalAlpha = f < 0.6 ? 1 : 1 - (f - 0.6) / 0.4;
+        ctx.fillStyle = pal.card;
+        ctx.fillRect(pOut.x - w / 2, pOut.y - 40, w, 20);
+        ctx.fillStyle = pal.ink;
+        ctx.fillText(e.label, pOut.x, pOut.y - 29);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -1176,6 +1205,7 @@
         recenterUntil = 0;
         born.clear();
         prevPins.clear();
+        prevBright.clear();
         expired.length = 0;
         punch = 0;
         PG.cars.reset();
