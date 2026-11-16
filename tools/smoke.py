@@ -14,7 +14,8 @@ INSTALL_HINT = "run: python -m playwright install chromium"
 SHOT_DIR = Path("test-screenshots")
 TIMEOUT_MS = 5000
 PIN_STEPS = 40
-MONEY_STEPS = 30
+MONEY_GAME_S = 1800
+MONEY_STEP_S = 10
 OVER_STEPS = 40
 
 
@@ -37,7 +38,7 @@ def check(cond: object, msg: str) -> None:
 
 
 def find_pin(page: Any) -> dict[str, float] | None:
-    """Return the first reachable pin (CSS px relative to ``#map``), stepping time if needed.
+    """Return the reachable pin with the smallest eta (CSS px relative to ``#map``).
 
     Args:
         page: Playwright page.
@@ -46,8 +47,13 @@ def find_pin(page: Any) -> dict[str, float] | None:
         ``{px, py}`` or None if no reachable pin appeared.
     """
     js = (
-        "() => { const p = window.__porto.PG.render.pins || [];"
-        " for (const q of p) if (q.reach) return {px: q.px, py: q.py}; return null; }"
+        "() => { const P = window.__porto.PG; const E = P.engine; const G = E.G;"
+        " const pins = P.render.pins || []; let best = null, bd = Infinity;"
+        " for (const q of pins) { if (!q.reach) continue;"
+        "  const d = E.preview ? E.preview(q.o).eta"
+        " : Math.hypot(q.o.x0 - G.x, q.o.y0 - G.y);"
+        "  if (d < bd) { bd = d; best = {px: q.px, py: q.py}; } }"
+        " return best; }"
     )
     for i in range(PIN_STEPS + 1):
         page.wait_for_timeout(100)
@@ -95,8 +101,8 @@ def run_steps(page: Any, tag: str, errors: list[str]) -> None:
     check(mode in ("pickup", "ride"), f"mode after click is {mode!r}")
 
     rose = False
-    for _ in range(MONEY_STEPS):
-        page.evaluate("() => window.__porto.PG.engine.step(10)")
+    for _ in range(MONEY_GAME_S // MONEY_STEP_S):
+        page.evaluate(f"() => window.__porto.PG.engine.step({MONEY_STEP_S})")
         if page.evaluate("() => window.__porto.PG.engine.G.tot") > before:
             rose = True
             break
