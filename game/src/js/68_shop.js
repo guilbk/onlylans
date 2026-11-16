@@ -1,4 +1,5 @@
-/* 68_shop.js: «ОЛЕКС», the skin and car-mod marketplace (a parody of a classifieds site). Mods come from PG.cars.MODS.
+/* 68_shop.js: «ОЛХ», the skin, look-mod and tuning marketplace (a parody of a classifieds site). Mods come from PG.cars.MODS.
+   Tuning (§22): 3 performance upgrades x 3 levels bought with the wallet; they set PG.engine.tune (speed, radar, tips).
    The wallet is the sum of € earned over all shifts (spent on purchases). It adds its own menu button. */
 (function (root) {
   const PG = root.PG = root.PG || {};
@@ -36,7 +37,7 @@
   ];
 
   // The car mods (PG.cars.MODS) are sold as listings. PG.cars has no category names and no ad texts: they live here.
-  const CATN = { paint: 'Фарба', decal: 'Наклейки', spoiler: 'Спойлери', rims: 'Диски', glow: 'Неон', roof: 'Шашки', exhaust: 'Вихлоп', lights: 'Фари' };
+  const CATN = { tune: 'Тюнінг', paint: 'Фарба', decal: 'Наклейки', spoiler: 'Спойлери', rims: 'Диски', glow: 'Неон', roof: 'Шашки', exhaust: 'Вихлоп', lights: 'Фари' };
   const CAT_ORDER = ['paint', 'decal', 'spoiler', 'rims', 'glow', 'roof', 'exhaust', 'lights'];
   const TXT = {
     paint_red: { t: 'Фарба червона, пожежна, не розводити', who: 'Ансельму · гараж у Мафамуді · фарбує за готівку', d: 5, torg: 1,
@@ -93,6 +94,21 @@
       x: 'Туман у Порту був у березні, фари чекають далі. Світять приємно, наче свічки.' }
   };
 
+  // Performance tuning (§22): one listing per level; a level needs the one below. pct = the bonus in %.
+  const TUNES = [
+    { key: 'speed', name: 'Двигун', ico: '⚙', unit: 'швидкості авто', price: [40, 90, 160], pct: [5, 10, 15], d: 19,
+      who: 'СТО «Три ключі» · Гайя · руки в мастилі', x: 'Ланос їде швидше, тож і до клієнта швидше. Масло в комплекті, совість окремо.' },
+    { key: 'radar', name: 'Радар', ico: '◎', unit: 'радіуса радара', price: [30, 70, 130], pct: [15, 30, 45], d: 19,
+      who: 'Рафа · радіомагазин · Порту', x: 'Антена з холодильника, зате бачить замовлення далі. Не питайте, як воно працює.' },
+    { key: 'tips', name: 'Кондиціонер', ico: '❄', unit: 'до чайових', price: [25, 60, 110], pct: [10, 20, 30], d: 18,
+      who: 'Беа · автомийка · Матозіньюш', x: 'У салоні прохолодно, пасажири добрі й щедрі. Ялинка у подарунок.' }
+  ].reduce(function (a, t) {
+    for (let i = 0; i < 3; i++) a.push({ id: 'tune_' + t.key + '_' + (i + 1), cat: 'tune', key: t.key, lvl: i + 1, price: t.price[i], pct: t.pct[i], ico: t.ico,
+      title: t.name + ', рівень ' + (i + 1) + ': +' + t.pct[i] + ' % ' + t.unit, name: t.name, who: t.who, date: t.d + ' травня 2014', desc: t.x, torg: false,
+      effect: '+' + t.pct[i] + ' % ' + t.unit });
+    return a;
+  }, []);
+
   function buildMods() {
     const src = PG.cars && Array.isArray(PG.cars.MODS) ? PG.cars.MODS : [];
     return src.map(function (m) {
@@ -104,8 +120,10 @@
   const MODS = buildMods();   // empty on an old build without PG.cars.MODS: the tuning section then hides
 
   // fit: the chosen mod per category (owned ones only); mods: the bought ones
-  const st = { earned: 0, spent: 0, owned: { lanos: 1 }, skin: 'lanos', mods: {}, fit: {} };   // money in cents
-  const flt = { cat: 'all', max: 500, can: false, q: '' };   // the listing filter (not saved)
+  const st = { earned: 0, spent: 0, owned: { lanos: 1 }, skin: 'lanos', mods: {}, fit: {}, tune: { speed: 0, radar: 0, tips: 0 } };   // money in cents
+  const flt = { cat: 'all', max: 500, can: false, q: '', sort: 'def' };   // the listing filter and sort (not saved)
+  const cmp = [];   // the compared listings, 'kind:id', up to 3
+  const CMAX = 3;
   const MAXP = 500;
   let dom = null;
 
@@ -122,9 +140,11 @@
         if (byId(raw.skin) && st.owned[raw.skin]) st.skin = raw.skin;
         // ids of the old tuning (taxi, stickers, ...) are simply not in the catalog and are dropped here
         if (raw.mods) for (const k in raw.mods) if (modById(k)) st.mods[k] = 1;
+        if (raw.tune) for (const k in st.tune) st.tune[k] = Math.max(0, Math.min(3, raw.tune[k] | 0));
       }
     } catch (e) { /* a broken save is ignored */ }
     sanitise(raw0());
+    setTune();
   }
 
   function raw0() {
@@ -160,6 +180,31 @@
   function lack(it) { return it ? Math.max(0, Math.ceil(it.price - wallet() - 1e-9)) : 0; }
   function need(id) { return lack(byId(id)); }
   function needMod(id) { return lack(modById(id)); }
+  function tuneById(id) { for (let i = 0; i < TUNES.length; i++) if (TUNES[i].id === id) return TUNES[i]; return null; }
+  function ownedTune(id) { const t = tuneById(id); return !!(t && st.tune[t.key] >= t.lvl); }
+  function needTune(id) { return lack(tuneById(id)); }
+  function lockedTune(id) { const t = tuneById(id); return !!(t && t.lvl > st.tune[t.key] + 1); }
+  function buyTune(id) {
+    const t = tuneById(id);
+    if (!t || ownedTune(id) || lockedTune(id) || needTune(id) > 0) return false;
+    st.spent += t.price * 100;
+    st.tune[t.key] = t.lvl;
+    save(); setTune();
+    return true;
+  }
+  // The multipliers for the engine (1 + level bonus). In party mode the upgrades are off: all 1.
+  function tuneK() {
+    const k = { speed: 1, radar: 1, tips: 1 }, e = PG.engine;
+    if (e && e.party) return k;
+    TUNES.forEach(function (t) { if (st.tune[t.key] === t.lvl) k[t.key] = 1 + t.pct / 100; });
+    return k;
+  }
+  function setTune() { if (PG.engine) PG.engine.tune = tuneK(); }
+  function find(kind, id) { return kind === 'car' ? byId(id) : kind === 'tune' ? tuneById(id) : modById(id); }
+  function isMine(kind, id) { return kind === 'car' ? owned(id) : kind === 'tune' ? ownedTune(id) : ownedMod(id); }
+  function catName(kind, it) { return kind === 'car' ? 'Авто' : CATN[it.cat] || 'Тюнінг'; }
+  function keyLine(kind, it) { return kind === 'car' ? 'Новий вигляд машини' : kind === 'tune' ? it.effect : 'Лише вигляд, без бонусів'; }
+  function dayOf(it) { return parseInt(it.date, 10) || 0; }
   function selection() { const o = {}; for (const k in st.fit) o[k] = st.fit[k]; return o; }
 
   // Hands the owned selection to the car module (so the map car wears it); `before` skips a call when nothing changes.
@@ -217,7 +262,8 @@
   function unlockAll() {
     ITEMS.forEach(function (it) { st.owned[it.id] = 1; });
     MODS.forEach(function (m) { st.mods[m.id] = 1; });
-    save();
+    for (const k in st.tune) st.tune[k] = 3;
+    save(); setTune();
   }
 
   // The visible listings for a filter: [{ kind: 'car' | 'mod', it }]. Cars first, then the mods by category.
@@ -227,16 +273,19 @@
     const max = f.max >= MAXP ? Infinity : f.max;
     const out = [];
     function add(kind, it) {
-      const mine = kind === 'car' ? owned(it.id) : ownedMod(it.id);
+      const mine = isMine(kind, it.id);
       if (it.price > max) return;
-      if (f.can && (mine || lack(it) > 0)) return;
-      const hay = it.title + ' ' + it.desc + ' ' + it.who + (kind === 'mod' ? ' ' + CATN[it.cat] : '');
+      if (f.can && (mine || lack(it) > 0 || (kind === 'tune' && lockedTune(it.id)))) return;
+      const hay = it.title + ' ' + it.desc + ' ' + it.who + (kind === 'car' ? '' : ' ' + CATN[it.cat] + ' ' + (it.effect || ''));
       if (q && hay.toLowerCase().indexOf(q) < 0) return;
       out.push({ kind: kind, it: it });
     }
-    if (f.cat !== 'tune') ITEMS.forEach(function (it) { add('car', it); });
-    if (f.cat !== 'car') CAT_ORDER.forEach(function (cat) { MODS.forEach(function (m) { if (m.cat === cat) add('mod', m); }); });
-    return out;
+    if (f.cat === 'all' || f.cat === 'car') ITEMS.forEach(function (it) { add('car', it); });
+    if (f.cat === 'all' || f.cat === 'look') CAT_ORDER.forEach(function (cat) { MODS.forEach(function (m) { if (m.cat === cat) add('mod', m); }); });
+    if (f.cat === 'all' || f.cat === 'tune') TUNES.forEach(function (t) { add('tune', t); });
+    const by = { asc: function (a, b) { return a.it.price - b.it.price; }, desc: function (a, b) { return b.it.price - a.it.price; },
+      new: function (a, b) { return dayOf(b.it) - dayOf(a.it); }, eff: function (a, b) { return (b.it.pct || 0) - (a.it.pct || 0); } }[f.sort];
+    return by ? out.map(function (r, i) { return [r, i]; }).sort(function (a, b) { return by(a[0], b[0]) || a[1] - b[1]; }).map(function (p) { return p[0]; }) : out;
   }
 
   // ---- DOM ----
@@ -339,6 +388,14 @@
       if (PG.cars) PG.cars.paint(c, it.id, PHOTO.w / 2, PHOTO.h / 2 - 6, PHOTO.car, '#3df5b0', st.skin === it.id ? selection() : {});
       return cv;
     }
+    if (row.kind === 'tune') {
+      const bg = background();
+      if (bg) c.drawImage(bg, 0, 0, cv.width, cv.height);
+      c.fillStyle = '#ffd23f'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.font = '700 120px system-ui, sans-serif'; c.fillText(it.ico, cv.width / 2, cv.height / 2 - 10);
+      c.font = '800 34px system-ui, sans-serif'; c.fillText('+' + it.pct + ' %', cv.width / 2, cv.height - 34);
+      return cv;
+    }
     if (!PG.cars || !PG.cars.preview) return cv;
     const off = document.createElement('canvas');
     off.width = cv.width; off.height = cv.height;
@@ -350,18 +407,40 @@
 
   function badge(cls, text) { return el('span', 'olx-badge ' + cls, text); }
 
-  // One listing. `full` is the sheet version; on a phone the grid shows the compact tile and a tap opens the sheet.
+  function cmpKey(row) { return row.kind + ':' + row.it.id; }
+  function cmpSync() {
+    if (!dom) return;
+    const boxes = dom.root.querySelectorAll ? dom.root.querySelectorAll('.olx-cmpbox') : [];
+    for (let i = 0; i < boxes.length; i++) boxes[i].checked = cmp.indexOf(boxes[i].getAttribute('data-k')) >= 0;
+    dom.tray.hidden = !cmp.length;
+    dom.root.classList.toggle('has-tray', cmp.length > 0);
+    dom.trayN.textContent = 'Порівняння: ' + cmp.length + ' з ' + CMAX;
+    dom.trayGo.disabled = cmp.length < 2;
+  }
+  // on: true adds, false removes, undefined flips; a 4th listing is refused
+  function toggleCmp(key, on) {
+    const i = cmp.indexOf(key);
+    const want = on === undefined ? i < 0 : !!on;
+    if (want && i < 0) { if (cmp.length >= CMAX) { if (PG.bus) PG.bus.emit('note', { text: 'Порівняти можна до ' + CMAX + ' оголошень', ms: 1800 }); cmpSync(); return false; } cmp.push(key); }
+    if (!want && i >= 0) cmp.splice(i, 1);
+    cmpSync();
+    return true;
+  }
+
+  // One listing. `full` is the sheet version; the grid shows a dense card (photo, price, category, one key line) and on a phone a tap opens the sheet.
   function card(row, full) {
-    const car = row.kind === 'car', it = row.it;
-    const mine = car ? owned(it.id) : ownedMod(it.id);
+    const kind = row.kind, car = kind === 'car', it = row.it;
+    const mine = isMine(kind, it.id);
     const on = car && mine && st.skin === it.id;
+    const lock = kind === 'tune' && lockedTune(it.id);
     const n = lack(it);
     const a = el('article', 'olx-ad' + (car ? '' : ' olx-tune') + (full ? ' full' : ''));
-    a.setAttribute(car ? 'data-skin' : 'data-mod', it.id);
+    a.setAttribute('data-' + (car ? 'skin' : kind), it.id);
+    a.title = it.desc;
     const ph = el('div', 'olx-ph');
     ph.appendChild(photo(row, full));
     if (it.top) ph.appendChild(el('span', 'olx-top', 'ТОП'));
-    if (!car && fitted(it.id)) ph.appendChild(el('span', 'olx-top fit', 'Встановлено'));
+    if (kind === 'mod' && fitted(it.id)) ph.appendChild(el('span', 'olx-top fit', 'Встановлено'));
     a.appendChild(ph);
     const b = el('div', 'olx-body');
     const rowEl = el('div', 'olx-row');
@@ -369,25 +448,38 @@
     rowEl.appendChild(el('span', 'olx-price' + (it.cur ? ' own' : ''), it.cur || PG.util.eur(it.price)));
     b.appendChild(rowEl);
     const tags = el('div', 'olx-tags');
-    tags.appendChild(badge('kind', car ? 'Авто' : CATN[it.cat] || 'Тюнінг'));
+    tags.appendChild(badge('kind', catName(kind, it)));
     if (it.torg) tags.appendChild(badge('torg', 'торг'));
-    if (mine) tags.appendChild(badge('mine', car ? 'у гаражі' : 'куплено'));
+    if (mine) tags.appendChild(badge('mine', car ? 'у гаражі' : kind === 'tune' ? 'встановлено' : 'куплено'));
     b.appendChild(tags);
+    b.appendChild(el('p', 'olx-key', keyLine(kind, it)));
     b.appendChild(el('p', 'olx-who', it.who));
     b.appendChild(el('p', 'olx-date', 'Опубліковано ' + it.date));
     b.appendChild(el('p', 'olx-desc', it.desc));
-    if (!mine && n > 0) {
+    if (!mine && n > 0 && !lock) {
       const bar = el('div', 'olx-need');
       const fill = el('i');
       fill.style.width = Math.min(100, Math.round(100 * Math.max(0, wallet()) / it.price)) + '%';
       bar.appendChild(fill);
       b.appendChild(bar);
     }
+    const cl = el('label', 'olx-cmpl');
+    const cb = el('input', 'olx-cmpbox'); cb.type = 'checkbox';
+    cb.setAttribute('data-k', cmpKey(row));
+    cb.checked = cmp.indexOf(cmpKey(row)) >= 0;
+    cb.addEventListener('change', function () { if (!toggleCmp(cmpKey(row), cb.checked)) cb.checked = false; });
+    cl.addEventListener('click', function (e) { if (e && e.stopPropagation) e.stopPropagation(); });
+    cl.appendChild(cb); cl.appendChild(el('span', '', 'Порівняти'));
+    b.appendChild(cl);
     let label, cls, off = false;
     if (car) {
       label = on ? 'Обрано' : mine ? 'Обрати' : n === 0 ? 'Купити' : 'Не вистачає ' + PG.util.eur(n);
       cls = on ? 'on' : mine || n === 0 ? 'buy' : 'no';
       off = on || (!mine && n > 0);
+    } else if (kind === 'tune') {
+      label = mine ? 'Встановлено' : lock ? 'Спершу рівень ' + (it.lvl - 1) : n === 0 ? 'Купити' : 'Не вистачає ' + PG.util.eur(n);
+      cls = mine ? 'on' : lock || n > 0 ? 'no' : 'buy';
+      off = mine || lock || n > 0;
     } else {
       label = mine ? (fitted(it.id) ? 'Зняти' : 'Встановити') : n === 0 ? 'Купити' : 'Не вистачає ' + PG.util.eur(n);
       cls = mine ? (fitted(it.id) ? 'alt' : 'buy') : n === 0 ? 'buy' : 'no';
@@ -399,6 +491,7 @@
     act.addEventListener('click', function (e) {
       if (e && e.stopPropagation) e.stopPropagation();
       if (car) { if (!mine) buy(it.id); else pick(it.id); }
+      else if (kind === 'tune') buyTune(it.id);
       else if (!mine) buyMod(it.id);
       else fitMod(it.id);
       refresh();
@@ -417,8 +510,41 @@
     return a;
   }
 
+  // ---- the comparison table (up to 3 listings side by side), in the sheet layer ----
+  function renderCmp() {
+    const c = dom.cmp;
+    c.panel.textContent = '';
+    const rows = cmp.map(function (k) { const p = k.split(':'); const it = find(p[0], p.slice(1).join(':')); return it ? { kind: p[0], it: it } : null; }).filter(Boolean);
+    const x = el('button', 'olx-sheet-x olx-cmp-x'); x.type = 'button'; x.setAttribute('aria-label', 'Закрити');
+    x.appendChild(el('span', 'olx-x'));
+    x.addEventListener('click', closeCmp);
+    c.panel.appendChild(el('h2', 'olx-cmp-h', 'Порівняння'));
+    const t = el('table', 'olx-table');
+    const head = el('tr'); head.appendChild(el('th', 'olx-corner'));
+    rows.forEach(function (r) { head.appendChild(el('th', '', r.it.name || r.it.title)); });
+    t.appendChild(head);
+    [['Ціна', function (r) { return r.it.cur || PG.util.eur(r.it.price); }],
+     ['Категорія', function (r) { return catName(r.kind, r.it); }],
+     ['Ефект', function (r) { return keyLine(r.kind, r.it); }],
+     ['Вже є', function (r) { return isMine(r.kind, r.it.id) ? 'так' : 'ні'; }]].forEach(function (d) {
+      const tr = el('tr'); tr.appendChild(el('th', '', d[0]));
+      rows.forEach(function (r) { tr.appendChild(el('td', '', d[1](r))); });
+      t.appendChild(tr);
+    });
+    c.panel.appendChild(t);
+    c.panel.appendChild(x);
+  }
+  function openCmp() {
+    if (!dom || cmp.length < 2) return false;
+    renderCmp();
+    dom.cmp.root.hidden = false;
+    return true;
+  }
+  function closeCmp() { if (dom) dom.cmp.root.hidden = true; }
+  function clearCmp() { cmp.length = 0; closeCmp(); cmpSync(); }
+
   // ---- the sheet: the full listing over the phone gallery ----
-  function rowOf(kind, id) { const it = kind === 'car' ? byId(id) : modById(id); return it ? { kind: kind, it: it } : null; }
+  function rowOf(kind, id) { const it = find(kind, id); return it ? { kind: kind, it: it } : null; }
 
   function renderSheet() {
     if (!dom || !dom.sheet) return;
@@ -460,6 +586,7 @@
     dom.wal.textContent = PG.util.eur(wallet());
     renderAds();
     renderSheet();
+    if (!dom.cmp.root.hidden) renderCmp();
     updateButton();
   }
 
@@ -473,13 +600,15 @@
       return;
     }
     // sections: the cars, then one per mod category (the gallery on a phone, the grid on a PC)
+    if (flt.cat === 'tune' && flt.sort !== 'def') dom.ads.appendChild(el('p', 'olx-note', 'Покращення діють в одиночній грі. У «Гра разом» вони вимкнені, бій чесний. Вигляд працює скрізь.'));
     let last = '';
     rows.forEach(function (r) {
       const key = r.kind === 'car' ? 'car' : r.it.cat;
-      if (key !== last && flt.cat !== 'car') {
+      if (key !== last && flt.cat !== 'car' && flt.sort === 'def') {
         const h = el('h2', 'olx-sec', key === 'car' ? 'Авто' : CATN[key]);
         h.setAttribute('data-sec', key);
         dom.ads.appendChild(h);
+        if (key === 'tune') dom.ads.appendChild(el('p', 'olx-note', 'Покращення діють в одиночній грі. У «Гра разом» вони вимкнені, бій чесний. Вигляд працює скрізь.'));
       }
       last = key;
       dom.ads.appendChild(card(r, false));
@@ -496,7 +625,7 @@
   // Both filter sets (phone chips, PC sidebar) write into `flt` and are kept in step.
   function syncFilter() {
     if (!dom) return;
-    if (!MODS.length && flt.cat === 'tune') flt.cat = 'all';
+    if (!MODS.length && flt.cat === 'look') flt.cat = 'all';
     dom.chips.forEach(function (c) {
       const on = c.key === 'cheap' ? flt.max < MAXP : c.key === 'can' ? flt.can : c.key === flt.cat;
       c.btn.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -504,6 +633,7 @@
     });
     dom.radios.forEach(function (r) { r.checked = r.value === flt.cat; });
     dom.can.checked = flt.can;
+    dom.sort.value = flt.sort;
     dom.range.value = String(flt.max);
     dom.rangeOut.textContent = flt.max >= MAXP ? 'без обмеження' : 'до ' + PG.util.eur(flt.max);
     renderAds();
@@ -511,7 +641,8 @@
 
   function buildFilters(bar, side) {
     const CATS = [['all', 'Усе'], ['car', 'Авто']];
-    if (MODS.length) CATS.push(['tune', 'Тюнінг']);
+    if (MODS.length) CATS.push(['look', 'Вигляд']);
+    CATS.push(['tune', 'Тюнінг']);
     const chips = el('div', 'olx-chips');
     chips.setAttribute('role', 'group'); chips.setAttribute('aria-label', 'Фільтри');
     dom.chips = [];
@@ -557,7 +688,7 @@
 
   function build() {
     const r = el('div'); r.id = 'shop'; r.hidden = true;
-    r.setAttribute('role', 'dialog'); r.setAttribute('aria-label', 'ОЛЕКС');
+    r.setAttribute('role', 'dialog'); r.setAttribute('aria-label', 'ОЛХ');
     const head = el('div', 'olx-head');
     const top = el('div', 'olx-topbar');
     const back = el('button', 'olx-back'); back.type = 'button'; back.setAttribute('aria-label', 'Назад');
@@ -566,7 +697,7 @@
     top.appendChild(back);
     const logo = el('div', 'olx-logo');
     logo.appendChild(el('span', 'olx-mark'));
-    logo.appendChild(el('span', '', 'ОЛЕКС'));
+    logo.appendChild(el('span', '', 'ОЛХ'));
     top.appendChild(logo);
     const w = el('div', 'olx-wal');
     w.appendChild(el('small', '', 'Гаманець'));
@@ -591,7 +722,15 @@
     const q = el('input', 'olx-q'); q.type = 'search'; q.placeholder = 'Шукаю авто для зміни';
     q.setAttribute('aria-label', 'Пошук оголошень'); q.setAttribute('autocomplete', 'off');
     q.addEventListener('input', function () { flt.q = q.value; renderAds(); });
-    bar.appendChild(q);
+    const qrow = el('div', 'olx-qrow');
+    qrow.appendChild(q);
+    const sort = el('select', 'olx-sort'); sort.setAttribute('aria-label', 'Сортування');
+    [['def', 'Сортування'], ['asc', 'Ціна ↑'], ['desc', 'Ціна ↓'], ['new', 'Новизна'], ['eff', 'Ефект']].forEach(function (o) {
+      const op = el('option', '', o[1]); op.value = o[0]; sort.appendChild(op);
+    });
+    sort.addEventListener('change', function () { flt.sort = sort.value; renderAds(); });
+    qrow.appendChild(sort);
+    bar.appendChild(qrow);
     const main = el('div', 'olx-main');
     const side = el('aside', 'olx-side'); side.setAttribute('aria-label', 'Фільтри');
     const list = el('div', 'olx-list');
@@ -600,7 +739,7 @@
     const ads = el('div', 'olx-ads');
     list.appendChild(count); list.appendChild(ads);
     main.appendChild(side); main.appendChild(list);
-    dom = { root: r, wal: wal, ads: ads, count: count, q: q, bg: null, sheet: null };
+    dom = { root: r, wal: wal, ads: ads, count: count, q: q, sort: sort, bg: null, sheet: null };
     buildFilters(bar, side);
     r.appendChild(bar);
     r.appendChild(main);
@@ -611,7 +750,24 @@
     sr.addEventListener('click', function (e) { if (e.target === sr) closeSheet(); });
     r.appendChild(sr);
     dom.sheet = { root: sr, panel: panel, key: null };
-    r.addEventListener('keydown', function (e) { if (e.key === 'Escape' && dom.sheet.key) { closeSheet(); if (e.stopPropagation) e.stopPropagation(); } });
+    const cr = el('div', 'olx-cmp'); cr.hidden = true;
+    cr.setAttribute('role', 'dialog'); cr.setAttribute('aria-label', 'Порівняння');
+    const cpanel = el('div', 'olx-sheet-panel');
+    cr.appendChild(cpanel);
+    cr.addEventListener('click', function (e) { if (e.target === cr) closeCmp(); });
+    r.appendChild(cr);
+    dom.cmp = { root: cr, panel: cpanel };
+    const tray = el('div', 'olx-tray'); tray.hidden = true;
+    dom.trayN = el('span', 'olx-tray-n', '');
+    dom.trayGo = el('button', 'olx-btn buy olx-tray-go', 'Порівняти'); dom.trayGo.type = 'button';
+    dom.trayGo.addEventListener('click', openCmp);
+    const trayX = el('button', 'olx-btn alt olx-tray-x', 'Очистити'); trayX.type = 'button';
+    trayX.addEventListener('click', clearCmp);
+    tray.appendChild(dom.trayN); tray.appendChild(dom.trayGo); tray.appendChild(trayX);
+    r.appendChild(tray);
+    dom.tray = tray;
+    r.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !dom.cmp.root.hidden) { closeCmp(); if (e.stopPropagation) e.stopPropagation(); }
+      else if (e.key === 'Escape' && dom.sheet.key) { closeSheet(); if (e.stopPropagation) e.stopPropagation(); } });
     if (root.addEventListener) {
       let was = isPhone();
       root.addEventListener('resize', function () {
@@ -631,12 +787,13 @@
     dom.root.hidden = false;
     syncFilter();
     refresh();
+    cmpSync();
     dom.root.scrollTop = 0;
   }
 
   function close() {
     stopLoop();
-    if (dom) { closeSheet(); dom.root.hidden = true; dropAnim(false); }
+    if (dom) { closeSheet(); closeCmp(); dom.root.hidden = true; dropAnim(false); }
     updateButton();
   }
 
@@ -647,7 +804,7 @@
     if (!document.getElementById('btn-shop')) {
       const b = el('button', 'btn-big alt');
       b.id = 'btn-shop'; b.type = 'button';
-      b.appendChild(el('span', 'olx-open-name', 'ОЛЕКС'));
+      b.appendChild(el('span', 'olx-open-name', 'ОЛХ'));
       b.appendChild(el('span', 'olx-open-wal'));
       b.addEventListener('click', open);
       const after = document.getElementById('party-note') || document.getElementById('btn-party');
@@ -662,13 +819,16 @@
     ITEMS: ITEMS, MODS: MODS, CATN: CATN, KEY: KEY, wallet: wallet, owned: owned, need: need, earn: earn, buy: buy, pick: pick,
     ownedMod: ownedMod, needMod: needMod, buyMod: buyMod, fitMod: fitMod, fitted: fitted, selection: selection,
     listings: listings, filter: flt, unlockAll: unlockAll, skin: function () { return st.skin; }, open: open, close: close,
-    openSheet: openSheet, closeSheet: closeSheet
+    openSheet: openSheet, closeSheet: closeSheet, TUNES: TUNES, tuneLevel: function (k) { return st.tune[k] || 0; },
+    ownedTune: ownedTune, needTune: needTune, buyTune: buyTune, tuneK: tuneK, setTune: setTune,
+    compare: { list: function () { return cmp.slice(); }, toggle: toggleCmp, open: openCmp, close: closeCmp, clear: clearCmp, max: CMAX }
   };
   if (PG.bus) {
     PG.bus.on('shift:end', function (e) { if (e && e.result) { earn(e.result.earned); updateButton(); } });
     PG.bus.on('ui:screen', function (e) {
       if (typeof document === 'undefined' || !e) return;
       if (e.name === 'menu') ensureButton();
+      setTune();
       if (e.name !== 'menu') close();
     });
   }

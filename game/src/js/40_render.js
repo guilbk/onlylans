@@ -403,8 +403,7 @@
     const pal = T();
     if (streetsReady()) {
       if (dimCv === null) dimCv = dimStreets(pal) || false;
-      ctx.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
-      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingEnabled = true;   // plain source-over: 'lighter' on the full-map bitmap cost ~10 % of the night frames on a throttled phone
       ctx.globalAlpha = dimCv ? 1 : 0.4;
       P(0, 0);
       ctx.drawImage(dimCv || streetImg, pOut.x, pOut.y, MAP_W * view.scale, MAP_H * view.scale);

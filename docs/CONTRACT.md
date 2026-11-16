@@ -790,3 +790,59 @@ while ×3 is on), `lights` (xenon, yellow fog). An id is `<cat>_<name>`.
   the animation); `mods` undefined means the saved ones. `PG.cars.paint(ctx, id, px, py, len, color, mods)` takes mods too.
 
 Test: `node tools/cars_test.mjs`.
+
+## §20 Золоте замовлення (golden order)
+
+`47_gold.js`. Every `WINDOW` = 1800 game s (45 real s) one order becomes gold: window `w` (>= 1) starts at `T = w*1800`;
+candidates are the orders with `T < o.t` and `o.t - C.LEAD[o.c] <= T` (pin open, difficulty ignored); the winner has the
+lowest `fnv1a32(shiftId + '#gold#' + w + '#' + o.i)`. No random, no player position: every phone and the big screen
+pick the same order. A gold order stays gold until taken or expired.
+- Pin: gold glow, ring and «×2» badge (layer `onDraw` z 6). A toast «Золоте замовлення: ×2 до плати» through the `note`
+  event (the one-overlay manager shows it) and the `coin` sound.
+- Pay: on the player's `dropoff` the bonus (= the fare) is added to `payload.tip` and `G.tips`, once per order, with a
+  gold float «+€N ×2». Rivals never emit `dropoff`, so they get nothing. Party claims are unchanged.
+- API: `PG.gold = { WINDOW, pick(sh, w), golds(sh, t), isGold(o) }`. Not part of the engine tests or `pipeline/sim.py`.
+
+Test: `node tools/gold_test.mjs`.
+
+## §21 Теплова мапа «Де заробляли» (heat map)
+
+A soft layer showing where the real drivers of the shift earned in the current hour. Python computes it, JS only paints it.
+
+**`game/heat.json`** (`python -m pipeline.heat`, deterministic, sorted keys, one line, < 80 KB; reads `game_data.json`):
+`{"version":1,"cell_m":400,"cols":38,"rows":48,"shifts":{"<shift id>":[hour0, hour1]}}`. Each shift has two hours (game s
+0..3599 and 3600..7199, by the pickup time). Each hour is a flat list `[gap, value, gap, value, ...]` of the warm cells in
+row-major order: `gap` = cells since the previous warm cell (`index = row * cols + col`, first counted from 0), `value` 1..99
+= the smoothed sum of the fares of trips picked up in that cell, normalised to the hour's maximum (cells under 8 left out).
+Cell `(col, row)` covers map metres `[col, col+1) * cell_m` by `[row, row+1) * cell_m`. The build (§6) inlines the file as
+`<script type="application/json" id="heat-data">` when it exists; without it there is no heat button.
+
+**`43_heat.js` / `43_heat.css`** (`PG.heat`): a 48 px button «🔥» (`#map-heat`, left of the zoom buttons, shown with them,
+`data-no-map`) toggles the layer; off at every shift start. Drawn with `PG.render.onDraw` at z -3 (above the ground and the
+basemap, under the landmarks, pins and cars), one pixel per cell stretched with smoothing, warm yellow to red in the day theme
+and a brighter additive orange to pink at night. A one-line legend `#heat-legend` «Де заробляли справжні таксисти о HH:00»
+(`HH` = shift start hour + hour index) is shown while it is on. The «Про дані» data list should get the line «де заробляли
+справжні таксисти: теплова мапа» (list lives in `65_screens.js`).
+
+Tests: `tests/test_heat.py`, `tests/test_build_game.py`.
+
+### ОЛХ v2 (shop UI, `68_shop.*`; part of §19)
+
+Categories: «Авто» (`car`), «Вигляд» (`look`, the cosmetic mods of this section), «Тюнінг» (`tune`, performance, §22).
+Filters: category, price range, «можу купити»; sort `PG.shop.filter.sort` = `def | asc | desc | new | eff`. Dense card
+(photo, price, category chip, one key line, «Порівняти»); the compare tray holds up to 3 listings (`PG.shop.compare`:
+`toggle(key, on?)`, `list()`, `open()`, `clear()`; key `kind:id`) and opens a table: price, category, effect, «вже є».
+Phone: 2-column grid, sticky search + sort + chips, the tray at the bottom, the table as a sheet.
+
+## §22 Performance tuning
+
+Three upgrades, 3 levels each, bought with the shop wallet (a level needs the one below; the listing id is
+`tune_<key>_<level>`): `speed` «Двигун» +5/+10/+15 % player speed (40/90/160 €), `radar` «Радар» +15/+30/+45 % pin radius
+(30/70/130 €), `tips` «Кондиціонер» +10/+20/+30 % tips (25/60/110 €). Saved in `porto-lanosiv-shop-v1` as `tune: {speed, radar, tips}` (0..3).
+
+**Engine hook** `PG.engine.tune = { speed, radar, tips }` (multipliers, default 1; the shop sets them from the saved
+levels on load, on purchase and on every return to the menu). `E.tuneK(k)` reads one and returns 1 in party mode
+(`E.party`): the upgrades are off in «Гра разом» (the shop says so; cosmetic mods stay). Read in: `speedAt` (player
+travel time, `eta`, `cruiseTo`), `newGame` (`G.diffK *= radar` after the leads are computed, so the pin radius in the
+engine and the render grows and the lead windows do not), `22_rules.js` dropoff tip. Routes (`12_roads.js`) are not touched.
+With all 1 the engine and `pipeline/sim.py` parity are unchanged. Test: `node tools/shop_test.mjs`.

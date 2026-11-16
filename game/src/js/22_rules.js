@@ -73,7 +73,7 @@
       const o = p.o;
       const fare = p.fare != null ? p.fare : o.fare;
       const k = G ? comboK(G.combo || 0) : 1;
-      const tip = cents(fare * RATE[kindOf(o)] + fare * (k - 1));
+      const tip = cents((fare * RATE[kindOf(o)] + fare * (k - 1)) * (PG.engine && PG.engine.tuneK ? PG.engine.tuneK('tips') : 1));
       p.tip = tip;
       if (G) {
         G.tips = cents((G.tips || 0) + tip);
