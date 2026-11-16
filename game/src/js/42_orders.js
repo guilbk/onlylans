@@ -7,6 +7,7 @@
   const CALL_FALLBACK = ['Виклик', 'Стоянка', 'З вулиці'];
   const DASH_ROUTE = [7, 6];
   const DASH_NONE = [];
+  const HOVER_MS = 6000;           // a hover card never stays longer than this
   const ROUTE_REFRESH_M = 250;     // re-route only if the start moved this far
   const ROUTE_REFRESH_MS = 1000;   // ... and not more often than this
 
@@ -17,7 +18,7 @@
     tapped: false,    // tap() was called during the current gesture
     card: null, els: null, cardKey: '', cardW: 0, cardH: 0, cardMode: '', cand: -1, phoneTop: false,
     route: null, routeOrd: null, routeFx: 0, routeFy: 0, routeAt: 0, routeRoads: false,
-    hinted: false, inited: false
+    hinted: false, inited: false, hoverAt: 0
   };
 
   const orders = PG.orders = {
@@ -25,6 +26,7 @@
     hover: hover,
     tap: tap,
     clear: clear,
+    hideHover: function () { if (!S.selected) hover(null); },
     blocks: blocks,
     selected: null,
     hovered: null   // order under the mouse: the camera holds still while it is set
@@ -50,12 +52,19 @@
     S.cand = -1;
   }
 
+  function hideCard() {
+    if (!S.card || S.card.classList.contains('hidden')) return;
+    S.card.className = 'order-card hidden';
+    S.cardKey = ''; S.cardMode = ''; S.cand = -1;
+  }
+
   function hover(o) {
     if (S.touch && o) return;           // touch has no hover
     if (S.selected) return;             // a selection wins over hover
     S.hovered = o || null;
     orders.hovered = S.hovered;
-    if (o) markHint();
+    S.hoverAt = Date.now();
+    if (o) markHint(); else hideCard();   // the card leaves with the pointer
   }
 
   // Take the order: pickup, or book-next while riding. On refusal keep the card
@@ -104,13 +113,14 @@
 
   function drawPreview(ctx, now) {
     const g = G();
-    const o = S.selected || S.hovered;
-    if (!g || !o || !PG.render || !PG.engine) return;
-    if (g.over || o.t <= g.t) { if (S.selected === o) clear(); else { S.hovered = null; orders.hovered = null; } return; }
+    let o = S.selected || S.hovered;
+    if (o && !S.selected && Date.now() - S.hoverAt > HOVER_MS) { S.hovered = null; orders.hovered = null; o = null; }
+    if (!g || !o || !PG.render || !PG.engine) { hideCard(); return; }
+    if (g.over || o.t <= g.t) { if (S.selected === o) clear(); else { S.hovered = null; orders.hovered = null; hideCard(); } return; }
     const pv = PG.engine.preview(o);
-    if (!pv) return;
+    if (!pv) { hideCard(); return; }
     const hoverOnly = !S.selected;
-    if (hoverOnly && !pv.ok) return;       // unreachable: no preview on hover
+    if (hoverOnly && !pv.ok) { hideCard(); return; }       // unreachable: no preview on hover
     ensureRoute(o, pv, now);
     const col = pal().pins[o.c] || pal().pins[0];
     const P = PG.render.P;
@@ -178,9 +188,9 @@
     const els = S.els;
     if (key !== S.cardKey) {
       S.cardKey = key;
-      els.type.textContent = callName(o.c);
       els.fare.textContent = eur(o.fare);
-      els.km.textContent = (Math.round(o.km * 10) / 10).toString().replace('.', ',') + ' км';
+      els.perkm.innerHTML = o.km > 0.05 ? eur(o.fare / o.km) + '<small>/км</small>' : '';
+      els.km.textContent = callName(o.c) + ' · ' + (Math.round(o.km * 10) / 10).toString().replace('.', ',') + ' км';
       els.eta.textContent = 'доїзд ' + mins(pv.eta);
       els.wait.textContent = pv.ok ? (g.mode === 'ride' ? 'наступним · ' : '') + 'чекає ще ' + mins(pv.wait) : 'не встигнеш';
       els.wait.className = pv.ok ? 'oc-wait' : 'oc-wait oc-bad';
@@ -293,12 +303,12 @@
     card.id = 'order-card';
     card.className = 'order-card hidden';
     card.innerHTML =
-      '<div class="oc-main"><div class="oc-row"><span class="oc-fare"></span><span class="oc-type"></span></div>' +
+      '<div class="oc-main"><div class="oc-row"><span class="oc-fare"></span><span class="oc-perkm"></span></div>' +
       '<div class="oc-row oc-sub"><span class="oc-km"></span><span class="oc-eta"></span></div>' +
       '<div class="oc-wait"></div></div>' +
       '<button type="button" class="oc-btn">Взяти</button>';
     S.els = {
-      type: card.querySelector('.oc-type'), fare: card.querySelector('.oc-fare'),
+      perkm: card.querySelector('.oc-perkm'), fare: card.querySelector('.oc-fare'),
       km: card.querySelector('.oc-km'), eta: card.querySelector('.oc-eta'),
       wait: card.querySelector('.oc-wait'), btn: card.querySelector('.oc-btn')
     };

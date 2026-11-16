@@ -4,7 +4,7 @@
   // Guided first shift (steps a-f) and, once it is done, three contextual hints.
   const STEPS = [
     'Світлі кружки з €# — замовлення. Торкнись одного',
-    'Це маршрут до пасажира і до прапорця. Торкнись ще раз або «Беру»',
+    'Це маршрут до пасажира і до прапорця. Торкнись ще раз або «Взяти»',
     'Їдеш до пасажира. Гроші — коли пасажир сяде',
     'Пасажир у машині — веземо до прапорця. Наступне замовлення можна взяти вже зараз',
     'Бузкова машина — привид, найкращий справжній водій цієї зміни. Обжени його',
@@ -226,7 +226,7 @@
 
   function begin() {
     const hostView = root.document.body.classList.contains('party-screen');
-    S.on = !hostView && !!PG.progress && !PG.progress.coachDone();
+    S.on = !hostView && !root.document.body.classList.contains('party') && !!PG.progress && !PG.progress.coachDone();
     S.step = 0; S.dwell = 0; S.text = ''; S.kind = ''; S.until = 0;
     S.idle = 0; S.idleN = 0; S.shown = {}; S.pending = ''; S.lastSel = null; S.lastAt = -1e9;
   }

@@ -30,11 +30,10 @@ body.party #hud .hud-cell-rank { display: none; }
 #hud .hud-tick { position: absolute; top: -3px; width: 3px; height: 14px; margin-left: -1.5px; border-radius: 2px; background: var(--c); }
 #hud .hud-mark { position: absolute; top: -5px; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%;
   background: var(--acc); box-shadow: 0 0 0 3px var(--hud); }
-#hud .hud-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
-#hud .hud-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 14px; background: var(--chip); pointer-events: auto; }
-#hud .hud-seg button { min-width: 52px; min-height: 44px; padding: 0 8px; border: 0; border-radius: 11px; background: transparent; color: var(--text);
-  font: 700 14px var(--font); cursor: pointer; touch-action: manipulation; }
-#hud .hud-seg button[aria-pressed="true"] { background: var(--btn); color: var(--btn-ink); }
+#hud .hud-tools { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+#hud .hud-theme { flex: none; width: 44px; min-width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: var(--chip); color: var(--text);
+  font: 700 22px/1 var(--font); cursor: pointer; pointer-events: auto; touch-action: manipulation; }
+#hud .hud-theme:active { background: var(--btn); color: var(--btn-ink); }
 #hud-extra { pointer-events: auto; width: max-content; margin-left: auto; display: flex; justify-content: flex-end; align-items: center; gap: 6px; min-height: 0; }
 
 #dispatch .dsp-btn { flex: 1 1 0; min-width: 44px; min-height: var(--ctl-h); max-width: 200px; border: 0; border-radius: 16px; pointer-events: auto;
@@ -45,3 +44,14 @@ body.party #hud .hud-cell-rank { display: none; }
 #toast { pointer-events: none; padding: 8px 14px; border-radius: 14px; background: var(--hud); box-sizing: border-box; opacity: 0; transition: opacity .2s; text-align: center; font: 700 14px var(--font);
   color: var(--text); box-shadow: 0 6px 18px var(--shadow); }
 #toast.on { opacity: 1; }
+
+/* Phone: the whole HUD stays near 150 px */
+@media (max-width: 640px) {
+  #hud { padding-top: calc(var(--sat) + 6px); padding-bottom: 6px; }
+  #hud .hud-money { font-size: 32px; }
+  #hud .hud-ghost { margin-top: 3px; }
+  #hud .hud-prog { margin-top: 5px; }
+  #hud .hud-ladder { margin: 5px 6px 0; }
+  #hud .hud-medals { height: 12px; margin-top: 4px; }
+  #hud .hud-tools { margin-top: 3px; }
+}
