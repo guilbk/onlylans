@@ -155,7 +155,7 @@ h2{font-size:clamp(21px,3.4vw,28px);margin:0 0 4px;letter-spacing:-.01em}
 .tail{transform-origin:0 0}
 .cd{font-variant-numeric:tabular-nums}
 
-/* ---- ОЛЕКС ---- */
+/* ---- ОЛХ ---- */
 .olxs{display:flex;flex-wrap:wrap;gap:28px;justify-content:center;align-items:flex-start}
 .olx{width:calc(390px*var(--k));font-family:Rockwell,"Roboto Slab",Georgia,serif;border-radius:calc(26px*var(--k));overflow:hidden;box-shadow:0 0 0 calc(6px*var(--k)) #000,0 18px 50px rgba(0,0,0,.5)}
 .olx-in{width:390px;transform:scale(var(--k));transform-origin:0 0}
@@ -228,7 +228,7 @@ h2{font-size:clamp(21px,3.4vw,28px);margin:0 0 4px;letter-spacing:-.01em}
 <div class="wrap">
 <header class="top">
   <h1>7 ланосів: макет вигляду</h1>
-  <p>Денна і нічна карта, дев'ять скінів героя, три стилі малювання і магазин ОЛЕКС. Обери стиль нижче: усі секції перемалюються.</p>
+  <p>Денна і нічна карта, дев'ять скінів героя, три стилі малювання і магазин ОЛХ. Обери стиль нижче: усі секції перемалюються.</p>
 </header>
 <div class="bar" id="bar"></div>
 <div class="desc" id="descs"></div>
@@ -807,7 +807,7 @@ function gamePhone(st,th){
 </div></div>`;
 }
 
-/* ---------- ОЛЕКС ---------- */
+/* ---------- ОЛХ ---------- */
 const WALLET=160;
 const ADS={
   lanos:{t:'Ланос 2007, на ходу',s:'Ви, Ріїн · Порту · у гаражі',d:'Торг доречний. Фара одна, зате світить за двох. Двері від різних машин, скло трішки трісло, димить символічно.'},
@@ -862,7 +862,7 @@ function olxPhone(st,th){
   }).join('');
   return`<div class="pcol"><div class="pcap">${N?'Ніч':'День'}${resolved()===th?'<span class="on">зараз у грі</span>':''}</div><div class="olx" data-style="${st}" data-theme="${th}"><div class="olx-box"><div class="olx-in">
 <div class="olx-head"><div class="olx-top"><button type="button" class="olx-back" aria-label="Назад"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
-<div class="olx-logo"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 6a3 3 0 0 1 3-3h10l11 11a3 3 0 0 1 0 4.2L18.200 28.200a3 3 0 0 1-4.200 0L4 18z" fill="#fff"/><circle cx="10" cy="10" r="3" fill="#e5452d"/></svg>ОЛЕКС</div>
+<div class="olx-logo"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 6a3 3 0 0 1 3-3h10l11 11a3 3 0 0 1 0 4.2L18.200 28.200a3 3 0 0 1-4.200 0L4 18z" fill="#fff"/><circle cx="10" cy="10" r="3" fill="#e5452d"/></svg>ОЛХ</div>
 <div class="olx-wal"><small>Гаманець</small><b>${WALLET} €</b></div></div>
 <div class="olx-q"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></svg>Шукаю авто для зміни</div></div>
 <div class="olx-chips"><span class="on">Усе</span><span>З рук</span><span>Дивне</span></div>
@@ -897,7 +897,7 @@ function secGarage(){
   return`<section id="s3"><h2>Гараж, стиль ${st}</h2><p class="sub">Великі версії для картки магазину (завдовжки 200 пікселів) і справжні 40 пікселів поряд.</p><div class="gar">${cards}</div></section>`;
 }
 function secShop(){
-  return`<section id="s4"><h2>ОЛЕКС: магазин скінів</h2><p class="sub">Свій вигляд, не схожий на справжні дошки оголошень. Гаманець ${WALLET} €: Матіз, Порту класик, Гольф, Нью-Йорк і рікшу можна купити, кеб, електро і коня поки що ні.</p><div class="olxs">${olxPhone(state.style,'day')}${olxPhone(state.style,'night')}</div></section>`;
+  return`<section id="s4"><h2>ОЛХ: магазин скінів</h2><p class="sub">Свій вигляд, не схожий на справжні дошки оголошень. Гаманець ${WALLET} €: Матіз, Порту класик, Гольф, Нью-Йорк і рікшу можна купити, кеб, електро і коня поки що ні.</p><div class="olxs">${olxPhone(state.style,'day')}${olxPhone(state.style,'night')}</div></section>`;
 }
 function secMotion(){
   const st=state.style,th=resolved(),N=th==='night';
