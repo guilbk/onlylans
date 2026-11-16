@@ -73,7 +73,14 @@
     if (!localXY(ev, tapPt).inside) return;
     const touch = ev.pointerType !== 'mouse';
     if (PG.orders && PG.orders.blocks && PG.orders.blocks(ev.clientX, ev.clientY)) return;  // next to the open card
-    const pin = PG.render.nearestPin(tapPt.x, tapPt.y, touch ? PICK_TOUCH : PICK_MOUSE);
+    let pin = PG.render.nearestPin(tapPt.x, tapPt.y, touch ? PICK_TOUCH : PICK_MOUSE);
+    const sel = PG.orders && PG.orders.selected;
+    if (sel && touch && (!pin || pin.o !== sel)) {        // the second tap on the selected pin is forgiving
+      const ps = PG.render.pins;
+      for (let i = 0; i < ps.length; i++) {
+        if (ps[i].o === sel && Math.hypot(tapPt.x - ps[i].px, tapPt.y - ps[i].py) <= PICK_TOUCH * 1.6) pin = ps[i];
+      }
+    }
     if (PG.bus) PG.bus.emit('tap:fx', { x: tapPt.x, y: tapPt.y, pin: !!pin });
     PG.render.peek(tapPt.x, tapPt.y);      // a rival under the finger shows its name
     if (pin) { tapPin(pin); return; }
