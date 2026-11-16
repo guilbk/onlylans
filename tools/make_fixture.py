@@ -9,24 +9,40 @@ import random
 from pathlib import Path
 from typing import Any
 
-SEED = 7
-UNIT_M = 5
-MAP_W_M = 15000
-MAP_H_M = 19000
-HOME_X_M = 9110.0
-HOME_Y_M = 12443.0
-CENTRAL_M = 5000.0
-N_TAXIS = 25
-N_TRIPS = 120
-MIN_PTS = 3
-MAX_PTS = 12
-STEP_MIN_M = 150.0
-STEP_MAX_M = 330.0
-GPS_STEP_S = 15
-SHIFT_S = 7200
-SURGE_T0 = 150
-FARE_BASE = 3.25
-FARE_PER_KM = 0.5
+SEED = 7  # random seed of the fixture
+UNIT_M = 5  # metres per map unit
+MAP_W_M = 15000  # map width, metres
+MAP_H_M = 19000  # map height, metres
+HOME_X_M = 9110.0  # player start x, metres
+HOME_Y_M = 12443.0  # player start y, metres
+CENTRAL_M = 5000.0  # side of the central square the trips stay in, metres
+START_SPREAD = 0.8  # trips start within this share of the half-side from the centre
+TURN_IN = 0.6  # a start farther out than this share of the half-side heads to the centre
+TURN_IN_JITTER = 0.6  # random spread of that heading, radians
+WANDER = 0.25  # random heading change per step, radians
+N_TAXIS = 25  # drivers in the fixture
+N_TRIPS = 120  # trips in the fixture
+MIN_PTS = 3  # fewest GPS points of a trip
+MAX_PTS = 12  # most GPS points of a trip
+STEP_MIN_M = 150.0  # shortest GPS step, metres
+STEP_MAX_M = 330.0  # longest GPS step, metres
+STAND_MAX = 20  # stand numbers are 1..20
+GPS_STEP_S = 15  # seconds between two GPS points
+SHIFT_S = 7200  # shift length, game seconds
+M_PER_KM = 1000  # metres in a kilometre
+CENTS = 100  # cents in a euro
+KIB = 1024  # bytes in a KiB, for the size line
+TOP_SHARE = 0.10  # the ``top10`` mark is this share of the ranking
+DETOUR = 1.25  # road/straight ratio of the fixture shift
+TAXI_ID_BASE = 20000000  # TAXI_ID of the first driver
+TAXI_ID_STEP = 101  # distance between two TAXI_IDs
+SURGE_T0 = 150  # surge start, game seconds
+SURGE_T1 = 1500  # surge end, game seconds
+SURGE_R = 120  # surge radius, map units
+SURGE_N = 14  # pickups counted in the surge
+SURGE_DX_M, SURGE_DY_M = 200, -100  # surge centre offset from the start, metres
+FARE_BASE = 3.25  # flag fall, EUR
+FARE_PER_KM = 0.5  # EUR per km
 OUT_DEFAULT = Path("game/fixture/mini.json")
 HOT_SPOTS = (
     ("Aliados", 0.0, 0.0, 0.45),
@@ -70,7 +86,7 @@ def fare(km: float) -> float:
     Returns:
         Fare in EUR.
     """
-    return math.floor((FARE_BASE + FARE_PER_KM * km) * 100 + 0.5) / 100
+    return math.floor((FARE_BASE + FARE_PER_KM * km) * CENTS + 0.5) / CENTS
 
 
 def make_trip(rng: random.Random, t: int) -> list[Any]:
@@ -85,26 +101,26 @@ def make_trip(rng: random.Random, t: int) -> list[Any]:
     """
     half = CENTRAL_M / 2
     n = rng.randint(MIN_PTS, MAX_PTS)
-    x = rng.uniform(HOME_X_M - half * 0.8, HOME_X_M + half * 0.8)
-    y = rng.uniform(HOME_Y_M - half * 0.8, HOME_Y_M + half * 0.8)
+    x = rng.uniform(HOME_X_M - half * START_SPREAD, HOME_X_M + half * START_SPREAD)
+    y = rng.uniform(HOME_Y_M - half * START_SPREAD, HOME_Y_M + half * START_SPREAD)
     ang = rng.uniform(0, 2 * math.pi)
     # head towards the centre if the heading would leave the square
-    if math.hypot(x - HOME_X_M, y - HOME_Y_M) > half * 0.6:
-        ang = math.atan2(HOME_Y_M - y, HOME_X_M - x) + rng.uniform(-0.6, 0.6)
+    if math.hypot(x - HOME_X_M, y - HOME_Y_M) > half * TURN_IN:
+        ang = math.atan2(HOME_Y_M - y, HOME_X_M - x) + rng.uniform(-TURN_IN_JITTER, TURN_IN_JITTER)
     ux, uy = round(x / UNIT_M), round(y / UNIT_M)
     px, py = ux, uy
     deltas: list[int] = []
     metres = 0.0
     for _ in range(n - 1):
-        ang += rng.uniform(-0.25, 0.25)
+        ang += rng.uniform(-WANDER, WANDER)
         step = rng.uniform(STEP_MIN_M, STEP_MAX_M) / UNIT_M
         dx, dy = round(math.cos(ang) * step), round(math.sin(ang) * step)
         deltas += [dx, dy]
         metres += math.hypot(dx, dy) * UNIT_M
         px, py = px + dx, py + dy
-    km = round(metres / 1000, 2)
+    km = round(metres / M_PER_KM, 2)
     c = rng.choice((0, 1, 2))
-    stand = rng.randint(1, 20) if c == 1 else 0
+    stand = rng.randint(1, STAND_MAX) if c == 1 else 0
     return [t, ux, uy, px, py, deltas, GPS_STEP_S * (n - 1), km, fare(km), c, stand, 0]
 
 
@@ -133,7 +149,7 @@ def build_orders(rng: random.Random) -> tuple[list[list[Any]], list[int]]:
         ``(orders, taxi_ids)``: orders whose last field holds a driver slot 0..24, and the
         TAXI_ID of each slot.
     """
-    taxi_ids = [20000000 + 101 * i for i in range(N_TAXIS)]
+    taxi_ids = [TAXI_ID_BASE + TAXI_ID_STEP * i for i in range(N_TAXIS)]
     counts = [N_TRIPS // N_TAXIS + (1 if i < N_TRIPS % N_TAXIS else 0) for i in range(N_TAXIS)]
     orders: list[list[Any]] = []
     for slot, cnt in enumerate(counts):
@@ -178,18 +194,48 @@ def median(values: list[float]) -> float:
     return values[n // 2] if n % 2 else round((values[n // 2 - 1] + values[n // 2]) / 2, 2)
 
 
-def build_fixture() -> dict[str, Any]:
-    """Build the whole fixture (deterministic, seed 7).
+def hot_spots() -> list[dict[str, Any]]:
+    """Place the three fixture hotspots around the player start.
 
     Returns:
-        The game-data dict of CONTRACT section 4 with one shift ``fix-am``.
+        Hotspot dicts ``{x, y, w, name}`` with x, y in map units and ``w`` a share.
+    """
+    hx, hy = HOME_X_M / UNIT_M, HOME_Y_M / UNIT_M
+    return [
+        {"x": round(hx + dx / UNIT_M), "y": round(hy + dy / UNIT_M), "w": w, "name": nm}
+        for nm, dx, dy, w in HOT_SPOTS
+    ]
+
+
+def fixture_surge() -> dict[str, Any]:
+    """Describe the one fixture demand surge.
+
+    Returns:
+        Surge dict ``{x, y, r, t0, t1, n, name}``: x, y, r in map units, times in game seconds.
+    """
+    hx, hy = HOME_X_M / UNIT_M, HOME_Y_M / UNIT_M
+    return {
+        "x": round(hx + SURGE_DX_M / UNIT_M),
+        "y": round(hy + SURGE_DY_M / UNIT_M),
+        "r": SURGE_R,
+        "t0": SURGE_T0,
+        "t1": SURGE_T1,
+        "n": SURGE_N,
+        "name": "Bolhão",
+    }
+
+
+def build_shift() -> dict[str, Any]:
+    """Build the one fixture shift ``fix-am`` (deterministic, seed 7).
+
+    Returns:
+        The shift dict of CONTRACT section 4; times in game seconds, money in EUR.
     """
     rng = random.Random(SEED)
     orders, taxi_ids = build_orders(rng)
     taxis, ranking = rank_drivers(orders, taxi_ids)
     n = len(ranking)
-    hx, hy = HOME_X_M / UNIT_M, HOME_Y_M / UNIT_M
-    shift = {
+    return {
         "id": "fix-am",
         "name": "Тестова зміна",
         "day": "понеділок, 12 травня 2014",
@@ -207,31 +253,26 @@ def build_fixture() -> dict[str, Any]:
             "orders": [i for i, o in enumerate(orders) if o[11] == 0],
         },
         "median": median(ranking),
-        "top10": ranking[max(0, math.ceil(0.10 * n) - 1)],
+        "top10": ranking[max(0, math.ceil(TOP_SHARE * n) - 1)],
         "speed_by_hour": SPEED_BY_HOUR,
-        "detour": 1.25,
-        "hot": [
-            {"x": round(hx + dx / UNIT_M), "y": round(hy + dy / UNIT_M), "w": w, "name": nm}
-            for nm, dx, dy, w in HOT_SPOTS
-        ],
-        "surges": [
-            {
-                "x": round(hx + 200 / UNIT_M),
-                "y": round(hy - 100 / UNIT_M),
-                "r": 120,
-                "t0": SURGE_T0,
-                "t1": 1500,
-                "n": 14,
-                "name": "Bolhão",
-            }
-        ],
+        "detour": DETOUR,
+        "hot": hot_spots(),
+        "surges": [fixture_surge()],
     }
+
+
+def build_fixture() -> dict[str, Any]:
+    """Build the whole fixture (deterministic, seed 7).
+
+    Returns:
+        The game-data dict of CONTRACT section 4 with one shift ``fix-am``.
+    """
     return {
         "version": 1,
         "unit_m": UNIT_M,
         "bounds": [0, 0, MAP_W_M // UNIT_M, MAP_H_M // UNIT_M],
         "generated": "synthetic fixture (seed 7)",
-        "shifts": [shift],
+        "shifts": [build_shift()],
     }
 
 
@@ -250,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
     text = json.dumps(build_fixture(), separators=(",", ":"), ensure_ascii=False, sort_keys=True)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(text, encoding="utf-8")
-    print(f"wrote {args.out} ({len(text) // 1024} KB)")
+    print(f"wrote {args.out} ({len(text) // KIB} KB)")
     return 0
 
 

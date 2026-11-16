@@ -99,3 +99,53 @@ def test_default_data_rule(tmp_path: Path) -> None:
     assert bg.default_data(real, fixture) == fixture
     real.write_text("{}", encoding="utf-8")
     assert bg.default_data(real, fixture) == real
+
+
+def test_escape_json_only_touches_close_tags() -> None:
+    assert bg.escape_json('{"a":"</script>"}') == '{"a":"<\\/script>"}'
+    assert bg.escape_json('{"a":"<b>"}') == '{"a":"<b>"}'
+    assert json.loads(bg.escape_json('["</x>"]')) == ["</x>"]  # still valid JSON
+
+
+def test_replace_once_requires_exactly_one_occurrence() -> None:
+    assert bg.replace_once("a-X-b", "X", "Y") == "a-Y-b"
+    with pytest.raises(bg.BuildError):
+        bg.replace_once("a-b", "X", "Y")
+    with pytest.raises(bg.BuildError):
+        bg.replace_once("X-X", "X", "Y")
+
+
+def test_collect_css_sorted_by_name_and_empty_dir(tmp_path: Path) -> None:
+    src = make_src(tmp_path)
+    assert bg.collect_css(src / "css") == "a{}\nb{}"
+    empty = tmp_path / "none"
+    empty.mkdir()
+    assert bg.collect_css(empty) == ""
+
+
+def test_collect_js_wraps_each_file_in_name_order(tmp_path: Path) -> None:
+    src = make_src(tmp_path)
+    out = bg.collect_js(src / "js")
+    assert out == "<script>\nvar a=1;\n</script>\n<script>\nvar x=1;\n</script>"
+
+
+def test_collect_js_rejects_closing_script_tag(tmp_path: Path) -> None:
+    src = make_src(tmp_path, {"bad.js": "var s='</SCRIPT>';"})
+    with pytest.raises(bg.BuildError):
+        bg.collect_js(src / "js")
+
+
+def test_build_data_block_parts(tmp_path: Path) -> None:
+    data = write_data(tmp_path, '{"x":"</p>"}')
+    roads = tmp_path / "roads.json"
+    streets = tmp_path / "streets.png"
+    only_data = bg.build_data_block(data, roads, streets)
+    assert only_data == '<script type="application/json" id="game-data">{"x":"<\\/p>"}</script>'
+    roads.write_text('{"v":1}', encoding="utf-8")
+    streets.write_bytes(b"\x89PNG")
+    block = bg.build_data_block(data, roads, streets)
+    ids = ["game-data", "roads-data", "streets-png"]
+    assert [block.index(f'id="{i}"') for i in ids] == sorted(block.index(f'id="{i}"') for i in ids)
+    assert "data:image/png;base64,iVBORw==" in block
+    with pytest.raises(bg.BuildError):
+        bg.build_data_block(tmp_path / "missing.json", roads, streets)

@@ -42,10 +42,41 @@ def file_sha256(path: Path) -> str:
 
 
 def _is_valid(path: Path, expected_size: int, expected_sha256: str) -> bool:
-    """Tell whether a file exists with the expected size (bytes) and SHA-256."""
+    """Check a file against an expected size and hash.
+
+    Args:
+        path: File to check.
+        expected_size: Expected size, bytes.
+        expected_sha256: Expected SHA-256, lowercase hex.
+
+    Returns:
+        True if the file exists with that size and hash.
+    """
     if not path.is_file() or path.stat().st_size != expected_size:
         return False
     return file_sha256(path) == expected_sha256
+
+
+def _concat_parts(parts: list[Path], tmp: Path) -> tuple[int, str]:
+    """Write the parts one after another into ``tmp`` while hashing them.
+
+    Args:
+        parts: Part files, in the order they are joined.
+        tmp: Path of the file to write.
+
+    Returns:
+        ``(size, sha256)``: bytes written and their lowercase hex SHA-256.
+    """
+    digest = hashlib.sha256()
+    size = 0
+    with tmp.open("wb") as dst:
+        for part in parts:
+            with part.open("rb") as src:
+                while chunk := src.read(CHUNK_BYTES):
+                    dst.write(chunk)
+                    digest.update(chunk)
+                    size += len(chunk)
+    return size, digest.hexdigest()
 
 
 def join_parts(
@@ -77,21 +108,13 @@ def join_parts(
         raise ValueError(f"no parts matching {PART_GLOB} in {parts_dir}")
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(out.name + ".tmp")
-    digest = hashlib.sha256()
-    size = 0
-    with tmp.open("wb") as dst:
-        for part in parts:
-            with part.open("rb") as src:
-                while chunk := src.read(CHUNK_BYTES):
-                    dst.write(chunk)
-                    digest.update(chunk)
-                    size += len(chunk)
+    size, sha256 = _concat_parts(parts, tmp)
     if size != expected_size:
         tmp.unlink()
         raise ValueError(f"joined size {size} != expected {expected_size}")
-    if digest.hexdigest() != expected_sha256:
+    if sha256 != expected_sha256:
         tmp.unlink()
-        raise ValueError(f"joined SHA-256 {digest.hexdigest()} != expected {expected_sha256}")
+        raise ValueError(f"joined SHA-256 {sha256} != expected {expected_sha256}")
     tmp.replace(out)
     return out
 

@@ -1,9 +1,10 @@
+import ast
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
-from check_py import check_source  # noqa: E402
+from check_py import _missing_annotations, check_source, iter_files, main  # noqa: E402
 
 GOOD = '"""Mod."""\n\n\ndef f(a: int, *, b: str = "x") -> int:\n    """Doc."""\n    return a\n'
 BAD = (
@@ -24,3 +25,34 @@ def test_bad_module_lists_every_problem() -> None:
     assert "missing annotations for a, return" in text
     assert "m: no docstring" in text
     assert "m: missing" not in text
+
+
+def test_missing_annotations_skips_self_and_covers_varargs() -> None:
+    fn = ast.parse("def f(self, a, *args, k: int, **kw):\n    pass\n").body[0]
+    assert _missing_annotations(fn) == ["a", "args", "kw", "return"]
+    ok = ast.parse("def g(x: int, /, y: int, *, z: int) -> int:\n    return x\n").body[0]
+    assert _missing_annotations(ok) == []
+
+
+def test_iter_files_expands_dirs_and_ignores_missing(tmp_path: Path) -> None:
+    (tmp_path / "pkg" / "sub").mkdir(parents=True)
+    a, b = tmp_path / "pkg" / "b.py", tmp_path / "pkg" / "sub" / "a.py"
+    a.write_text("", encoding="utf-8")
+    b.write_text("", encoding="utf-8")
+    (tmp_path / "pkg" / "note.txt").write_text("", encoding="utf-8")
+    single = tmp_path / "one.py"
+    single.write_text("", encoding="utf-8")
+    found = iter_files([tmp_path / "pkg", single, tmp_path / "missing"])
+    assert found == sorted([a, b, single])
+
+
+def test_main_exit_code_and_report(tmp_path: Path, capsys) -> None:  # noqa: ANN001
+    good = tmp_path / "good.py"
+    good.write_text(GOOD, encoding="utf-8")
+    bad = tmp_path / "bad.py"
+    bad.write_text(BAD, encoding="utf-8")
+    assert main([str(good)]) == 0
+    assert capsys.readouterr().out == ""
+    assert main([str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "bad.py" in out and "good.py" not in out
