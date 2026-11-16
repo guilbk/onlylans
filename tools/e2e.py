@@ -41,13 +41,22 @@ RACE_ROWS = 8
 RIVAL_COUNT = 7
 PIN_SAMPLES = 20
 PIN_CANDIDATES = 60
+SHIFT_S = 7200  # game seconds in one shift
 PIN_STEP_S = 150.0
+PIN_PASSES = int(SHIFT_S / PIN_STEP_S)  # steps that cover a whole shift
+LOW_MAP_SHARE = 0.5  # a pin to click must lie in the upper half of the viewport
+TAKEN_MODES = ("pickup", "ride")  # engine modes after an order is taken
 SAMPLE_STEP_S = 300.0
 RANK_STEP_S = 290.0  # 24 samples span 6960 s: the whole shift, not past its end
 X3_STEP_S = 2.0  # game s per 60 fps frame at the x3 speed: 40 x 3 / 60
 BOT_EVERY = 5  # the scripted driver looks for an order every N steps
 RANK_SAMPLES = 24
 MIN_PIN_GAP_PX = 40.0
+SHORT_HEX_DIGITS = 3  # #rgb notation
+CHANNEL_MAX = 255  # largest value of an rgb() channel
+MAX_REASONS = 3  # problems or errors quoted in a verdict
+HOVER_APPROACH_PX = 3  # the mouse arrives at a pin from this far up-left
+TABLE_COLUMNS = 3  # number, scenario, status
 MAP_W_M = 15000.0
 MAP_H_M = 19000.0
 ABOUT_PARTS = ("UCI", "CC BY 4.0", "Це дані", "Це ігрова модель")
@@ -115,13 +124,13 @@ def normalise_colour(value: str) -> str | None:
     v = value.strip().lower()
     if _HEX_RE.match(v):
         digits = v[1:]
-        if len(digits) == 3:
+        if len(digits) == SHORT_HEX_DIGITS:
             digits = "".join(c * 2 for c in digits)
         return "#" + digits
     m = _RGB_RE.match(v)
     if m:
         r, g, b = (int(x) for x in m.groups())
-        if max(r, g, b) <= 255:
+        if max(r, g, b) <= CHANNEL_MAX:
             return f"#{r:02x}{g:02x}{b:02x}"
     return None
 
@@ -322,7 +331,7 @@ def format_table(outcomes: Sequence[Outcome]) -> str:
     """
     rows = [("#", "scenario", "status")]
     rows += [(str(o.num), o.name, o.status) for o in outcomes]
-    w = [max(len(r[c]) for r in rows) for c in range(3)]
+    w = [max(len(r[c]) for r in rows) for c in range(TABLE_COLUMNS)]
     lines = []
     for r, o in zip(rows[1:], outcomes, strict=True):
         shot = f"  [{Path(o.shot).name}]" if o.shot else ""
@@ -574,7 +583,7 @@ def wait_for_pin(page: Any, max_y: float) -> dict[str, Any]:
     Raises:
         Fail: If no such pin appears in the whole shift.
     """
-    for _ in range(int(7200 / PIN_STEP_S) + 1):
+    for _ in range(PIN_PASSES + 1):
         ev(page, JS_PAUSE_STEP, PIN_STEP_S)
         page.wait_for_timeout(FRAME_MS)
         pin = pick_isolated_pin(ev(page, JS_PINS)["pins"], max_y)
@@ -589,7 +598,18 @@ def wait_for_pin(page: Any, max_y: float) -> dict[str, Any]:
 
 
 def sc_menu(env: Env) -> str:
-    """Scenario 1: 28 shift cards, the hero name and the difficulty buttons."""
+    """Scenario 1: 28 shift cards, the hero name and the difficulty buttons.
+
+    Args:
+        env: Shared run state (viewport, screenshot directory, console error list).
+
+    Returns:
+        One line that says what was checked, for the PASS row.
+
+    Raises:
+        Fail: If an assertion of the scenario fails.
+        Skip: If a module the scenario needs is absent from the build.
+    """
     with env.session() as page:
         cards = page.locator('#shiftList [id^="shift-"]').count()
         require(cards == EXPECTED_SHIFTS, f"{cards} shift cards, expected {EXPECTED_SHIFTS}")
@@ -607,11 +627,22 @@ def sc_menu(env: Env) -> str:
 
 
 def sc_pins(env: Env) -> str:
-    """Scenario 2: every sampled reachable pin is takeable on a fresh game."""
+    """Scenario 2: every sampled reachable pin is takeable on a fresh game.
+
+    Args:
+        env: Shared run state (viewport, screenshot directory, console error list).
+
+    Returns:
+        One line that says what was checked, for the PASS row.
+
+    Raises:
+        Fail: If an assertion of the scenario fails.
+        Skip: If a module the scenario needs is absent from the build.
+    """
     with env.session() as page:
         start_shift(page)
         idx = ev(page, f"() => {{ {JS_PG} return E.G.idx; }}")
-        seen = collect_pins(page, int(7200 / PIN_STEP_S), PIN_STEP_S)
+        seen = collect_pins(page, PIN_PASSES, PIN_STEP_S)
         pairs = [(t, p["i"]) for t, p in seen if p["reach"]]
         groups = group_by_time(pairs)
         require(groups, "no reachable pin was ever on screen")
@@ -621,18 +652,41 @@ def sc_pins(env: Env) -> str:
         rows = ev(page, JS_VERIFY, {"idx": idx, "groups": chosen})
         problems = judge_takeable(rows)
         env.shot(page, "pins")
-        require(not problems, "; ".join(problems[:3]))
+        require(not problems, "; ".join(problems[:MAX_REASONS]))
     return f"{len(rows)} of {len({i for _, i in pairs})} reachable pins taken on fresh games"
 
 
-def sc_touch_mouse(env: Env) -> str:
-    """Scenario 3: touch needs two taps, mouse hover shows the card and a click takes."""
+def pin_target(env: Env, page: Any) -> tuple[dict[str, Any], float, float]:
+    """Wait for an isolated pin and locate it on the page.
+
+    Args:
+        env: Shared run state (the viewport height bounds the pin).
+        page: Playwright page in play mode.
+
+    Returns:
+        ``(pin, x, y)``: the pin dict and its position in page CSS px.
+
+    Raises:
+        Fail: If no pin appears or ``#map`` has no box.
+    """
+    pin = wait_for_pin(page, env.height * LOW_MAP_SHARE)
+    box = page.locator("#map").bounding_box()
+    require(box, "#map has no box")
+    return pin, box["x"] + pin["px"], box["y"] + pin["py"]
+
+
+def check_touch(env: Env) -> None:
+    """Touch half of scenario 3: the first tap selects the card, the second takes the order.
+
+    Args:
+        env: Shared run state.
+
+    Raises:
+        Fail: If a tap does not behave as described.
+    """
     with env.session(touch=True) as page:
         start_shift(page, touch=True)
-        pin = wait_for_pin(page, env.height * 0.5)
-        box = page.locator("#map").bounding_box()
-        require(box, "#map has no box")
-        x, y = box["x"] + pin["px"], box["y"] + pin["py"]
+        pin, x, y = pin_target(env, page)
         page.touchscreen.tap(x, y)
         page.wait_for_timeout(FRAME_MS * 2)
         st, card = ev(page, JS_STATE), ev(page, JS_CARD)
@@ -643,15 +697,23 @@ def sc_touch_mouse(env: Env) -> str:
         page.touchscreen.tap(x, y)
         page.wait_for_timeout(FRAME_MS)
         st = ev(page, JS_STATE)
-        require(st["mode"] in ("pickup", "ride") and st["cur"] == pin["i"], f"touch: 2nd tap {st}")
+        require(st["mode"] in TAKEN_MODES and st["cur"] == pin["i"], f"touch: 2nd tap {st}")
         env.shot(page, "touch2")
+
+
+def check_mouse(env: Env) -> None:
+    """Mouse half of scenario 3: hover shows the card, a click takes the order.
+
+    Args:
+        env: Shared run state.
+
+    Raises:
+        Fail: If the hover or the click does not behave as described.
+    """
     with env.session() as page:
         start_shift(page)
-        pin = wait_for_pin(page, env.height * 0.5)
-        box = page.locator("#map").bounding_box()
-        require(box, "#map has no box")
-        x, y = box["x"] + pin["px"], box["y"] + pin["py"]
-        page.mouse.move(x - 3, y - 3)
+        pin, x, y = pin_target(env, page)
+        page.mouse.move(x - HOVER_APPROACH_PX, y - HOVER_APPROACH_PX)
         page.mouse.move(x, y)
         page.wait_for_timeout(FRAME_MS * 2)
         card, st = ev(page, JS_CARD), ev(page, JS_STATE)
@@ -661,12 +723,39 @@ def sc_touch_mouse(env: Env) -> str:
         page.mouse.click(x, y)
         page.wait_for_timeout(FRAME_MS)
         st = ev(page, JS_STATE)
-        require(st["mode"] in ("pickup", "ride") and st["cur"] == pin["i"], f"mouse: click {st}")
+        require(st["mode"] in TAKEN_MODES and st["cur"] == pin["i"], f"mouse: click {st}")
+
+
+def sc_touch_mouse(env: Env) -> str:
+    """Scenario 3: touch needs two taps, mouse hover shows the card and a click takes.
+
+    Args:
+        env: Shared run state.
+
+    Returns:
+        One line that says what was checked, for the PASS row.
+
+    Raises:
+        Fail: If an assertion of the scenario fails.
+    """
+    check_touch(env)
+    check_mouse(env)
     return "touch: tap 1 selects (card), tap 2 takes; mouse: hover card, click takes"
 
 
 def sc_rank_ghost(env: Env) -> str:
-    """Scenario 4: ghost car moves, live rank «#N з M» matches the engine and changes."""
+    """Scenario 4: ghost car moves, live rank «#N з M» matches the engine and changes.
+
+    Args:
+        env: Shared run state (viewport, screenshot directory, console error list).
+
+    Returns:
+        One line that says what was checked, for the PASS row.
+
+    Raises:
+        Fail: If an assertion of the scenario fails.
+        Skip: If a module the scenario needs is absent from the build.
+    """
     with env.session() as page:
         start_shift(page)
         wait_for_pin(page, float(env.height))
@@ -679,13 +768,24 @@ def sc_rank_ghost(env: Env) -> str:
             samples.append(snap)
         env.shot(page, "rank")
         problems = judge_rank_samples(samples) + judge_ghost_samples(samples)
-        require(not problems, "; ".join(problems[:3]))
+        require(not problems, "; ".join(problems[:MAX_REASONS]))
     ranks = sorted({s["rank"] for s in samples})
     return f"HUD «#N з M» matches engine, {len(ranks)} distinct ranks, ghost moved"
 
 
 def sc_full_shift(env: Env) -> str:
-    """Scenario 5: a full shift at x3 ends on the result screen with a medal line."""
+    """Scenario 5: a full shift at x3 ends on the result screen with a medal line.
+
+    Args:
+        env: Shared run state (viewport, screenshot directory, console error list).
+
+    Returns:
+        One line that says what was checked, for the PASS row.
+
+    Raises:
+        Fail: If an assertion of the scenario fails.
+        Skip: If a module the scenario needs is absent from the build.
+    """
     with env.session() as page:
         start_shift(page)
         run = ev(page, JS_FULL_SHIFT, {"dt": X3_STEP_S, "every": BOT_EVERY})
@@ -705,7 +805,18 @@ def sc_full_shift(env: Env) -> str:
 
 
 def sc_rivals(env: Env) -> str:
-    """Scenario 6: all 7 rivals are on the map with 7 distinct colours."""
+    """Scenario 6: all 7 rivals are on the map with 7 distinct colours.
+
+    Args:
+        env: Shared run state (viewport, screenshot directory, console error list).
+
+    Returns:
+        One line that says what was checked, for the PASS row.
+
+    Raises:
+        Fail: If an assertion of the scenario fails.
+        Skip: If a module the scenario needs is absent from the build.
+    """
     with env.session() as page:
         start_shift(page)
         snap = ev(page, JS_RIVALS, SAMPLE_STEP_S)
@@ -728,7 +839,18 @@ def sc_rivals(env: Env) -> str:
 
 
 def sc_about(env: Env) -> str:
-    """Scenario 7: «Про дані» opens and lists data against the game model."""
+    """Scenario 7: «Про дані» opens and lists data against the game model.
+
+    Args:
+        env: Shared run state (viewport, screenshot directory, console error list).
+
+    Returns:
+        One line that says what was checked, for the PASS row.
+
+    Raises:
+        Fail: If an assertion of the scenario fails.
+        Skip: If a module the scenario needs is absent from the build.
+    """
     with env.session() as page:
         page.locator("#btn-about").click()
         page.wait_for_selector("#about", state="visible", timeout=TIMEOUT_MS)
@@ -787,7 +909,7 @@ def console_outcome(env: Env, num: int) -> Outcome:
     """
     if env.errors:
         return Outcome(
-            num, "console-clean", FAIL, f"{len(env.errors)}: " + "; ".join(env.errors[:3])
+            num, "console-clean", FAIL, f"{len(env.errors)}: " + "; ".join(env.errors[:MAX_REASONS])
         )
     return Outcome(num, "console-clean", PASS, "no console errors or page errors")
 
