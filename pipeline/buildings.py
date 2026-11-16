@@ -343,15 +343,17 @@ def build(data_path: Path = DATA_DEFAULT, roads_path: Path = ROADS_DEFAULT) -> d
     cy0 = sum(q[1] for q in baixa) / len(baixa)
     dense_zones = [pl for d, pl in zones if d in (RIBEIRA, BAIXA, BONFIM)]
 
-    def free(x: float, y: float) -> bool:
-        """Point is on land, off parks, clear of landmarks and of every street."""
+    def dry(x: float, y: float) -> bool:
+        """Point is on land, off parks and clear of landmarks."""
         if not (0 <= x <= w and 0 <= y <= h):
             return False
         if any(math.hypot(x - lx, y - ly) < r for lx, ly, r in lms):
             return False
-        if nearest(x, y, segs, grid)[0] < ROAD_HALF_M + EDGE_GAP_M:
-            return False
         return not any(inside_poly((x, y), pl) for pl in water + parks)
+
+    def free(x: float, y: float) -> bool:
+        """Point is dry and clear of every street."""
+        return nearest(x, y, segs, grid)[0] >= ROAD_HALF_M + EDGE_GAP_M and dry(x, y)
 
     def density(x: float, y: float) -> float:
         """Share of the street front that is built here: 1 in the old centre, less outside."""
@@ -409,17 +411,16 @@ def build(data_path: Path = DATA_DEFAULT, roads_path: Path = ROADS_DEFAULT) -> d
                     close(run, run_depth, geo)
                     continue
                 got = 0.0
+                es = (-CELL_M / 2 + 1, 0.0, CELL_M / 2 - 1)
                 dens = density(mx, my)
                 for dep in DEPTHS:
                     if dep > EDGE_DEPTH and dens < 1.0:
                         continue
                     off = ROAD_HALF_M + EDGE_GAP_M
                     m = math.ceil(dep / 8.0)  # sample every <= 8 m across the strip
-                    pts = [off + dep * i / m for i in range(m + 1)]
-                    if all(
-                        free(mx + nx * o + ux * e, my + ny * o + uy * e)
-                        for o in pts
-                        for e in (-CELL_M / 2 + 1, 0.0, CELL_M / 2 - 1)
+                    pts = [off + dep * i / m for i in range(1, m + 1)]
+                    if all(dry(mx + nx * off + ux * e, my + ny * off + uy * e) for e in es) and all(
+                        free(mx + nx * o + ux * e, my + ny * o + uy * e) for o in pts for e in es
                     ):
                         got = dep
                         break
