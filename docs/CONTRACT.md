@@ -263,7 +263,7 @@ return; exit 1 if any; tests/ is not checked.
 `tools/make_fixture.py`: `--out`, deterministic (seed 7), schema of §4, 1 shift `fix-am` «Тестова зміна»,
 25 taxis, 120 trips in the central 5 × 5 km, 3 `hot`, 1 `surge` with `t0` = 150.
 
-Node tests: `node tools/engine_test.mjs [--data PATH]` (default `game/fixture/mini.json`),
+Node tests: `node tools/engine_test.mjs [--data PATH]` (default `game/game_data.json`; the fixture `game/fixture/mini.json` checks mechanics only and is not a gate),
 `node tools/roads_test.mjs [--roads PATH]`.
 No-AI-attribution check on every merge: `git log main..<branch> -i -E --grep='co-authored|claude|generated with|anthropic'`.
 

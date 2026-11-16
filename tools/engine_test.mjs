@@ -8,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const argv = process.argv.slice(2);
 const di = argv.indexOf('--data');
-const dataPath = path.resolve(root, di >= 0 ? argv[di + 1] : 'game/fixture/mini.json');
+const dataPath = path.resolve(root, di >= 0 ? argv[di + 1] : 'game/game_data.json');
 const ri = argv.indexOf('--roads');
 const roadsPath = ri >= 0 ? path.resolve(root, argv[ri + 1]) : null;
 
