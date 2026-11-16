@@ -1,63 +1,121 @@
-/* «ОЛЕКС»: the skin shop. Own look (red, ink, a yellow price tag); the palette follows the theme
-   (body[data-theme] day/night, set by the theme piece; night when there is none). */
+/* «ОЛХ»: the skin and tuning marketplace. Own look (red, ink, a yellow price tag); the palette follows the theme
+   (body[data-theme] day/night, set by the theme piece; night when there is none).
+   Phone (up to 600 px): one column of cards, the search and chips stick to the top.
+   Wider: a filter sidebar and a grid of cards. */
 #shop {
   --s-bg: #12111c; --s-card: #201e33; --s-ink: #f3f0ff; --s-muted: #a9a5c4; --s-line: #37344f;
-  --s-red: #e5452d; --s-tag: #ffd23f; --s-ok: #43d6a1; --s-chip: #2b2943; --s-off: #2a2842; --s-offink: #a29fbd;
-  --s-photo: #3b4160; --s-lane: #e9e6dc;
+  --s-red: #e5452d; --s-redbtn: #c9341e; --s-tag: #ffd23f; --s-ok: #43d6a1; --s-okink: #07261b;
+  --s-chip: #2b2943; --s-off: #2a2842; --s-offink: #a29fbd; --s-field: #1a1829;
+  --s-photo: #3b4160; --s-photo-hi: #4d5578; --s-lane: #e9e6dc;
   position: absolute; inset: 0; z-index: 36; overflow-y: auto; -webkit-overflow-scrolling: touch;
   background: var(--s-bg); color: var(--s-ink);
   font-family: Rockwell, "Roboto Slab", Georgia, serif;
   padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  accent-color: var(--s-red); scrollbar-color: var(--s-line) var(--s-bg);
 }
 body[data-theme="day"] #shop {
   --s-bg: #efece6; --s-card: #ffffff; --s-ink: #1c1a2e; --s-muted: #5d5a6e; --s-line: #d9d4ca;
-  --s-ok: #16895f; --s-chip: #e2ddd2; --s-off: #e9e5dc; --s-offink: #6b6778;
-  --s-photo: #565b64;
+  --s-ok: #16895f; --s-okink: #ffffff; --s-chip: #e2ddd2; --s-off: #e9e5dc; --s-offink: #6b6778; --s-field: #ffffff;
+  --s-photo: #5c616b; --s-photo-hi: #7a808b;
 }
 #shop[hidden] { display: none !important; }
-#shop > * { max-width: 560px; margin-left: auto; margin-right: auto; }
+#shop ::selection { background: var(--s-tag); color: #1c1a2e; }
+#shop button:focus-visible, #shop input:focus-visible {
+  outline: 3px solid var(--s-tag); outline-offset: 2px;
+}
+#shop button { font-family: inherit; }
 
-.olx-head { background: var(--s-red); color: #fff; padding: calc(14px + env(safe-area-inset-top, 0px)) 14px 16px; max-width: none !important; }
-.olx-head > * { max-width: 560px; margin-left: auto; margin-right: auto; }
-.olx-topbar { display: flex; align-items: center; gap: 10px; }
+/* header: logo, wallet */
+.olx-head { background: var(--s-red); color: #fff; padding: calc(14px + env(safe-area-inset-top, 0px)) 14px 14px; }
+.olx-topbar { display: flex; align-items: center; gap: 10px; max-width: 1132px; margin: 0 auto; }
 .olx-back { width: 44px; height: 44px; border: 0; border-radius: 12px; background: rgba(255, 255, 255, .18);
-  color: #fff; font: 800 30px/1 Rockwell, Georgia, serif; cursor: pointer; padding: 0 0 4px; }
-.olx-logo { flex: 1; font-weight: 800; font-size: 27px; letter-spacing: .02em; }
+  color: #fff; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.olx-chev { width: 11px; height: 11px; border-left: 3.5px solid #fff; border-bottom: 3.5px solid #fff;
+  transform: translateX(2px) rotate(45deg); border-radius: 1px; }
+.olx-logo { flex: 1; display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 27px; letter-spacing: .02em; }
+.olx-mark { width: 30px; height: 30px; background: #fff; flex: none;
+  clip-path: polygon(0 0, 62% 0, 100% 38%, 100% 62%, 62% 100%, 38% 100%, 0 62%);
+  -webkit-mask: radial-gradient(circle at 28% 28%, transparent 0 4px, #000 4.5px); mask: radial-gradient(circle at 28% 28%, transparent 0 4px, #000 4.5px); }
 .olx-wal { background: var(--s-tag); color: #1c1a2e; border-radius: 14px; padding: 6px 12px; line-height: 1.1; text-align: right;
   min-height: 44px; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
 .olx-wal small { display: block; font: 700 11px system-ui, sans-serif; opacity: .8; }
 .olx-wal b { font-size: 20px; font-variant-numeric: tabular-nums; }
-.olx-q { margin-top: 12px; background: #fff; color: #5d5a6e; border-radius: 14px; min-height: 46px;
-  display: flex; align-items: center; padding: 0 14px; font: 15px system-ui, sans-serif; }
-.olx-chips { display: flex; gap: 8px; padding: 12px 14px 4px; font-family: system-ui, sans-serif; }
-.olx-chips span { background: var(--s-chip); border-radius: 99px; padding: 7px 14px; font-size: 14px; font-weight: 600; }
-.olx-chips span.on { background: var(--s-ink); color: var(--s-bg); }
 
-.olx-ads { display: grid; gap: 16px; padding: 10px 14px 18px; }
-.olx-ad { background: var(--s-card); border: 1px solid var(--s-line); border-radius: 18px; overflow: hidden; }
+/* sticky search and chips */
+.olx-bar { position: sticky; top: 0; z-index: 3; background: var(--s-bg); padding: 10px 0 8px;
+  box-shadow: 0 6px 10px -8px rgba(0, 0, 0, .45); font-family: system-ui, sans-serif; }
+.olx-q { display: block; box-sizing: border-box; width: calc(100% - 28px); margin: 0 14px; min-height: 48px; border-radius: 14px;
+  border: 2px solid var(--s-line); background: var(--s-field); color: var(--s-ink); padding: 0 14px; font: 16px system-ui, sans-serif; }
+.olx-q::placeholder { color: var(--s-muted); opacity: 1; }
+.olx-chips { display: flex; gap: 8px; padding: 10px 14px 2px; overflow-x: auto; scrollbar-width: none; }
+.olx-chips::-webkit-scrollbar { display: none; }
+.olx-chip { flex: none; min-height: 44px; border: 0; border-radius: 99px; padding: 0 16px; background: var(--s-chip); color: var(--s-ink);
+  font: 600 15px system-ui, sans-serif; cursor: pointer; touch-action: manipulation; }
+.olx-chip.on { background: var(--s-ink); color: var(--s-bg); }
+
+/* sidebar: PC only */
+.olx-main { padding: 6px 14px 0; }
+.olx-side { display: none; }
+.olx-count { margin: 6px 2px 4px; min-height: 18px; font: 600 13px system-ui, sans-serif; color: var(--s-muted); }
+.olx-ads { display: grid; gap: 16px; padding: 4px 0 18px; }
+.olx-sec { margin: 10px 2px 0; font-size: 22px; line-height: 1.2; font-weight: 800; }
+.olx-empty { margin: 24px 4px; font-size: 18px; line-height: 1.4; color: var(--s-muted); }
+
+/* cards */
+.olx-ad { background: var(--s-card); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column;
+  box-shadow: 0 2px 10px rgba(20, 16, 40, .14); }
 .olx-ph { position: relative; line-height: 0; }
 .olx-photo { width: 100%; height: auto; display: block; }
 .olx-top { position: absolute; left: 10px; top: 10px; background: var(--s-red); color: #fff;
   font: 800 11px/1 system-ui, sans-serif; padding: 5px 9px; border-radius: 6px; letter-spacing: .04em; }
-.olx-body { padding: 12px 14px 14px; }
+.olx-top.fit { background: var(--s-ok); color: var(--s-okink); }
+.olx-body { padding: 12px 14px 14px; display: flex; flex-direction: column; flex: 1; }
 .olx-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-.olx-name { margin: 0; font-size: 19px; line-height: 1.2; font-weight: 700; }
+.olx-name { margin: 0; font-size: 19px; line-height: 1.2; font-weight: 700; text-wrap: balance; }
 .olx-price { flex: none; background: var(--s-tag); color: #1c1a2e; font-weight: 800; font-size: 20px; line-height: 1.2;
-  padding: 5px 12px 5px 18px; clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%); }
-.olx-price.own { max-width: 46%; font-size: 13px; line-height: 1.25; padding: 7px 10px 7px 18px; }
-.olx-who { margin: 6px 0 0; font: 600 13px/1.3 system-ui, sans-serif; color: var(--s-muted); }
-.olx-desc { margin: 8px 0 12px; font-size: 16px; line-height: 1.4; }
+  padding: 5px 12px 5px 18px; clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%); font-variant-numeric: tabular-nums; }
+.olx-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-family: system-ui, sans-serif; }
+.olx-badge { font: 700 12px/1 system-ui, sans-serif; padding: 5px 9px; border-radius: 6px; background: var(--s-chip); color: var(--s-ink); }
+.olx-badge.torg { background: var(--s-tag); color: #1c1a2e; }
+.olx-badge.mine { background: var(--s-ok); color: var(--s-okink); }
+.olx-who { margin: 8px 0 0; font: 600 13px/1.3 system-ui, sans-serif; color: var(--s-muted); }
+.olx-date { margin: 2px 0 0; font: 13px/1.3 system-ui, sans-serif; color: var(--s-muted); }
+.olx-desc { margin: 8px 0 12px; font-size: 16px; line-height: 1.4; flex: 1; }
 .olx-need { height: 6px; border-radius: 9px; background: var(--s-line); margin: 0 0 8px; overflow: hidden; }
 .olx-need i { display: block; height: 100%; background: var(--s-red); border-radius: 9px; }
 .olx-btn { width: 100%; min-height: 52px; border: 0; border-radius: 14px; font: 800 18px/1 Rockwell, Georgia, serif;
   cursor: pointer; touch-action: manipulation; }
 .olx-btn:active:not(:disabled) { transform: scale(.98); }
-.olx-btn.buy { background: var(--s-red); color: #fff; }
-.olx-btn.on { background: var(--s-ok); color: #fff; }
+.olx-btn.buy { background: var(--s-redbtn); color: #fff; }
+.olx-btn.on { background: var(--s-ok); color: var(--s-okink); }
+.olx-btn.alt { background: var(--s-chip); color: var(--s-ink); }
 .olx-btn.no { background: var(--s-off); color: var(--s-offink); font-weight: 700; cursor: not-allowed; }
 
+/* PC: sidebar and a grid of cards */
+@media (min-width: 601px) {
+  .olx-bar > * { max-width: 1132px; margin-left: auto; margin-right: auto; }
+  .olx-bar { padding: 12px 14px; }
+  .olx-q { width: 100%; margin: 0 auto; }
+  .olx-chips { display: none; }
+  .olx-main { display: grid; grid-template-columns: 230px 1fr; gap: 22px; max-width: 1160px; margin: 0 auto; padding: 14px 14px 0; align-items: start; }
+  .olx-side { display: block; position: sticky; top: 88px; background: var(--s-card); border-radius: 16px; padding: 14px 16px 16px;
+    box-shadow: 0 2px 10px rgba(20, 16, 40, .14); font-family: system-ui, sans-serif; }
+  .olx-side-h { margin: 0 0 6px; font: 800 20px/1.2 Rockwell, Georgia, serif; }
+  .olx-fs { border: 0; margin: 10px 0 0; padding: 0; min-width: 0; }
+  .olx-fs legend { padding: 0; font: 700 13px/1.3 system-ui, sans-serif; color: var(--s-muted); }
+  .olx-opt { display: flex; align-items: center; gap: 10px; min-height: 44px; font: 600 16px system-ui, sans-serif; cursor: pointer; }
+  .olx-opt input { width: 20px; height: 20px; margin: 0; flex: none; }
+  .olx-can { margin-top: 8px; border-top: 1px solid var(--s-line); padding-top: 6px; }
+  .olx-range { display: block; width: 100%; height: 44px; margin: 0; }
+  .olx-range-out { display: block; font: 700 14px system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+  .olx-ads { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); align-items: stretch; }
+  .olx-sec { grid-column: 1 / -1; }
+  .olx-empty { grid-column: 1 / -1; }
+  .olx-name { font-size: 18px; }
+}
+
 /* the menu button the shop adds */
-#btn-shop { display: flex; align-items: center; justify-content: center; gap: 10px; background: #e5452d; color: #fff;
+#btn-shop { display: flex; align-items: center; justify-content: center; gap: 10px; background: #c9341e; color: #fff;
   font-family: Rockwell, "Roboto Slab", Georgia, serif; letter-spacing: .02em; }
 #btn-shop .olx-open-wal { background: #ffd23f; color: #1c1a2e; font-size: 14px; padding: 3px 10px 3px 14px;
   clip-path: polygon(8px 0, 100% 0, 100% 100%, 8px 100%, 0 50%); font-variant-numeric: tabular-nums; }
