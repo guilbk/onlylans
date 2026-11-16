@@ -32,6 +32,12 @@ CSV_FIELD_LIMIT = 1 << 27
 CELL_M = 8.0  # raster pixel size, metres
 MIN_TRIPS = 3  # a pixel is road if at least this many different trips touch it
 SAMPLE_STEP_M = CELL_M / 2  # spacing of the points sampled along a segment, metres
+MIN_SPUR_M = 40.0  # dead-end edges shorter than this are pruned, metres
+DP_START_M = 6.0  # polyline simplification tolerance, metres
+DP_MAX_M = 10.0
+DP_STEP_M = 1.0
+MAX_BYTES = 400_000
+UNIT_M = 2.5  # coordinate unit of roads.json, metres
 EIGHT = np.ones((3, 3), dtype=int)  # 8-connectivity structure
 NEIGHBOURS = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
 
@@ -304,3 +310,69 @@ def _add_chain(
         a, b = first[0], last[0] if last else first[0]
     pts = [graph.nodes[a]["pos"], *(px_to_m(r, c, cell_m) for r, c in path), graph.nodes[b]["pos"]]
     graph.add_edge(a, b, a=a, b=b, pts=pts, len=polyline_length(pts))
+
+
+def oriented(data: dict, start: int) -> list[Point]:
+    """Return an edge polyline in metres so that it begins at node ``start``."""
+    pts: list[Point] = data["pts"]
+    return pts if data["a"] == start else pts[::-1]
+
+
+def contract_chains(graph: nx.MultiGraph) -> None:
+    """Merge every node of degree 2 into the edge that passes through it (in place).
+
+    Args:
+        graph: Road graph; nodes whose two edge ends belong to two different edges disappear.
+    """
+    for node in sorted(graph.nodes):
+        if graph.degree(node) != 2:
+            continue
+        edges = list(graph.edges(node, keys=True, data=True))
+        if len(edges) != 2:
+            continue  # a self-loop: nothing to merge
+        (_, p, _, d1), (_, q, _, d2) = edges
+        pts = [*oriented(d1, p), *oriented(d2, node)[1:]]
+        graph.remove_node(node)
+        graph.add_edge(p, q, a=p, b=q, pts=pts, len=polyline_length(pts))
+
+
+def prune_spurs(graph: nx.MultiGraph, min_len_m: float = MIN_SPUR_M) -> None:
+    """Remove short dead-end edges and tiny loops, repeating until none is left (in place).
+
+    Args:
+        graph: Road graph from :func:`skeleton_to_graph`.
+        min_len_m: Edges shorter than this are spurs, in metres.
+    """
+    contract_chains(graph)
+    changed = True
+    while changed:
+        changed = False
+        for node in sorted(graph.nodes):
+            if node not in graph:
+                continue
+            for _, other, key, data in list(graph.edges(node, keys=True, data=True)):
+                dead_end = other != node and graph.degree(node) == 1
+                if data["len"] < min_len_m and (dead_end or other == node):
+                    graph.remove_edge(node, other, key)
+                    changed = True
+            if graph.degree(node) == 0:
+                graph.remove_node(node)
+        contract_chains(graph)
+
+
+def largest_component(graph: nx.MultiGraph) -> nx.MultiGraph:
+    """Return a copy of the connected component with the greatest total edge length.
+
+    Args:
+        graph: Road graph.
+
+    Returns:
+        The component as a new graph (ties go to the one with the smallest node id).
+    """
+
+    def total(nodes: set[int]) -> tuple[float, int]:
+        length = sum(d["len"] for *_, d in graph.subgraph(nodes).edges(data=True))
+        return length, -min(nodes)
+
+    best = max(nx.connected_components(graph), key=total)
+    return graph.subgraph(best).copy()
