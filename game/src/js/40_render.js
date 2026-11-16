@@ -161,7 +161,8 @@
   // when zoomed out and does not swallow the street when zoomed in.
   function carLen(kind) {
     const px = Math.min(56, Math.max(24, CAR_PX * view.scale / defaultScale()));
-    return px * (CAR_K[kind] || 1);
+    const phoneK = W < 640 && kind !== 'hero' ? 0.8 : 1;   // phone: other cars a bit smaller than ours
+    return px * (CAR_K[kind] || 1) * phoneK;
   }
 
   // + / - buttons: ease to a nearby zoom level around the middle of the screen
@@ -613,7 +614,7 @@
         p.py = p.ry = sy;
         p.reach = reach;
         p.fare = o.fare;
-        p.r = reach ? 15 : 5;
+        p.r = W < 640 ? (reach ? 12.5 : 4) : (reach ? 15 : 5);   // phone: smaller marks
         p.lw = 0;
         let b = born.get(o);
         if (b === undefined) { b = tNow; born.set(o, b); }

@@ -54,4 +54,8 @@ body.party #hud .hud-cell-rank { display: none; }
   #hud .hud-ladder { margin: 5px 6px 0; }
   #hud .hud-medals { height: 12px; margin-top: 4px; }
   #hud .hud-tools { margin-top: 3px; }
+  /* quieter interface on phones: the map comes first */
+  #hud { background: color-mix(in srgb, var(--hud) 74%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  #hud .hud-money { font-size: 28px; }
+  #dispatch .dsp-btn { min-height: 44px; font-size: 15px; border-radius: 12px; opacity: .9; }
 }

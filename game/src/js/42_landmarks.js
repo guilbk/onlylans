@@ -118,7 +118,7 @@
     const k = Math.abs(R.P(100, 0).x - x0) / 100;       // px per metre, same helper as PG.fx
     if (k < FADE_LO * 0.5) return;
     const alphaLabel = Math.max(0, Math.min(1, (k - 0.16) / 0.04));   // names only when zoomed in
-    const grow = Math.max(1.25, Math.min(2.0, 0.9 + k * 5));   // gentle icon scale with zoom
+    const grow = Math.max(1.25, Math.min(2.0, 0.9 + k * 5)) * (root.innerWidth < 640 ? 0.7 : 1);   // gentle icon scale with zoom; smaller on phones
     ctx.save();
     ctx.font = '700 13px Trebuchet MS, Helvetica Neue, system-ui, sans-serif';
     for (let i = 0; i < items.length; i++) {
