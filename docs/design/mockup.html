@@ -228,7 +228,7 @@ h2{font-size:clamp(21px,3.4vw,28px);margin:0 0 4px;letter-spacing:-.01em}
 <div class="wrap">
 <header class="top">
   <h1>7 ланосів: макет вигляду</h1>
-  <p>Денна і нічна карта, шість скінів героя, три стилі малювання і магазин ОЛЕКС. Обери стиль нижче: усі секції перемалюються.</p>
+  <p>Денна і нічна карта, дев'ять скінів героя, три стилі малювання і магазин ОЛЕКС. Обери стиль нижче: усі секції перемалюються.</p>
 </header>
 <div class="bar" id="bar"></div>
 <div class="desc" id="descs"></div>
@@ -294,6 +294,60 @@ function lanosShapes(o){
   }
   S.push({k:'lamp',c:'#e0463f',d:rr(-97,-30,-91,-17,2),m:1});
   return S;
+}
+
+function matizShapes(){
+  const B='#2fb2ec',BD='#1d8fc8',ROOF='#86d9f8';
+  return [...W2([44,-44],26,33,45),
+    {k:'body',c:B,d:rr(-74,-39,74,39,25)},
+    {k:'mark',c:BD,d:rr(46,-32,72,32,15)},
+    {k:'part',c:ROOF,d:rr(-60,-29,30,29,15),w:4},
+    {k:'mark',c:'#ffffff',d:el(-14,-10,22,5.5),o:.5},
+    {k:'line',c:BD,w:2,o:.8,d:'M-16 -30V-38M-42 -29V-36M10 -30V-38',m:1},
+    {k:'glass',d:'M47 -29L31 -26Q28 0 31 26L47 29Q51 0 47 -29Z'},
+    {k:'glass',d:'M-60 -24L-67 -26Q-70 0 -67 26L-60 24Z'},
+    {k:'part',c:BD,d:el(34,-44,5,3.4),w:2,m:1},
+    {k:'part',c:BD,d:el(64,-22,11,11),w:2,m:1},
+    {k:'lamp',c:'#fff6c8',d:el(64,-22,8,8),m:1},
+    {k:'part',c:'#26303a',d:rr(70,-5,74,5,2),w:2},
+    {k:'lamp',c:'#e0463f',d:el(-68,-26,4,8),m:1}];
+}
+
+function golfShapes(){
+  const B='#d1323f',BL='#e0525c',BD='#a81f2c',BK='#2a2d34';
+  return [...W2([54,-52],28,34,46),
+    {k:'part',c:BK,d:rr(84,-31,90,31,3),w:2},
+    {k:'part',c:BK,d:rr(-90,-31,-84,31,3),w:2},
+    {k:'body',c:B,d:'M-80 -40L68 -40Q86 -38 86 -20L86 20Q86 38 68 40L-80 40Q-86 40 -86 34L-86 -34Q-86 -40 -80 -40Z'},
+    {k:'mark',c:BL,d:'M40 -33L72 -33Q80 -31 80 -20L80 20Q80 31 72 33L40 33Z'},
+    {k:'part',c:BL,d:rr(-76,-29,24,29,7),w:4},
+    {k:'line',c:BD,w:2,o:.8,d:'M12 -29V-39M-22 -29V-39M-52 -29V-37',m:1},
+    {k:'glass',d:'M42 -30L24 -26L24 26L42 30Q45 0 42 -30Z'},
+    {k:'glass',d:'M-48 -18L-70 -21L-70 21L-48 18Z'},
+    {k:'part',c:BD,d:el(22,-44,5,3.2),w:2,m:1},
+    {k:'part',c:BK,d:rr(81,-11,86,11,1),w:2},
+    {k:'lamp',c:'#fff1bf',d:rr(75,-32,83,-17,3),m:1},
+    {k:'lamp',c:'#e0463f',d:rr(-86,-37,-79,-20,2),m:1}];
+}
+
+function rickshawShapes(){
+  const GR='#1f9a5a',GD='#157443',YE='#ffcf1f',YD='#e0a400';
+  return [
+    {k:'wheel',d:rr(-62,-49,-32,-37,5),m:1},
+    {k:'wheel',d:rr(48,-6.5,84,6.5,5)},
+    {k:'body',c:GR,d:'M8 -22L40 -20Q62 -17 68 -8Q72 0 68 8Q62 17 40 20L8 22Z'},
+    {k:'mark',c:GD,d:rr(12,-3,52,3,2)},
+    {k:'part',c:GD,d:rr(54,-10,80,10,8),w:3},
+    {k:'lamp',c:'#fff1bf',d:el(70,0,5.5,5.5)},
+    {k:'line',c:'#2a2d34',w:4.5,d:'M42 -28L42 28'},
+    {k:'glass',d:'M30 -20L40 -16Q43 0 40 16L30 20Z'},
+    {k:'part',c:YE,d:'M-72 -30Q-72 -37 -62 -37L-6 -37Q18 -37 25 -31Q29 -27 29 -20L29 20Q29 27 25 31Q18 37 -6 37L-62 37Q-72 37 -72 30Z',w:4},
+    {k:'line',c:YD,w:2.5,d:'M-56 -35V35M-34 -35V35M-12 -35V35M10 -34V34'},
+    {k:'line',c:GR,w:3,d:'M-58 -34.5L6 -34.5',m:1},
+    {k:'part',c:GR,d:'M20 -30Q28 -26 29 -20L29 20Q28 26 20 30Z',w:2},
+    {k:'mark',c:'#ff7a1a',d:[-14,-7,0,7,14].map(y=>el(32,y,2.3,2.3)).join('')},
+    {k:'part',c:YD,d:rr(-78,-31,-70,31,3),w:3},
+    {k:'lamp',c:'#e0463f',d:rr(-80,-29,-75,-21,2),m:1}];
 }
 
 function portoShapes(){
@@ -395,9 +449,12 @@ function horseShapes(){
 }
 
 const SKINS={
-  lanos:{name:'Ланос',price:0,scale:.27,small:.2,build:lanosShapes,nose:100,note:'Битий сіро-м\'ятний хетчбек'},
+  lanos:{name:'Ланос',price:0,scale:.27,small:.2,build:lanosShapes,nose:100,note:'Битий сіро-м\'ятний седан'},
+  matiz:{name:'Матіз',price:30,scale:.31,small:.27,build:matizShapes,nose:76,note:'Блакитний, пухкий, вузький як думка'},
   porto:{name:'Порту класик',price:60,scale:.27,small:.2,build:portoShapes,nose:101,note:'Чорний із зеленим дахом'},
+  golf:{name:'Гольф',price:90,scale:.285,small:.222,build:golfShapes,nose:92,note:'Червоний, квадратний, без значків'},
   nyc:{name:'Нью-Йорк',price:120,scale:.27,small:.2,build:nycShapes,nose:102,note:'Жовтий кеб із шашечками'},
+  rickshaw:{name:'Рікша',price:160,scale:.3,small:.25,build:rickshawShapes,nose:86,note:'Зелено-жовтий, три колеса'},
   cab:{name:'Лондонський кеб',price:200,scale:.27,small:.2,build:cabShapes,nose:100,note:'Чорний, круглий, жовтий ліхтар'},
   electro:{name:'Електро',price:320,scale:.27,small:.2,build:electroShapes,nose:100,note:'Білий, гладкий, скляний дах'},
   horse:{name:'Кінь з возом',price:500,scale:.28,small:.19,build:horseShapes,nose:120,note:'Кінь тягне візок-таксі'}
@@ -653,7 +710,7 @@ function ghostTrail(st,th){
 
 function entities(st,th,skin,opt={}){
   const N=th==='night',hero=HERO_POS;
-  const hr=skin==='horse'?56:46;
+  const hr={horse:58,matiz:42,rickshaw:44}[skin]||46;
   let s='';
   s+=routeSVG(st,th);
   s+=greyDot(st,th,GREY.x,GREY.y);
@@ -748,9 +805,12 @@ function gamePhone(st,th){
 /* ---------- ОЛЕКС ---------- */
 const WALLET=160;
 const ADS={
-  lanos:{t:'Ланос 2007, торг, не бита (майже)',s:'Ви, Ріїн · Порту · у гаражі',d:'Торг доречний. Фара одна, зате світить за двох. Двері від різних машин, скло трішки трісло, димить символічно.'},
+  lanos:{t:'Ланос 2007, на ходу',s:'Ви, Ріїн · Порту · у гаражі',d:'Торг доречний. Фара одна, зате світить за двох. Двері від різних машин, скло трішки трісло, димить символічно.'},
+  matiz:{t:'Матіз, влізе де завгодно',s:'Консейсау · Параньюш · сьогодні',d:'Паркується там, де інші просто стоять. Фари круглі й здивовані, ніби щойно побачили ціну. П\'є бензин наперсточками.'},
   porto:{t:'Порту класик, чорний із зеленим дахом',s:'Дона Фатіма · Рібейра · 2 год тому',d:'Дід возив на ній туристів ще в 80-х. Салон пахне кавою і шкірою, а лічильник досі рахує в ескудо.'},
+  golf:{t:'Гольф, звичайний, без прикрас',s:'Жуау · Матозіньюш · вчора',d:'Квадратний зад вміщає родину разом із холодильником. Значок хтось зняв ще при минулому власникові, зате гордість лишилась.'},
   nyc:{t:'Жовте таксі з Нью-Йорка, шашечки в комплекті',s:'Руй · Матозіньюш · вчора',d:'Приїхала контейнером, принаймні так каже продавець. Ліхтар на даху працює, шашечки рідні.'},
+  rickshaw:{t:'Рікша, три колеса, вітер у комплекті',s:'Рамеш · Бонфім · щойно',d:'Три колеса замість чотирьох, одразу мінус чверть витрат. Дах із брезенту, тож дощ їде з вами. Клаксон чути з Лісабона.'},
   cab:{t:'Лондонський кеб, парасолька в бардачку',s:'Тіаго · Фош · сьогодні',d:'Розвертається на семи метрах. Дощ у комплекті, а от на сонце не розраховуйте.'},
   electro:{t:'Електро, їде тихо як миша',s:'Нуну · Боавішта · 3 год тому',d:'Клієнти лякаються, бо не чують, як він під\'їхав. Емблем немає, не питайте.'},
   horse:{t:'Кінь з возом, їсть овес, не бензин',s:'Лурдеш · Кампаньян · щойно',d:'Заводиться з морквини. Пробок не боїться, на світлофорі нервує. Подушка на возі м\'яка.'}
@@ -767,11 +827,19 @@ function photo(id,st,th){
   if(id==='cab'){let r='';for(let i=0;i<14;i++)r+=`<path d="M${i*28+8} 0V${H}" stroke="${N?'#4a5578':'#7c8697'}" stroke-width="3" opacity=".35"/>`;
     g=`<rect width="${W}" height="${H}" fill="${N?'#161a26':'#454c58'}"/>${r}`+[[60,50],[290,60],[80,165],[300,160],[200,30]].map(p=>`<ellipse cx="${p[0]}" cy="${p[1]}" rx="15" ry="5" fill="none" stroke="#bcd0ea" stroke-width="1.6" opacity=".6"/><ellipse cx="${p[0]}" cy="${p[1]}" rx="7" ry="2.5" fill="none" stroke="#bcd0ea" stroke-width="1.4" opacity=".6"/>`).join('');}
   if(id==='electro')g=`<rect width="${W}" height="${H}" fill="${asph}"/><rect x="26" y="26" width="308" height="158" rx="6" fill="${N?'#0f6a4c':'#2fae82'}" opacity=".85"/><path d="M26 26H334V184H26Z" fill="none" stroke="#e9e6dc" stroke-width="4"/><path d="M315 60l-10 20h8l-6 20 14 -24h-9z" fill="#e9fff6"/><path d="M334 150C360 150 350 190 330 200" fill="none" stroke="#242730" stroke-width="5" stroke-linecap="round"/>`;
+  if(id==='matiz'){let c='';const R=mulberry32(7),tones=N?['#3f4052','#474960','#38394a']:['#b9ac98','#c6b9a3','#ad9f8b'];
+    for(let r=0;r<15;r++)for(let q=0;q<17;q++){const x=q*23+(r%2?11:0)-12,y=r*15-4;c+=`<rect x="${x}" y="${y}" width="21" height="13" rx="5" fill="${tones[(R()*3)|0]}"/>`}
+    g=`<rect width="${W}" height="${H}" fill="${N?'#2f3040':'#9d9080'}"/>${c}<path d="M24 22H336M24 188H336M24 22V188M336 22V188" stroke="#f3efe4" stroke-width="4" fill="none" opacity=".7"/><rect x="0" y="0" width="12" height="${H}" fill="#f2b705" opacity=".85"/>`;}
+  if(id==='golf'){let t='';for(let y=0;y<=H;y+=52)t+=`M0 ${y}H${W}`;for(let x=0;x<=W;x+=60)t+=`M${x} 0V${H}`;
+    g=`<rect width="${W}" height="${H}" fill="${N?'#4b4e57':'#9a9da4'}"/><path d="${t}" stroke="${N?'#363840':'#7c7f87'}" stroke-width="3"/><rect x="306" y="0" width="54" height="${H}" fill="${N?'#2c5a3a':'#79ad56'}"/><ellipse cx="86" cy="156" rx="34" ry="12" fill="#000" opacity=".16"/>`;}
+  if(id==='rickshaw'){let a='';const cl=['#e5452d','#f3c13a','#1f9a5a','#ee6aa0'];for(let i=0;i<7;i++)a+=`<rect x="${i*52}" y="0" width="52" height="26" fill="${cl[i%4]}"/><path d="M${i*52} 26q26 14 52 0" fill="${cl[i%4]}"/>`;
+    g=`<rect width="${W}" height="${H}" fill="${N?'#5a4630':'#c89d62'}"/><path d="M0 120q90 -14 180 0t180 0M0 148q90 -14 180 0t180 0" fill="none" stroke="${N?'#3e2f1f':'#a77d45'}" stroke-width="7" stroke-linecap="round" opacity=".6"/>${a}<rect x="14" y="168" width="44" height="30" rx="3" fill="#9a6a38"/><rect x="302" y="172" width="44" height="26" rx="3" fill="#b07a42"/>`;}
   if(id==='horse'){let h='';const R=mulberry32(5);for(let i=0;i<80;i++){const x=R()*W,y=R()*H;h+=`<path d="M${f1(x)} ${f1(y)}l${f1(8+R()*10)} ${f1(R()*6-3)}" stroke="${R()<.5?'#e0bf70':'#a98a3f'}" stroke-width="2" stroke-linecap="round"/>`}
     g=`<rect width="${W}" height="${H}" fill="${N?'#6a5a34':'#c9a45c'}"/>${h}<g fill="#8a6a45" stroke="#5b4528" stroke-width="2"><rect x="0" y="0" width="${W}" height="12"/>${[20,90,160,230,300].map(x=>`<rect x="${x}" y="-2" width="10" height="26" rx="3"/>`).join('')}</g><rect x="270" y="150" width="62" height="38" rx="6" fill="#d8b858" stroke="#8a6a2b" stroke-width="3"/><path d="M270 169H332" stroke="#8a6a2b" stroke-width="2"/>`;}
-  const k=id==='horse'?.8:1;
-  const sh=`<ellipse cx="${id==='horse'?170:176}" cy="${H/2+14}" rx="${id==='horse'?112:92}" ry="30" fill="#000" opacity=".3" filter="url(#blurB)"/>`;
-  const car=`<g transform="translate(${id==='horse'?186:178} ${H/2-2}) scale(${k})">${paintCar(id,st,th)}</g>`;
+  const PK={horse:.8,matiz:1.3,golf:1.1,rickshaw:1.25}[id]||1;
+  const k=PK,shx=id==='horse'?170:176,shr=({horse:112,matiz:84,golf:100,rickshaw:90}[id]||92);
+  const sh=`<ellipse cx="${shx}" cy="${H/2+14}" rx="${shr}" ry="30" fill="#000" opacity=".3" filter="url(#blurB)"/>`;
+  const car=`<g transform="translate(${id==='horse'?186:178} ${H/2-2}) scale(${k})">${paintCar(id,st,th,{noShd:1})}</g>`;
   const dim=N?`<rect width="${W}" height="${H}" fill="rgba(5,8,20,.45)"/>`:'<rect width="'+W+'" height="'+H+'" fill="rgba(255,236,190,.08)"/>';
   return`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Фото: ${SKINS[id].name}"><rect width="${W}" height="${H}" fill="#000"/>${g}${dim}${sh}${car}${N?`<rect width="${W}" height="${H}" fill="url(#flash)"/>`:''}<rect width="${W}" height="${H}" fill="url(#vig)"/><text x="${W-10}" y="${H-10}" text-anchor="end" font-size="12" font-weight="700" fill="#ff9a3c" font-family="system-ui,sans-serif" letter-spacing="1">16 05 '14</text></svg>`;
 }
