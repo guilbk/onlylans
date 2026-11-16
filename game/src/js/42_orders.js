@@ -9,7 +9,6 @@
   const DASH_NONE = [];
   const HOVER_MS = 6000;           // a hover card never stays longer than this
   const ROUTE_REFRESH_M = 250;     // re-route only if the start moved this far
-  const HOVER_MS = 6000;           // a hover card never stays longer than this
   const ROUTE_REFRESH_MS = 1000;   // ... and not more often than this
 
   const S = {
