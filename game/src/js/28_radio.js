@@ -144,8 +144,12 @@
       ctx.setLineDash(SOLID);
       ctx.font = '600 12px system-ui, sans-serif';
       ctx.textAlign = 'center';
+      const txt = '📻 Хвиля замовлень: ' + place(s);
+      const tw = ctx.measureText(txt).width + 10;
+      ctx.fillStyle = 'rgba(14,20,36,0.8)';
+      ctx.fillRect(x - tw / 2, y - rr - 20, tw, 18);
       ctx.fillStyle = '#ffe3a8';
-      ctx.fillText('📻 Хвиля замовлень: ' + place(s), x, y - rr - 6);
+      ctx.fillText(txt, x, y - rr - 6);
       ctx.restore();
     }
   }

@@ -2,6 +2,6 @@
   min-width: 40px; min-height: 40px; padding: 0 8px;
   font-size: 18px; line-height: 1; color: #e8eefc;
   background: rgba(14, 20, 36, 0.85); border: 1px solid rgba(138, 150, 179, 0.35);
-  border-radius: 10px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  border-radius: 10px; cursor: pointer; pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
 .audio-mute:active { background: rgba(14, 20, 36, 1); }
