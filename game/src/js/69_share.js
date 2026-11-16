@@ -42,7 +42,7 @@
     const rows = document.querySelectorAll('#msn-res .msn-row');
     const done = document.querySelectorAll('#msn-res .msn-row.done').length;
     return {
-      hero: 'Ріїн Гіслінг',
+      hero: PG.util.playerName(),
       shift: sh ? sh.name : '', day: sh ? sh.day : '',
       earned: PG.util.eur(res.earned), medal: res.medal,
       rank: '#' + Math.min(res.rank, res.nDrivers) + ' з ' + res.nDrivers + ' ' +

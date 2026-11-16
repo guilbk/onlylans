@@ -77,15 +77,21 @@
   const DASH = [10, 8], SOLID = [];
   const pa = { x: 0, y: 0 };
 
+  const pal = function () { return (PG.theme && PG.theme.pal) || PG.C.THEMES.night; };
+  let glowName = '';
+  function rgbOf(hex) { const n = parseInt(hex.slice(1), 16); return (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255); }
+
   function makeGlow() {
     if (typeof document === 'undefined') return null;
+    const rgb = rgbOf(pal().pins[0]);
+    glowName = pal().name;
     const c = document.createElement('canvas');
     c.width = c.height = 128;
     const g = c.getContext('2d');
     const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-    gr.addColorStop(0, 'rgba(255,176,90,0.55)');
-    gr.addColorStop(0.5, 'rgba(255,140,60,0.18)');
-    gr.addColorStop(1, 'rgba(255,120,40,0)');
+    gr.addColorStop(0, 'rgba(' + rgb + ',0.55)');
+    gr.addColorStop(0.5, 'rgba(' + rgb + ',0.18)');
+    gr.addColorStop(1, 'rgba(' + rgb + ',0)');
     g.fillStyle = gr;
     g.fillRect(0, 0, 128, 128);
     return c;
@@ -102,6 +108,7 @@
     const G = PG.engine && PG.engine.G;
     if (!G || !G.sh || !G.sh.hotM || !PG.render) return;
     const hot = G.sh.hotM;
+    if (glowName !== pal().name) glow = makeGlow();
     for (let i = 0; i < hot.length; i++) {
       const h = hot[i];
       const k = pxPerM(h.x, h.y);
@@ -113,7 +120,7 @@
       if (k >= CLOSE_PX && h.name) {
         ctx.font = '11px system-ui, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillStyle = 'rgba(255,205,150,0.75)';
+        ctx.fillStyle = pal().muted;
         ctx.fillText(place(h), x, y + 4);
       }
     }
@@ -135,20 +142,24 @@
       ctx.save();
       ctx.beginPath();
       ctx.arc(x, y, rr, 0, 6.2832);
-      ctx.fillStyle = active ? 'rgba(255,200,87,0.18)' : 'rgba(255,200,87,0.07)';
+      const amber = pal().pins[0];
+      ctx.globalAlpha = active ? 0.18 : 0.07;
+      ctx.fillStyle = amber;
       ctx.fill();
+      ctx.globalAlpha = active ? 0.9 : 0.6;
       ctx.setLineDash(active ? SOLID : DASH);
       ctx.lineWidth = 2;
-      ctx.strokeStyle = active ? 'rgba(255,200,87,0.9)' : 'rgba(255,200,87,0.6)';
+      ctx.strokeStyle = amber;
       ctx.stroke();
       ctx.setLineDash(SOLID);
       ctx.font = '600 12px system-ui, sans-serif';
       ctx.textAlign = 'center';
       const txt = '📻 Хвиля замовлень: ' + place(s);
       const tw = ctx.measureText(txt).width + 10;
-      ctx.fillStyle = 'rgba(14,20,36,0.8)';
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = pal().card;
       ctx.fillRect(x - tw / 2, y - rr - 20, tw, 18);
-      ctx.fillStyle = '#ffe3a8';
+      ctx.fillStyle = pal().ink;
       ctx.fillText(txt, x, y - rr - 6);
       ctx.restore();
     }

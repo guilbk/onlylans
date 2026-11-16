@@ -15,7 +15,7 @@
   // ---- theme: «Авто» follows the shift hour (night 21..04); the choice is remembered ----
   const THEME_KEY = 'porto.theme';
   const MODES = [['auto', 'Авто'], ['day', 'День'], ['night', 'Ніч']];
-  const themeSt = { mode: 'auto', hour: null, btns: [] };
+  const themeSt = { mode: 'auto', hour: null, btn: null };
 
   function isNight(h) { return h >= PG.C.NIGHT_FROM || h < PG.C.NIGHT_TO; }
 
@@ -34,7 +34,7 @@
     document.body.setAttribute('data-theme', name);
     const meta = document.querySelector('meta[name=theme-color]');
     if (meta) meta.setAttribute('content', name === 'night' ? '#0b1430' : '#eddfc2');
-    themeSt.btns.forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.mode === themeSt.mode ? 'true' : 'false'); });
+    paintThemeBtn();
     if (changed && PG.bus) PG.bus.emit('theme', { name: name });
   }
 
@@ -49,19 +49,28 @@
     hour(h) { themeSt.hour = h; applyTheme(); },
   };
 
-  function buildThemeSeg() {
-    const seg = el('div', 'hud-seg');
-    seg.setAttribute('role', 'group');
-    seg.setAttribute('aria-label', 'Тема');
-    MODES.forEach(function (m) {
-      const b = el('button', null, m[1]);
-      b.type = 'button';
-      b.dataset.mode = m[0];
-      b.addEventListener('click', function () { PG.theme.set(m[0]); });
-      seg.appendChild(b);
-      themeSt.btns.push(b);
+  // One 44 px icon button cycles Авто -> День -> Ніч.
+  const MODE_ICON = { auto: '◐', day: '☀', night: '☾' };
+  function paintThemeBtn() {
+    const b = themeSt.btn;
+    if (!b) return;
+    const name = MODES.filter(function (m) { return m[0] === themeSt.mode; })[0][1];
+    b.textContent = MODE_ICON[themeSt.mode];
+    b.setAttribute('aria-label', 'Тема: ' + name + '. Натисни, щоб змінити');
+    b.title = 'Тема: ' + name;
+  }
+
+  function buildThemeBtn() {
+    const b = el('button', 'hud-theme');
+    b.type = 'button';
+    b.id = 'btn-theme';
+    themeSt.btn = b;
+    b.addEventListener('click', function () {
+      const i = MODES.findIndex(function (m) { return m[0] === themeSt.mode; });
+      PG.theme.set(MODES[(i + 1) % MODES.length][0]);
     });
-    return seg;
+    paintThemeBtn();
+    return b;
   }
 
   function el(tag, cls, text) {
@@ -145,7 +154,7 @@
     hud.appendChild(prog);
     hud.appendChild(lad);
     const tools = el('div', 'hud-tools');
-    tools.appendChild(buildThemeSeg());
+    tools.appendChild(buildThemeBtn());
     tools.appendChild(dom.extra);
     hud.appendChild(tools);
   }

@@ -4,7 +4,7 @@
   // Missions of a shift (CONTRACT §16): three goals computed by Python from the shift's data.
   // They give stars, never money. Progress comes only from PG.bus events and read-only G.
   const KEY = 'porto-lanosiv-missions-v1';
-  const CARD_MS = 8000;
+  const CARD_MS = 5000;
   const TICK_S = 0.25;      // real s between two checks of the money and rival missions
   const DONE_TEXT = '★ Завдання виконано';
 

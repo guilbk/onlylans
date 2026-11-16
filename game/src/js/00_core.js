@@ -66,7 +66,7 @@
   PG.C.NIGHT_TO = 5;
   PG.C.THEMES = {
     day: {
-      name: 'day', bg: '#e6d4b4', ground: '#eddfc2', blocks: ['#e6d4b4', '#eadabe', '#e0cca8', '#e3cfae'],
+      name: 'day', bg: '#e6d4b4', ground: '#e6d5b2', blocks: ['#e1cfaa', '#e9dabb', '#dcc8a2', '#e3d0ac'],
       roofs: ['#d9895f', '#e3a679', '#cfae8e', '#c97a52'], park: '#b9d79a', tree: '#9cc47a', azulejo: '#2456c4',
       street: '255,250,240', streetMinor: 0.08, streetMain: 1, additive: false, widen: true,
       ink: '#12234a', card: 'rgba(255,250,240,0.94)', muted: '#55627f', dot: '#8d8a86', faint: 'rgba(18,35,74,0.16)',
@@ -88,7 +88,19 @@
   // ---- helpers ---------------------------------------------------------
   function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 
+  const NAME_KEY = 'porto.name';
+  const HERO = 'Ріїн Гіслінг';
+
   PG.util = {
+    /** The player's name: the saved one, else the hero's. */
+    playerName() {
+      try { const n = (root.localStorage.getItem(NAME_KEY) || '').trim(); if (n) return n.slice(0, 20); } catch (e) { /* ignore */ }
+      return HERO;
+    },
+    setPlayerName(v) {
+      const n = String(v || '').trim().slice(0, 20);
+      try { if (n && n !== HERO) root.localStorage.setItem(NAME_KEY, n); else root.localStorage.removeItem(NAME_KEY); } catch (e) { /* ignore */ }
+    },
     /** 12.4 -> "€12,40" */
     eur(x) {
       const neg = x < 0;

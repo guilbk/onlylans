@@ -11,9 +11,10 @@
 .order-card.hov { pointer-events: none; }
 .order-card.sel { pointer-events: auto; }
 .order-card .oc-main { flex: 1; min-width: 0; }
-.order-card .oc-row { display: flex; justify-content: flex-start; align-items: baseline; gap: 8px; }
-.order-card .oc-type { font-size: var(--fs-cap); font-weight: 700; color: var(--muted); }
-.order-card .oc-fare { font-size: 30px; line-height: 32px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.order-card .oc-row { display: flex; justify-content: flex-start; align-items: baseline; gap: 14px; white-space: nowrap; }
+.order-card .oc-perkm { font-size: 28px; line-height: 32px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--acc); }
+.order-card .oc-perkm small { font-size: var(--fs-cap); font-weight: 700; margin-left: 1px; }
+.order-card .oc-fare { font-size: 28px; line-height: 32px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .order-card .oc-sub { color: var(--muted); font-size: var(--fs-cap); line-height: 16px; margin-top: 2px; }
 .order-card .oc-wait { font-size: var(--fs-cap); line-height: 16px; font-weight: 700; color: var(--ok); }
 .order-card .oc-wait.oc-bad { color: var(--bad); }
@@ -35,3 +36,4 @@
 }
 /* Phone portrait: docked full width, centred; 42_orders.js places it between the HUD and the dispatch bar. */
 .order-card.dock { width: calc(100% - 24px); max-width: 420px; height: 84px; transform: translateX(-50%); }
+@media (max-width: 400px) { .order-card .oc-btn { width: 100px; } .order-card .oc-row { gap: 10px; } }
