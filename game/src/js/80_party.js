@@ -105,6 +105,7 @@
       const name = el('input', 'pty-input', undefined, card);
       name.maxLength = 20;
       name.placeholder = 'Твоє ім’я';
+      name.value = PG.util.playerName();
       name.setAttribute('aria-label', 'Твоє ім’я');
       if (!fixed) btn('Створити лобі', card, function () { enter('/api/create', { name: name.value }, name.value); });
       if (!fixed) el('p', 'pty-sub', 'або долучись за кодом', card);

@@ -143,9 +143,22 @@
     head.appendChild(hero);
     const tt = el('div', 'menu-titles');
     tt.appendChild(el('h1', 'menu-title', '7 ланосів'));
-    tt.appendChild(el('div', 'menu-hero', 'Ріїн Гіслінг проти 7 ланосів'));
+    dom.hero = el('div', 'menu-hero', PG.util.playerName() + ' проти 7 ланосів');
+    tt.appendChild(dom.hero);
     head.appendChild(tt);
     m.appendChild(head);
+    const nm = el('label', 'menu-name', 'Твоє ім’я ');
+    const inp = el('input', 'menu-name-in');
+    inp.id = 'player-name';
+    inp.maxLength = 20;
+    inp.value = PG.util.playerName();
+    inp.setAttribute('aria-label', 'Твоє ім’я');
+    inp.addEventListener('input', function () {
+      PG.util.setPlayerName(inp.value);
+      dom.hero.textContent = PG.util.playerName() + ' проти 7 ланосів';
+    });
+    nm.appendChild(inp);
+    m.appendChild(nm);
     m.appendChild(el('p', 'menu-pitch',
       'Справжня зміна таксі в Порту, 2014. Обжени найкращого водія — його привид їде поруч.'));
     const play = btn('btn-big', 'Грати');
@@ -283,7 +296,7 @@
       const dot = el('i', 'race-dot');
       dot.style.background = rows[i].color;
       row.appendChild(dot);
-      row.appendChild(el('span', 'race-name', rows[i].name + ' «' + rows[i].nick + '»'));
+      row.appendChild(el('span', 'race-name', (rows[i].player ? PG.util.playerName() : rows[i].name) + ' «' + rows[i].nick + '»'));
       row.appendChild(el('span', 'race-rides', String(rows[i].rides)));
       row.appendChild(el('span', 'race-total', PG.util.eur(rows[i].total)));
       box.appendChild(row);
@@ -301,7 +314,7 @@
     const hero = el('div', 'hero-icon small');
     hero.innerHTML = HERO_SVG;
     res.appendChild(hero);
-    const title = el('h1', 'res-title', 'Ріїн Гіслінг заробив ' + U.eur(r.earned));
+    const title = el('h1', 'res-title', PG.util.playerName() + ' заробив ' + U.eur(r.earned));
     title.id = 'res-earned';
     res.appendChild(title);
     res.appendChild(el('div', 'res-rank', '#' + Math.min(r.rank, r.nDrivers) + ' з ' + r.nDrivers + ' ' +

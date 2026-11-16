@@ -148,7 +148,10 @@
     if (!gesture.moved && Math.hypot(p.x - gesture.x0, p.y - gesture.y0) > DRAG_PX) {
       gesture.moved = true;
     }
-    if (gesture.moved) PG.render.panBy(dx, dy);
+    if (gesture.moved) {
+      if (hoverO && PG.orders && PG.orders.hideHover) { PG.orders.hideHover(); hoverO = null; }
+      PG.render.panBy(dx, dy);
+    }
   }
 
   function onUp(ev) {
@@ -184,6 +187,7 @@
     if (!localXY(ev, movePt).inside) return;
     ev.preventDefault();
     let dy = ev.deltaY;
+    if (hoverO && PG.orders && PG.orders.hideHover) { PG.orders.hideHover(); hoverO = null; }   // the pin moves under the zoom
     if (ev.deltaMode === 1) dy *= 16;
     else if (ev.deltaMode === 2) dy *= 400;
     PG.render.zoomAt(movePt.x, movePt.y, Math.exp(-dy * WHEEL_K));

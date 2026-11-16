@@ -88,7 +88,19 @@
   // ---- helpers ---------------------------------------------------------
   function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 
+  const NAME_KEY = 'porto.name';
+  const HERO = 'Ріїн Гіслінг';
+
   PG.util = {
+    /** The player's name: the saved one, else the hero's. */
+    playerName() {
+      try { const n = (root.localStorage.getItem(NAME_KEY) || '').trim(); if (n) return n.slice(0, 20); } catch (e) { /* ignore */ }
+      return HERO;
+    },
+    setPlayerName(v) {
+      const n = String(v || '').trim().slice(0, 20);
+      try { if (n && n !== HERO) root.localStorage.setItem(NAME_KEY, n); else root.localStorage.removeItem(NAME_KEY); } catch (e) { /* ignore */ }
+    },
     /** 12.4 -> "€12,40" */
     eur(x) {
       const neg = x < 0;
