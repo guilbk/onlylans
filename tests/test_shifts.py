@@ -301,3 +301,9 @@ def test_table_rows_one_line_per_shift(tmp_path):
     assert len(lines) == 29
     assert lines[0].startswith("id") and lines[0].rstrip().endswith("diff")
     assert lines[1].startswith("mon-am") and "Понеділковий ранок" in lines[1]
+
+
+def test_ghost_of_picks_the_rank_zero_driver():
+    orders = [[0] * 11 + [1], [0] * 11 + [0], [0] * 11 + [0]]
+    assert shifts.ghost_of(orders, [12.5, 3.0]) == {"taxi": 0, "total": 12.5, "orders": [1, 2]}
+    assert shifts.ghost_of([], []) == {"taxi": 0, "total": 0.0, "orders": []}
