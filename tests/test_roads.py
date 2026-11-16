@@ -213,3 +213,87 @@ def test_build_graph_drops_chords_and_small_pieces():
     graph, kept = roads.build_graph([*thrice([road, stray]), *once], GRID)
     assert graph.number_of_edges() == 1
     assert kept == 101 + 32  # pixel columns 10..110 and 10..41
+
+
+# JSON output
+
+
+def curvy_graph():
+    """Pruned graph of a plus whose horizontal road bends, for the encoder tests."""
+    t = np.linspace(0, 1, 60)
+    wave = np.column_stack([80 + 800 * t, 480 + 60 * np.sin(2 * np.pi * t)])
+    cross = line((480, 100), (480, 860))
+    graph, _ = roads.build_graph(thrice([wave, cross]), GRID)
+    return graph
+
+
+def test_encode_roads_follows_the_contract():
+    doc = roads.encode_roads(curvy_graph(), 6.0)
+    assert list(doc) == ["v", "unit_m", "nodes", "edges"]
+    assert doc["v"] == 1
+    assert doc["unit_m"] == 2.5
+    xy = list(zip(doc["nodes"][0::2], doc["nodes"][1::2], strict=True))
+    assert all(isinstance(v, int) for v in doc["nodes"])
+    assert xy == sorted(xy, key=lambda p: (p[1], p[0]))
+    keys = [(a, b) for a, b, _ in doc["edges"]]
+    assert keys == sorted(keys)
+    for a, b, flat in doc["edges"]:
+        assert 0 <= a <= b < len(xy)
+        assert len(flat) % 2 == 0
+        assert all(isinstance(v, int) for v in flat)
+
+
+def test_encoded_edges_are_connected_and_in_metres_units():
+    doc = roads.encode_roads(curvy_graph(), 6.0)
+    n = len(doc["nodes"]) // 2
+    seen = {0}
+    todo = [0]
+    while todo:
+        cur = todo.pop()
+        for a, b, _ in doc["edges"]:
+            for u, v in ((a, b), (b, a)):
+                if u == cur and v not in seen:
+                    seen.add(v)
+                    todo.append(v)
+    assert len(seen) == n
+    assert roads.total_km(doc) == pytest.approx((800 + 760) / 1000, rel=0.1)
+
+
+def test_larger_tolerance_gives_fewer_points():
+    graph = curvy_graph()
+    fine = roads.encode_roads(graph, 1.0)
+    coarse = roads.encode_roads(graph, 20.0)
+    count = lambda doc: sum(len(e[2]) for e in doc["edges"])  # noqa: E731
+    assert count(coarse) < count(fine)
+
+
+def test_json_round_trips_and_is_compact():
+    doc = roads.encode_roads(curvy_graph(), 6.0)
+    payload = roads.dumps_roads(doc)
+    assert b" " not in payload and b"\n" not in payload
+    assert json.loads(payload) == doc
+
+
+def test_output_is_deterministic():
+    trips = thrice([line((80, 480), (880, 480)), line((480, 100), (480, 860))])
+
+    def run():
+        graph, _ = roads.build_graph(trips, GRID)
+        return roads.encode_within_budget(graph)[0]
+
+    assert run() == run()
+
+
+def test_budget_raises_tolerance_step_by_step():
+    graph = curvy_graph()
+    _, tol, _ = roads.encode_within_budget(graph)
+    assert tol == roads.DP_START_M
+    payload, tol, _ = roads.encode_within_budget(graph, max_bytes=1)
+    assert tol == roads.DP_MAX_M
+    assert len(payload) > 1
+    sizes = {t: len(roads.dumps_roads(roads.encode_roads(graph, float(t)))) for t in range(6, 11)}
+    limit = sizes[8]
+    payload, tol, _ = roads.encode_within_budget(graph, max_bytes=limit)
+    assert len(payload) <= limit
+    assert tol <= 8.0
+    assert tol == roads.DP_START_M or sizes[int(tol) - 1] > limit
