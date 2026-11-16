@@ -225,7 +225,7 @@
   function rearm() { if (PG.progress) PG.progress.setCoachDone(false); }
 
   function begin() {
-    const hostView = root.document.body.classList.contains('party-host');
+    const hostView = root.document.body.classList.contains('party-screen');
     S.on = !hostView && !!PG.progress && !PG.progress.coachDone();
     S.step = 0; S.dwell = 0; S.text = ''; S.kind = ''; S.until = 0;
     S.idle = 0; S.idleN = 0; S.shown = {}; S.pending = ''; S.lastSel = null; S.lastAt = -1e9;

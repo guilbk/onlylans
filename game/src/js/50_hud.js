@@ -46,7 +46,7 @@
     dom.rankTail = dom.rank.lastChild;
     top.appendChild(cell('час зміни', dom.clock));
     top.appendChild(cell('твої гроші', dom.money));
-    top.appendChild(cell('місце серед водіїв', dom.rank));
+    top.appendChild(cell('місце серед водіїв', dom.rank)).classList.add('hud-cell-rank');
 
     const ghost = el('div', 'hud-ghost');
     ghost.appendChild(el('span', 'hud-label', 'Привид (найкращий водій) '));

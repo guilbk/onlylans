@@ -4,6 +4,7 @@
 #hud .hud-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
 #hud .hud-cell:nth-child(2) { text-align: center; }
 #hud .hud-cell:last-child { text-align: right; }
+body.party #hud .hud-cell-rank { display: none; }
 #hud .hud-cap { font-size: 10px; line-height: 1.1; color: #8a96b3; white-space: nowrap; }
 #hud .hud-clock { font-size: 15px; color: #8a96b3; font-variant-numeric: tabular-nums; }
 #hud .hud-money { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; transition: color .2s; }

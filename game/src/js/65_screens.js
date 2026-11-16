@@ -4,7 +4,7 @@
   const NAMES = ['menu', 'about', 'play', 'result'];
   const MEDAL_NAMES = ['Без медалі', 'Бронза', 'Срібло', 'Золото', 'Легенда'];
   const MEDAL_COLORS = ['#8a96b3', '#cd7f32', '#c0c8d8', '#ffd700', '#b48cff'];
-  const PARTY_NOTE = 'Гра разом працює, коли гру відкрито з сервера: «python tools/party.py»';
+  const PARTY_NOTE = 'Гра разом працює, коли гру відкрито з ноутбука ведучого';
   const RESULT_DELAY_MS = 700;
   const MEDAL_DELAY_MS = 700;
 
@@ -127,9 +127,9 @@
     return b;
   }
 
-  // The party module (80_party.js) answers 'party:open'; without it, or from a file, say how to start it.
+  // The party module (80_party.js) answers 'party:open'; from a file there is no server, so say so.
   function openParty() {
-    const ok = !!PG.party && root.location.protocol !== 'file:';
+    const ok = root.location.protocol !== 'file:';
     dom.partyNote.hidden = ok;
     if (ok) PG.bus.emit('party:open');
   }
