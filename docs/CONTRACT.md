@@ -644,3 +644,38 @@ between polls). The host (`&host=1`) sees the QR, the players, a shift and diffi
 whole map with every car and name, a live leaderboard with the time left, and at the end «Фінал» and «Нова гра».
 A phone that reloads keeps its player (key in `sessionStorage`) but restarts its shift at the server time with its
 money at 0.
+
+## §16 Завдання зміни (missions)
+
+Each shift has 3 short missions computed by `pipeline/missions.py` from that shift's real data. They give
+stars (★ 0–3 per shift), never money, so the medals stay a fair race against the real drivers. Python
+picks and tunes them; JS (`62_missions.js`) only tracks them.
+
+**`game/missions.json`** (`python -m pipeline.missions`, deterministic, sorted keys, one line;
+`--no-rivals` skips the rival mission and the slower Python twin run):
+`{"version":1,"shifts":{"<shift id>":[mission, mission, mission]}}`. The build (§6) inlines it as
+`<script type="application/json" id="missions-data">` when the file exists; without it the game has no
+missions. A mission: `id` (`m1`..`m3`), `kind`, `title` (Ukrainian, shown on the card and the result),
+`short` (the chip), `n` (steps to complete) and the fields of its kind:
+
+| kind | Done when | Fields (data source) |
+|---|---|---|
+| `airport` | a trip starts or ends within `r` of the airport; only if ≥ 3 trips of the shift touch it | `x, y, r` metres (1500) |
+| `district` | `n` drop-offs of passengers picked up within `r` of the hotspot with the most pickups (≥ 10) | `x, y` metres, `r` 600, `n` 3 |
+| `long` | one trip with `km ≥ km`; `km` = 85th percentile of the shift's trip lengths, rounded to 0.5, at least 4 | `km` |
+| `combo` | `combo` event with `n ≥ 3` (×1.2) | `n` 3 |
+| `rival` | at `shift:end` `result.earned` > the named rival's total; the rival is the strongest one whose total (Python twin, normal) does not exceed the measuring bot's total | `rival` id (§13) |
+| `median` | `G.tot ≥ eur` at a pickup/tick at game time ≤ `by` | `eur` = shift median rounded up to cents, `by` 3600 |
+
+Selection: the airport mission first if supported, then the other supported kinds ordered by `crc32(shift id
++ "/" + kind)`; 3 distinct kinds per shift (28 shifts: airport 7, district 20, long 11, combo 17, rival 12,
+median 17).
+
+**JS**: reads `#missions-data` (or `PG.MISSIONS`) on the first `shift:start`; listens to `shift:start`,
+`dropoff`, `pickup`, `combo`, `frame`, `shift:end`, `ui:screen` and reads `G` (`t`, `tot`, `rivals`, `leg.t0`)
+read-only. No missions in party mode (`PG.engine.party`). UI: a card at shift start (hides after 8 s, never takes
+taps: `pointer-events: none`), a chip with the stars and the next open mission in `#hud-extra` (tap shows the card),
+the toast «★ Завдання виконано» (the `note` event), the block «Завдання зміни ★★☆» on the result screen
+(between the stats and the race table) and the best stars on the campaign cards (a span in `#shift-<id>`).
+Stars: localStorage `porto-lanosiv-missions-v1` = `{v:1, best:{<shift id>: 0..3}}` (best of all tries;
+memory only if storage is blocked). Test: `node tools/missions_test.mjs`.
