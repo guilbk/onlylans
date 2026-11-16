@@ -479,6 +479,10 @@ body.party #hud .hud-cell-rank { display: none; }
   #hud .hud-ladder { margin: 5px 6px 0; }
   #hud .hud-medals { height: 12px; margin-top: 4px; }
   #hud .hud-tools { margin-top: 3px; }
+  /* quieter interface on phones: the map comes first */
+  #hud { background: color-mix(in srgb, var(--hud) 74%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  #hud .hud-money { font-size: 28px; }
+  #dispatch .dsp-btn { min-height: 44px; font-size: 15px; border-radius: 12px; opacity: .9; }
 }
 
 /* 62_missions: chip in the HUD slot, the card at shift start, the result block, stars on the cards */
@@ -4312,7 +4316,8 @@ PG.basemap = {"bridges":[{"arch":1,"line":[7649,12744,7589,13053],"name":"Ponte 
   // when zoomed out and does not swallow the street when zoomed in.
   function carLen(kind) {
     const px = Math.min(56, Math.max(24, CAR_PX * view.scale / defaultScale()));
-    return px * (CAR_K[kind] || 1);
+    const phoneK = W < 640 && kind !== 'hero' ? 0.8 : 1;   // phone: other cars a bit smaller than ours
+    return px * (CAR_K[kind] || 1) * phoneK;
   }
 
   // + / - buttons: ease to a nearby zoom level around the middle of the screen
@@ -4764,7 +4769,7 @@ PG.basemap = {"bridges":[{"arch":1,"line":[7649,12744,7589,13053],"name":"Ponte 
         p.py = p.ry = sy;
         p.reach = reach;
         p.fare = o.fare;
-        p.r = reach ? 15 : 5;
+        p.r = W < 640 ? (reach ? 12.5 : 4) : (reach ? 15 : 5);   // phone: smaller marks
         p.lw = 0;
         let b = born.get(o);
         if (b === undefined) { b = tNow; born.set(o, b); }
@@ -6151,7 +6156,7 @@ PG.landmarks = {
     const k = Math.abs(R.P(100, 0).x - x0) / 100;       // px per metre, same helper as PG.fx
     if (k < FADE_LO * 0.5) return;
     const alphaLabel = Math.max(0, Math.min(1, (k - 0.16) / 0.04));   // names only when zoomed in
-    const grow = Math.max(1.25, Math.min(2.0, 0.9 + k * 5));   // gentle icon scale with zoom
+    const grow = Math.max(1.25, Math.min(2.0, 0.9 + k * 5)) * (root.innerWidth < 640 ? 0.7 : 1);   // gentle icon scale with zoom; smaller on phones
     ctx.save();
     ctx.font = '700 13px Trebuchet MS, Helvetica Neue, system-ui, sans-serif';
     for (let i = 0; i < items.length; i++) {
