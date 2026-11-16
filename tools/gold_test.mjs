@@ -13,7 +13,6 @@ function fresh(sid) {
   PG.engine = { G };
   return { G, orders };
 }
-const names = [];
 
 { // deterministic: the same shift and window give the same order; another window or shift may differ
   const a = fresh('s1'), b = fresh('s1');
