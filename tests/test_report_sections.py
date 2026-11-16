@@ -202,3 +202,20 @@ def test_chart_constants_keep_their_values() -> None:
     assert (report.M_PER_KM, report.PERCENT) == (1000.0, 100.0)
     assert report.SHIFT_SERIES == 3 and report.SCALE_BAR_M == 5000
     assert (report.LEVEL_MAX, report.RGB_CHANNELS) == (255, 3)
+
+
+def test_write_report_returns_stats_first_then_the_three_charts(tmp_path: Path) -> None:
+    from tests.test_report import write_data, write_week
+
+    week, data = tmp_path / "week.csv", tmp_path / "game_data.json"
+    write_week(week)
+    write_data(data)
+    out = tmp_path / "out"
+    written = report.write_report(week, data, out)
+    assert written == [
+        out / report.STATS_NAME,
+        out / report.IMG_DIR / report.HOURS_PNG,
+        out / report.IMG_DIR / report.SHIFTS_PNG,
+        out / report.IMG_DIR / report.HEATMAP_PNG,
+    ]
+    assert all(p.is_file() and p.stat().st_size > 0 for p in written)
