@@ -60,6 +60,31 @@
     FARE: { base: 3.25, perKm: 0.5, nightFactor: 1.2, nightFrom: 22, nightTo: 5 },
   };
 
+  // ---- theme palettes for the canvas (docs/design/README.md); the CSS tokens live in 00_base.css ----
+  // night = shift hour 21..04 (same window as the audio); 08, 12 and 17 are day.
+  PG.C.NIGHT_FROM = 21;
+  PG.C.NIGHT_TO = 5;
+  PG.C.THEMES = {
+    day: {
+      name: 'day', bg: '#e6d4b4', ground: '#eddfc2', blocks: ['#e6d4b4', '#eadabe', '#e0cca8', '#e3cfae'],
+      roofs: ['#d9895f', '#e3a679', '#cfae8e', '#c97a52'], park: '#b9d79a', tree: '#9cc47a', azulejo: '#2456c4',
+      street: '255,250,240', streetMinor: 0.08, streetMain: 1, additive: false, widen: true,
+      ink: '#12234a', card: 'rgba(255,250,240,0.94)', muted: '#55627f', dot: '#8d8a86', faint: 'rgba(18,35,74,0.16)',
+      acc: '#0fb98a', ghost: '#6b45d3', ghostRgb: '107,69,211', bad: '#c4263c', blue: '#2456c4', track: 'rgba(36,86,196,0.22)',
+      pins: ['#f5b82e', '#3fb8ea', '#f26b82'], pinInk: '#12234a', casing: 'rgba(255,250,240,0.95)',
+      route: 'rgba(15,185,138,1)', trail: 'rgba(15,185,138,0.3)', next: 'rgba(196,120,20,0.85)', flag: '#12234a',
+    },
+    night: {
+      name: 'night', bg: '#0b1430', ground: '#0b1430', blocks: ['#15234b', '#182857', '#131f46', '#172552'],
+      roofs: ['#1f3269', '#26397a', '#1b2c60', '#2c4690'], park: '#0f3340', tree: '#14495a', azulejo: '#5f8cff',
+      street: '90,169,255', streetMinor: 0.03, streetMain: 0.55, additive: true, widen: false,
+      ink: '#eaf0ff', card: 'rgba(13,23,52,0.92)', muted: '#93a3cc', dot: '#6b7488', faint: 'rgba(138,150,179,0.16)',
+      acc: '#3df5b0', ghost: '#b48cff', ghostRgb: '180,140,255', bad: '#ff6b6b', blue: '#8fb8ff', track: 'rgba(143,184,255,0.25)',
+      pins: ['#ffc857', '#5ee6ff', '#ff7a90'], pinInk: '#0b1430', casing: 'rgba(8,15,36,0.75)',
+      route: 'rgba(61,245,176,0.95)', trail: 'rgba(61,245,176,0.28)', next: 'rgba(255,200,87,0.6)', flag: '#eaf0ff',
+    },
+  };
+
   // ---- helpers ---------------------------------------------------------
   function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 
