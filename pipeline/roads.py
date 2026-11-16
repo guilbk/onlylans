@@ -9,9 +9,12 @@ Pixel indices are ``(row, col)`` = ``(y, x)``; all map coordinates are metres in
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import math
+import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -189,7 +192,7 @@ def px_to_m(row: float, col: float, cell_m: float = CELL_M) -> Point:
     return col * cell_m + cell_m / 2, row * cell_m + cell_m / 2
 
 
-def polyline_length(pts: list[Point]) -> float:
+def polyline_length(pts: Sequence[Sequence[float]]) -> float:
     """Return the length in metres of a polyline given in metres."""
     return sum(math.dist(a, b) for a, b in zip(pts, pts[1:], strict=False))
 
@@ -371,6 +374,7 @@ def largest_component(graph: nx.MultiGraph) -> nx.MultiGraph:
     """
 
     def total(nodes: set[int]) -> tuple[float, int]:
+        """Rank a component by total edge length, then by smallest node id."""
         length = sum(d["len"] for *_, d in graph.subgraph(nodes).edges(data=True))
         return length, -min(nodes)
 
@@ -416,3 +420,99 @@ def encode_roads(graph: nx.MultiGraph, tol_m: float) -> dict:
 def dumps_roads(doc: dict) -> bytes:
     """Serialise the document compactly and deterministically (UTF-8, no spaces)."""
     return json.dumps(doc, separators=(",", ":")).encode("utf-8")
+
+
+def build_graph(trips: list[np.ndarray], grid: Grid) -> tuple[nx.MultiGraph, int]:
+    """Run the whole raster pipeline: counts, mask, closing, skeleton, graph, pruning.
+
+    Args:
+        trips: Metre polylines, each ``(n, 2)``.
+        grid: Raster geometry.
+
+    Returns:
+        ``(graph, kept)``: the pruned largest component (full-resolution polylines) and the
+        number of pixels that at least ``MIN_TRIPS`` trips touched. The graph is empty when
+        no road was found.
+    """
+    mask = road_mask(count_trips(trips, grid))
+    kept = int(mask.sum())
+    graph = skeleton_to_graph(thin_mask(close_mask(mask)), grid.cell_m)
+    prune_spurs(graph)
+    if graph.number_of_nodes() == 0:
+        return graph, kept
+    return largest_component(graph), kept
+
+
+def encode_within_budget(
+    graph: nx.MultiGraph, max_bytes: int = MAX_BYTES
+) -> tuple[bytes, float, dict]:
+    """Encode the graph, raising the simplification tolerance until it fits the size budget.
+
+    Args:
+        graph: Connected road graph.
+        max_bytes: Size limit of the JSON file in bytes.
+
+    Returns:
+        ``(payload, tol_m, doc)``: the JSON bytes, the tolerance used (metres) and the document.
+        If even ``DP_MAX_M`` is too big, the payload for ``DP_MAX_M`` is returned anyway.
+    """
+    tol = DP_START_M
+    while True:
+        doc = encode_roads(graph, tol)
+        payload = dumps_roads(doc)
+        if len(payload) <= max_bytes or tol >= DP_MAX_M:
+            return payload, tol, doc
+        tol = min(DP_MAX_M, tol + DP_STEP_M)
+
+
+def edge_points(doc: dict, edge: list) -> list[tuple[int, int]]:
+    """Return the full polyline of an edge of a roads document, in 2.5 m units."""
+    a, b, flat = edge
+    nodes = doc["nodes"]
+    inner = list(zip(flat[0::2], flat[1::2], strict=True))
+    return [(nodes[2 * a], nodes[2 * a + 1]), *inner, (nodes[2 * b], nodes[2 * b + 1])]
+
+
+def total_km(doc: dict) -> float:
+    """Return the total length in km of all edges of a roads document."""
+    units = sum(polyline_length(edge_points(doc, e)) for e in doc["edges"])
+    return units * doc["unit_m"] / 1000.0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Command line entry point: week CSV in, ``roads.json`` out.
+
+    Args:
+        argv: Arguments (default ``sys.argv[1:]``).
+
+    Returns:
+        0 on success, 1 if no road was found or the file does not fit the size budget.
+    """
+    ap = argparse.ArgumentParser(description="Build game/roads.json from the week's taxi traces")
+    ap.add_argument(
+        "--week", type=Path, default=DEFAULT_WEEK, help="week CSV (default %(default)s)"
+    )
+    ap.add_argument(
+        "--out", type=Path, default=DEFAULT_OUT, help="roads JSON (default %(default)s)"
+    )
+    args = ap.parse_args(argv)
+    t0 = time.perf_counter()
+    grid = map_grid()
+    trips = load_trips(args.week)
+    graph, kept = build_graph(trips, grid)
+    if graph.number_of_nodes() == 0:
+        print("no road found")
+        return 1
+    payload, tol, doc = encode_within_budget(graph)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_bytes(payload)
+    print(f"trips used: {len(trips)}  pixels kept: {kept}  DP tolerance: {tol:g} m")
+    print(
+        f"nodes: {len(doc['nodes']) // 2}  edges: {len(doc['edges'])}  road: {total_km(doc):.1f} km"
+    )
+    print(f"file: {len(payload)} bytes  seconds: {time.perf_counter() - t0:.1f}")
+    return 0 if len(payload) <= MAX_BYTES else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
