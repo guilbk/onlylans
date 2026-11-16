@@ -20,7 +20,8 @@ body:not([data-screen="play"]) #hud, body:not([data-screen="play"]) #dispatch { 
 
 .shift-list { display: flex; flex-direction: column; gap: 14px; }
 .day-group { display: flex; flex-direction: column; gap: 6px; }
-.day-title { margin: 0; font-size: 13px; font-weight: 600; color: #8a96b3; text-transform: capitalize; }
+.day-title { margin: 0; font-size: 13px; font-weight: 600; color: #8a96b3; }
+.day-title::first-letter { text-transform: uppercase; }
 .shift-card { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 12px; text-align: left;
   border: 1px solid #2a3350; border-radius: 10px; background: rgba(14, 20, 36, .85); color: #e8eefc; cursor: pointer;
   font: 15px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
