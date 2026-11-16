@@ -3,10 +3,11 @@
   const HAS_DOM = typeof document !== 'undefined';
 
   // Call-type colours (CONTRACT §14): A amber, B cyan, C coral.
-  const COL = ['#ffc857', '#5ee6ff', '#ff7a90'];
+  const pal = function () { return (PG.theme && PG.theme.pal) || PG.C.THEMES.night; };
   const CALL_FALLBACK = ['Виклик', 'Стоянка', 'З вулиці'];
   const DASH_ROUTE = [7, 6];
   const DASH_NONE = [];
+  const HOVER_MS = 6000;           // a hover card never stays longer than this
   const ROUTE_REFRESH_M = 250;     // re-route only if the start moved this far
   const ROUTE_REFRESH_MS = 1000;   // ... and not more often than this
 
@@ -17,7 +18,7 @@
     tapped: false,    // tap() was called during the current gesture
     card: null, els: null, cardKey: '', cardW: 0, cardH: 0, cardMode: '', cand: -1, phoneTop: false,
     route: null, routeOrd: null, routeFx: 0, routeFy: 0, routeAt: 0, routeRoads: false,
-    hinted: false, inited: false
+    hinted: false, inited: false, hoverAt: 0
   };
 
   const orders = PG.orders = {
@@ -25,6 +26,7 @@
     hover: hover,
     tap: tap,
     clear: clear,
+    hideHover: function () { if (!S.selected) hover(null); },
     blocks: blocks,
     selected: null,
     hovered: null   // order under the mouse: the camera holds still while it is set
@@ -50,12 +52,19 @@
     S.cand = -1;
   }
 
+  function hideCard() {
+    if (!S.card || S.card.classList.contains('hidden')) return;
+    S.card.className = 'order-card hidden';
+    S.cardKey = ''; S.cardMode = ''; S.cand = -1;
+  }
+
   function hover(o) {
     if (S.touch && o) return;           // touch has no hover
     if (S.selected) return;             // a selection wins over hover
     S.hovered = o || null;
     orders.hovered = S.hovered;
-    if (o) markHint();
+    S.hoverAt = Date.now();
+    if (o) markHint(); else hideCard();   // the card leaves with the pointer
   }
 
   // Take the order: pickup, or book-next while riding. On refusal keep the card
@@ -95,24 +104,25 @@
 
   function drawFlag(ctx, x, y, col) {
     ctx.save();
-    ctx.lineWidth = 2; ctx.strokeStyle = '#e8eefc'; ctx.fillStyle = col;
+    ctx.lineWidth = 2; ctx.strokeStyle = pal().flag; ctx.fillStyle = col;
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 20); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(x, y - 20); ctx.lineTo(x + 13, y - 15); ctx.lineTo(x, y - 10); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.arc(x, y, 3, 0, 6.2832); ctx.fillStyle = '#e8eefc'; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, 6.2832); ctx.fillStyle = pal().flag; ctx.fill();
     ctx.restore();
   }
 
   function drawPreview(ctx, now) {
     const g = G();
-    const o = S.selected || S.hovered;
-    if (!g || !o || !PG.render || !PG.engine) return;
-    if (g.over || o.t <= g.t) { if (S.selected === o) clear(); else { S.hovered = null; orders.hovered = null; } return; }
+    let o = S.selected || S.hovered;
+    if (o && !S.selected && Date.now() - S.hoverAt > HOVER_MS) { S.hovered = null; orders.hovered = null; o = null; }
+    if (!g || !o || !PG.render || !PG.engine) { hideCard(); return; }
+    if (g.over || o.t <= g.t) { if (S.selected === o) clear(); else { S.hovered = null; orders.hovered = null; hideCard(); } return; }
     const pv = PG.engine.preview(o);
-    if (!pv) return;
+    if (!pv) { hideCard(); return; }
     const hoverOnly = !S.selected;
-    if (hoverOnly && !pv.ok) return;       // unreachable: no preview on hover
+    if (hoverOnly && !pv.ok) { hideCard(); return; }       // unreachable: no preview on hover
     ensureRoute(o, pv, now);
-    const col = COL[o.c] || COL[0];
+    const col = pal().pins[o.c] || pal().pins[0];
     const P = PG.render.P;
     const shift = PG.REDUCED ? 0 : -((now / 40) % 26);   // marching dashes
 
@@ -133,8 +143,10 @@
     ctx.lineTo(px, py);
     ctx.setLineDash(DASH_ROUTE);
     ctx.lineDashOffset = shift;
-    ctx.strokeStyle = 'rgba(232,238,252,0.6)'; ctx.lineWidth = 2;
+    ctx.strokeStyle = pal().ink; ctx.lineWidth = 2;
+    ctx.globalAlpha = pv.ok ? 0.6 : 0.3;
     ctx.stroke();
+    ctx.globalAlpha = pv.ok ? 1 : 0.5;
 
     // 2) passenger's trip along the real GPS points
     const pts = o.pts;
@@ -149,7 +161,7 @@
     ctx.setLineDash(DASH_NONE);
 
     // 3) pickup ring and drop-off flag
-    ctx.beginPath(); ctx.arc(px, py, 12, 0, 6.2832);
+    ctx.beginPath(); ctx.arc(px, py, 26, 0, 6.2832);
     ctx.lineWidth = 2.5; ctx.strokeStyle = col; ctx.stroke();
     p = P(o.x1, o.y1);
     drawFlag(ctx, p.x, p.y, col);
@@ -176,15 +188,14 @@
     const els = S.els;
     if (key !== S.cardKey) {
       S.cardKey = key;
-      els.type.textContent = callName(o.c);
-      els.type.style.color = COL[o.c] || COL[0];
       els.fare.textContent = eur(o.fare);
-      els.km.textContent = (Math.round(o.km * 10) / 10).toString().replace('.', ',') + ' км';
+      els.perkm.innerHTML = o.km > 0.05 ? eur(o.fare / o.km) + '<small>/км</small>' : '';
+      els.km.textContent = callName(o.c) + ' · ' + (Math.round(o.km * 10) / 10).toString().replace('.', ',') + ' км';
       els.eta.textContent = 'доїзд ' + mins(pv.eta);
-      els.wait.textContent = pv.ok ? 'чекає ще ' + mins(pv.wait) : 'не встигнеш';
+      els.wait.textContent = pv.ok ? (g.mode === 'ride' ? 'наступним · ' : '') + 'чекає ще ' + mins(pv.wait) : 'не встигнеш';
       els.wait.className = pv.ok ? 'oc-wait' : 'oc-wait oc-bad';
       els.btn.style.display = selected && pv.ok ? '' : 'none';
-      els.btn.textContent = g.mode === 'ride' ? 'Беру наступним' : 'Беру';
+      els.btn.textContent = 'Взяти';
       const cl = S.card.classList;
       cl.remove('hidden');
       cl.toggle('sel', selected);
@@ -292,12 +303,12 @@
     card.id = 'order-card';
     card.className = 'order-card hidden';
     card.innerHTML =
-      '<div class="oc-row"><span class="oc-type"></span><span class="oc-fare"></span></div>' +
+      '<div class="oc-main"><div class="oc-row"><span class="oc-fare"></span><span class="oc-perkm"></span></div>' +
       '<div class="oc-row oc-sub"><span class="oc-km"></span><span class="oc-eta"></span></div>' +
-      '<div class="oc-wait"></div>' +
-      '<button type="button" class="oc-btn">Беру</button>';
+      '<div class="oc-wait"></div></div>' +
+      '<button type="button" class="oc-btn">Взяти</button>';
     S.els = {
-      type: card.querySelector('.oc-type'), fare: card.querySelector('.oc-fare'),
+      perkm: card.querySelector('.oc-perkm'), fare: card.querySelector('.oc-fare'),
       km: card.querySelector('.oc-km'), eta: card.querySelector('.oc-eta'),
       wait: card.querySelector('.oc-wait'), btn: card.querySelector('.oc-btn')
     };

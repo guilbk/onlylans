@@ -587,7 +587,7 @@ countdown ring = remaining visible time `(o.t − G.t) / leadOf(o)`; colour by c
 (skip a later one) and stay off the player's car. Out of reach: small grey dot. **Tier 1 two-step tap**
 (`PG.orders`): mouse hover → preview, click → take; touch first tap → select + preview (route to the
 passenger, the trip along `o.pts`, flag at drop-off, card with price, km, «доїзд N хв», «чекає ще N хв» /
-«не встигнеш», call type, button «Беру»), second tap on the same pin or «Беру» → take, tap elsewhere →
+«не встигнеш», call type, button «Взяти»), second tap on the same pin or «Взяти» → take, tap elsewhere →
 clear. Tier 0: one tap/click takes at once. Input hit radius `r + 10` px.
 
 **Fonts**: system only (`system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`), no embedded fonts.
@@ -603,7 +603,7 @@ Friends play one shift together on one map, each on their own phone, in a **room
 `80_party.js` starts only on `?party=1`, `?room=CODE`, `&screen=1` or the bus event `party:open` (emitted by the
 menu button «Гра разом»); otherwise `PG.engine.party` stays `null` and nothing is added to the page.
 
-**Run**: `python tools/party.py [--port 8090] [--build] [--dir game] [--host IP]` (stdlib only; reuses `tools/serve.py`
+**Run**: `python tools/party.py [--port 8090] [--build] [--dir game] [--host IP] [--public-url URL]` (stdlib only; reuses `tools/serve.py`
 and `tools/qr.py`). It prints the QR of `http://<LAN-IP>:<port>/`. Anyone opens the game, taps «Гра разом» and
 creates a room; there is no host machine and no `--open-host`.
 
@@ -612,7 +612,7 @@ from `BCDFGHJKLMNPRSTVWXZ` (typed codes are upper-cased, spaces dropped, Cyrilli
 200 rooms, an untouched room is forgotten after 4 h. The creator is the **host** and plays like everybody; `create`
 returns the **host token**, which `start` and `reset` require (403 `host_only`). Phase `lobby` → `running` → `done`
 (`done` at `start_at + duration + 2 s`; `running` includes the countdown). Players
-`{id, key (secret), name ≤ 20, colour, x, y (null until the first sync), hx, hy, money, trips, at, seen}`; at most 60
+`{id, key (secret), name ≤ 20, colour, x, y (null until the first sync), hx, hy, money, trips, at, seen}`; at most 40
 per room; guests silent for 25 s leave the lobby (the host stays). `claims`: order index → player id. Server time is
 `time.time()`.
 
@@ -632,7 +632,21 @@ state, never keys or the token; unknown room → 404 `no_room`):
 | `POST /api/reset` | `{room, token}` | state; back to `lobby`, claims and money cleared, offline phones dropped |
 
 The server reads the order count of each shift from `game_data.json` in the served folder. Replies are HTTP/1.1
-keep-alive with `TCP_NODELAY`.
+keep-alive with `TCP_NODELAY`, compact JSON (no spaces; `hx`, `hy` to 2 decimals, `now`, `start_at` and `at` to
+milliseconds), plus `poll_ms` in every state: the poll interval the phones should use (200 up to 10 players, 350 up to
+30, 500 above; ×1.5 when the average service time is above 40 ms); a client that ignores it keeps working, built under the room lock and serialised after it is released. State holds no history: its size
+depends only on the players and the claims. An idle connection is closed after 60 s; the listen backlog is 128.
+
+**Cosmetics**: `create`, `join` and `sync` accept optional `skin` (id, no spaces, ≤ 24 chars) and `mods` (flat object of category → id, ≤ 10 pairs, each part ≤ 24 chars); invalid values are cleaned or dropped, never refused. Each player in the state carries `skin` and `mods` only when set, so other phones draw the car with them.
+
+**Public URL** (deploy, no API change in the calls above): `--public-url https://….trycloudflare.com` (or
+`make_party_server(public_url=…)`) makes `/api/qr` and every join link use that address. Without it, the scheme comes
+from `X-Forwarded-Proto` (`https` behind a tunnel) and the address from `Host`. `python tools/deploy.py [--build]
+[--port 8123]` starts `cloudflared tunnel --url http://localhost:PORT`, reads the `https://….trycloudflare.com` address
+from its output, starts the party server with it and prints the QR. On macOS it runs under `caffeinate -dimsu` and restarts a dead cloudflared once (new URL and QR
+printed, join links follow). `--via lan` skips the tunnel and shows the QR of the LAN address. `python tools/party_load.py --url URL [--players 30]
+[--seconds 180]` is the load test (p50/p95/max latency, errors, bytes, requests per second). Room cap: 40 players
+(was 60), 409 `full` beyond it.
 
 **Clock**: each reply has `now`; the client keeps the offset of the lowest-latency sample. Game time
 `t = (server now − start_at) × SHIFT / duration` (×40 for the default 180 s); every phone builds the same shift at
@@ -657,6 +671,14 @@ resumes the player (`sessionStorage`, money restarts at the server time). `?part
 `?room=CODE&screen=1` is a clean spectator view for a projector: lobby with the QR, then the whole map with every car and
 name, a leaderboard, the time left and a small QR. Other cars are drawn 0.35 s behind the server time, interpolated between
 the last samples (`at`), so they glide at the 200 ms poll.
+
+**Battle of 30 (client, `80_party.js`)**: `join` and `create` carry `skin` (`PG.cars.skin()`) and `mods` (`PG.cars.mods()`),
+not every sync; the state's players may return both and others' cars are drawn with `PG.cars.draw(…, skin, mods)` (an
+unknown skin falls back to the colour car). Polls are one request at a time at the reply's `poll_ms` (default 200); on an
+error the pause doubles up to 2 s and a «Перепідключення…» line shows until a reply arrives. Projector: name tags for the
+top 10 and the hovered car that avoid each other (the rest are dots), a leaderboard of the top 10 with the player count,
+a live feed (earnings, overtakes; worded without gender), the last 30 s as a big countdown, and at the end a podium of
+the top 3 with their cars, then the full table. Phones: «#N з M» in the mini board and «Ти — #N з M» on the result.
 
 ## §16 Завдання зміни (missions)
 
@@ -711,3 +733,60 @@ pickup points on `pickup`; on `ui:screen` `result` inserts `#story` just above t
 `65_screens.js` is edited). One canvas, both paths over the same bounds: the player's trail mint, the ghost's
 (`sh.ghostOrders`, 15 s per point) lilac, pickups as dots, replayed over 6 s of real time; the «Повтор» button
 (≥ 44 px) plays it again. No story in party mode (`PG.engine.party`).
+
+## §18 Досягнення (achievements)
+
+Twelve badges whose goals come from the real data. Python decides the numbers; JS (`63_achievements.js`,
+`63_achievements.css`) only counts the player's progress.
+
+**`game/achievements.json`** (`python -m pipeline.achievements`, deterministic, sorted keys, one line):
+`{"version":1,"weekend":["sat","sun"],"badges":[badge × 12]}`. A badge: `id`, `icon`, `title`, `desc`
+(Ukrainian), `n` (goal) and the fields of its kind. The build (§6) inlines the file as
+`<script type="application/json" id="achievements-data">` when it exists (`--achievements PATH`, default
+`game/achievements.json`); without it the game has no badges and no menu button.
+
+| id | Counts | Goal `n` (data source) |
+|---|---|---|
+| `night` | finished shifts whose id ends in `-night` | half of the night shifts of the week, rounded up (4) |
+| `airport` | drop-offs of trips starting or ending within `r` of the airport (`x, y, r` metres) | median of airport trips per shift, at least 3 |
+| `long` | a trip with `km` ≥ `km` | 1; `km` = 95th percentile of all trips of the week, rounded to 0.5 |
+| `ghost` | finished shifts with medal ≥ 3 (beat the ghost) | 5 |
+| `rivals` | finished shifts with race place 1 of 8 (all 7 rivals beaten) | 1 |
+| `pax` | drop-offs | 100 |
+| `districts` | distinct hotspots (`spots`: name, x, y metres) with a pickup or drop-off within `r` (600 m) | number of distinct hotspots of the week (22) |
+| `legend` | finished shifts with medal 4 and a day in `weekend` | 1 |
+| `top10` | finished shifts with medal ≥ 2 | 3 |
+| `week` | distinct days (id prefix) with a finished shift | number of days (7) |
+| `money` | total € earned over all finished shifts | 10 median shifts rounded to €50 |
+| `combo` | best `combo` event `n` | 5 |
+
+**JS**: listens to `dropoff`, `combo`, `shift:end`, `ui:screen`; no progress in party mode. Unlock: the `note`
+toast «🏅 Досягнення: <title>» (queued, one per 3 s). On `ui:screen` `menu` it injects the button
+`#ach-open` «🏅 Досягнення» before the shift list; it opens `#ach-panel`, a grid of cards (icon, title, goal,
+progress bar, `n / goal`, locked or unlocked). Storage: localStorage `porto-lanosiv-achievements-v1` =
+`{v:1, p:{<id>:progress}, done:{<id>:1}, seen:[district names], days:[day prefixes]}` (memory only if blocked).
+Colours follow the theme variables of `00_base.css`. Test: `node tools/achievements_test.mjs`.
+
+## §19 Тюнінг машинки (car mods)
+
+Visual tuning for the hero's car, drawn by `41_cars.js` over any skin; no brands. Readable at 30-40 px, both themes.
+The shop UI (`68_shop.*`) is not part of this piece: it sells the mods through the API below.
+
+**Catalog `PG.cars.MODS`**: array of `{id, name (Ukrainian), cat, price (€), c?}`; `PG.cars` has no category names, they
+are `paint` (6: red, blue, lime, violet, matte black, pearl), `decal` (3: flames, azulejo, racing stripes), `spoiler` (2),
+`rims` (3), `glow` (4 neon colours, soft pulse), `roof` (classic, LED «ТАКСІ», disco), `exhaust` (3 smoke colours; flames
+while ×3 is on), `lights` (xenon, yellow fog). An id is `<cat>_<name>`.
+
+**Selection**: an object with at most one id per category, `{paint:'paint_red', glow:'glow_pink'}`.
+- `PG.cars.setMods(obj)` sanitises (unknown ids and ids in the wrong category are dropped), stores it in localStorage
+  `lanos.mods` (memory only if blocked) and returns it. `setMods({})` removes all mods. The shop owns what is bought:
+  it should pass only owned ids.
+- `PG.cars.mods()` returns a copy of the current selection.
+- `PG.cars.draw(ctx, px, py, a, len, color, alpha, kind, skin, mods)`: for the hero (`kind === 'hero'` or `skin` given)
+  `mods` undefined means the saved ones, `null` or `{}` none; any object shows that selection, so other players' cars can
+  wear theirs. Non-hero cars ignore mods. Static layers are cached per skin, colour and static mods; neon, exhaust and
+  disco lights are drawn per frame.
+- `PG.cars.preview(canvas, skin, mods)` renders a big picture centred in the canvas (all layers; call it every frame for
+  the animation); `mods` undefined means the saved ones. `PG.cars.paint(ctx, id, px, py, len, color, mods)` takes mods too.
+
+Test: `node tools/cars_test.mjs`.

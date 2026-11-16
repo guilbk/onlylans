@@ -23,7 +23,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -45,11 +45,21 @@ from serve import (
 )
 
 DEFAULT_PORT = 8090
-MAX_PLAYERS = 60
+MAX_PLAYERS = 40  # per room; the 30-car battle fits with a margin
 MAX_NAME = 20
+MAX_ID = 24  # skin and mod ids
+MAX_MODS = 10
 MAX_BODY = 4096
 MAX_TRIPS = 100_000
 MAX_ACTIVE = 3  # booked, not yet picked up: the pickup, the next one, one release in flight
+POLL_MS_SMALL = 200  # poll interval up to 10 players
+POLL_MS_MEDIUM = 350  # 11 to 30 players
+POLL_MS_LARGE = 500  # more than 30
+SLOW_MS = 40.0  # average service time above this: the server asks the phones to poll less often
+SLOW_FACTOR = 1.5
+EWMA_ALPHA = 0.05
+IDLE_TIMEOUT_S = 60.0  # a keep-alive connection silent this long is closed (no leaked threads)
+BACKLOG = 128  # pending connections: 30 phones reconnecting at once must not be refused
 DEFAULT_SIZES = (700,) * 28  # orders per shift when no game data is given; real shifts have ~500
 MAX_MONEY = 1_000_000.0
 COORD_LIMIT = 1e6  # metres; the map is 15 x 19 km
@@ -117,6 +127,8 @@ class Player:
     trips: int = 0
     seen: float = 0.0
     at: float = 0.0  # server time of the last position, for smooth cars on the other phones
+    skin: str = ""  # cosmetic ids the phone sends; other phones draw the car with them
+    mods: dict[str, str] = field(default_factory=dict)
 
 
 def _number(value: object, lo: float, hi: float) -> float:
@@ -172,6 +184,39 @@ def load_sizes(path: Path) -> tuple[int, ...]:
         return DEFAULT_SIZES
 
 
+def clean_id(raw: object) -> str:
+    """Make a safe short id (a skin or a mod): printable, no spaces, at most ``MAX_ID`` characters.
+
+    Args:
+        raw: The value from the request (any type; non-strings give an empty id).
+
+    Returns:
+        The id, possibly empty.
+    """
+    if not isinstance(raw, str):
+        return ""
+    return "".join(ch for ch in raw if ch.isprintable() and not ch.isspace())[:MAX_ID]
+
+
+def clean_mods(raw: object) -> dict[str, str]:
+    """Make a safe flat ``category -> id`` map: at most ``MAX_MODS`` pairs, both parts cleaned.
+
+    Args:
+        raw: The value from the request (any type; anything but an object gives ``{}``).
+
+    Returns:
+        The cleaned map; pairs with an empty key or id are dropped.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for k, v in raw.items():
+        key, val = clean_id(k), clean_id(v)
+        if key and val and len(out) < MAX_MODS:
+            out[key] = val
+    return out
+
+
 def clean_code(raw: object) -> str:
     """Normalise a typed room code: upper case, spaces dropped, Cyrillic lookalikes turned Latin.
 
@@ -201,6 +246,37 @@ def clean_name(raw: object) -> str:
     return " ".join(text.split())[:MAX_NAME].strip()
 
 
+def poll_ms(players: int, slow_ms: float = 0.0) -> int:
+    """The poll interval the server asks the phones to use.
+
+    Args:
+        players: Players in the room.
+        slow_ms: Recent average service time of a request in milliseconds.
+
+    Returns:
+        200 up to 10 players, 350 up to 30, 500 above; times 1.5 when the server is slow
+        (``slow_ms`` above ``SLOW_MS``).
+    """
+    base = POLL_MS_SMALL if players <= 10 else POLL_MS_MEDIUM if players <= 30 else POLL_MS_LARGE
+    return round(base * SLOW_FACTOR) if slow_ms > SLOW_MS else base
+
+
+class Load:
+    """A moving average of how long the server takes to answer (shared by all rooms)."""
+
+    def __init__(self) -> None:
+        """Start at zero."""
+        self.ms = 0.0
+
+    def add(self, ms: float) -> None:
+        """Fold in one request time (a lost update under threads is harmless).
+
+        Args:
+            ms: Service time in milliseconds.
+        """
+        self.ms += EWMA_ALPHA * (ms - self.ms)
+
+
 class Party:
     """The whole game state, without any network code. Every method takes the lock."""
 
@@ -209,6 +285,7 @@ class Party:
         now: Callable[[], float] = time.time,
         code: str = "",
         sizes: Sequence[int] = DEFAULT_SIZES,
+        load: Load | None = None,
     ) -> None:
         """Create an empty lobby.
 
@@ -216,7 +293,9 @@ class Party:
             now: Clock in seconds (injected for tests).
             code: The room code (shown in every state).
             sizes: Number of orders in each shift (the shifts that can be started).
+            load: Service-time average shared with the other rooms (for ``poll_ms``).
         """
+        self._load = load or Load()
         self._now = now
         self._sizes = tuple(sizes)
         self.code = code
@@ -277,7 +356,11 @@ class Party:
                 del self._by_key[p.key]
 
     def _state(self) -> dict[str, Any]:
-        """The public state (the secret keys are left out)."""
+        """The public state (the secret keys are left out).
+
+        Compact on purpose: rounded numbers, no history; only what the phones draw. The dictionary
+        is a copy, so the caller serialises it after the lock is released.
+        """
         now = self._now()
         players = [
             {
@@ -286,21 +369,27 @@ class Party:
                 "color": p.color,
                 "x": None if p.x is None or p.y is None else round(p.x, 1),
                 "y": None if p.x is None or p.y is None else round(p.y, 1),
-                "hx": round(p.hx, 3),
-                "hy": round(p.hy, 3),
+                "hx": round(p.hx, 2),
+                "hy": round(p.hy, 2),
                 "money": round(p.money, 2),
                 "trips": p.trips,
-                "at": p.at,
+                "at": round(p.at, 3),
                 "online": now - p.seen <= OFFLINE_S,
             }
             for p in self._players.values()
         ]
+        for entry, p in zip(players, self._players.values(), strict=True):
+            if p.skin:
+                entry["skin"] = p.skin
+            if p.mods:
+                entry["mods"] = dict(p.mods)
         return {
             "room": self.code,
             "host": self._host_id,
             "phase": self._phase(),
-            "now": now,
-            "start_at": self._start_at,
+            "now": round(now, 3),
+            "poll_ms": poll_ms(len(self._players), self._load.ms),
+            "start_at": None if self._start_at is None else round(self._start_at, 3),
             "duration": self._duration,
             "shift": self._shift,
             "difficulty": self._difficulty,
@@ -320,12 +409,16 @@ class Party:
             self._prune()
             return self._state()
 
-    def join(self, name: object, key: object = None) -> tuple[Player, dict[str, Any]]:
+    def join(
+        self, name: object, key: object = None, skin: object = None, mods: object = None
+    ) -> tuple[Player, dict[str, Any]]:
         """Add a player, or welcome back a known one (same secret key).
 
         Args:
             name: Wanted name; empty gives ``Таксист N``; a taken name gets a number.
             key: Secret key of an earlier join of this phone, if any.
+            skin: Optional skin id (cleaned, at most 24 characters).
+            mods: Optional ``category -> id`` map (cleaned, at most 10 pairs).
 
         Returns:
             The player and the new state.
@@ -349,6 +442,8 @@ class Party:
                 name=self._unique_name(clean_name(name)),
                 color=COLORS[(self._next_id - 1) % len(COLORS)],
                 seen=self._now(),
+                skin=clean_id(skin),
+                mods=clean_mods(mods),
             )
             self._next_id += 1
             if self._host_id is None:
@@ -362,7 +457,8 @@ class Party:
 
         Args:
             key: Secret key of the player.
-            body: ``x``, ``y``, ``hx``, ``hy``, ``money``, ``trips`` (all optional).
+            body: ``x``, ``y``, ``hx``, ``hy``, ``money``, ``trips``, ``skin``, ``mods``
+                (all optional).
 
         Returns:
             The new state.
@@ -384,6 +480,10 @@ class Party:
                 p.hy = _number(body["hy"], -1.0, 1.0)
             if "money" in body:
                 p.money = _number(body["money"], 0.0, MAX_MONEY)
+            if "skin" in body:
+                p.skin = clean_id(body["skin"])
+            if "mods" in body:
+                p.mods = clean_mods(body["mods"])
             if "trips" in body:
                 p.trips = int(_number(body["trips"], 0, MAX_TRIPS))
             return self._state()
@@ -540,12 +640,17 @@ class Rooms:
         self._rng = rng or random.Random()
         self._lock = threading.Lock()
         self._rooms: dict[str, Party] = {}
+        self.load = Load()
 
-    def create(self, name: object) -> tuple[Party, Player, dict[str, Any]]:
+    def create(
+        self, name: object, skin: object = None, mods: object = None
+    ) -> tuple[Party, Player, dict[str, Any]]:
         """Open a room; its creator joins it as the first player and holds the host token.
 
         Args:
             name: The creator's wanted name.
+            skin: Optional skin id.
+            mods: Optional ``category -> id`` map.
 
         Returns:
             The room, the creator and the new state.
@@ -562,9 +667,9 @@ class Rooms:
             code = ""
             while not code or code in self._rooms:
                 code = "".join(self._rng.choice(CODE_ALPHABET) for _ in range(CODE_LEN))
-            room = Party(self._now, code, self._sizes)
+            room = Party(self._now, code, self._sizes, self.load)
             self._rooms[code] = room
-        player, state = room.join(name)
+        player, state = room.join(name, None, skin, mods)
         return room, player, state
 
     def get(self, code: object) -> Party:
@@ -597,20 +702,35 @@ def qr_payload(url: str) -> dict[str, Any]:
     return {"url": url, "rows": ["".join("1" if m else "0" for m in row) for row in matrix]}
 
 
-def join_link(host_header: str, code: str, lan_base: str = "") -> str:
-    """The link that opens a room: the caller's own address, or the LAN one for a loopback caller.
+def join_link(
+    host_header: str,
+    code: str,
+    lan_base: str = "",
+    public_url: str = "",
+    proto: str = "",
+) -> str:
+    """The link that opens a room.
+
+    A public URL (a tunnel) wins over everything. Otherwise the caller's own address, or the LAN
+    one for a loopback caller. Behind a tunnel the page is ``https`` while the tunnel talks plain
+    ``http`` to us, so the ``X-Forwarded-Proto`` header (``proto``) decides the scheme.
 
     Args:
         host_header: The ``Host`` header of the request (``name:port``).
         code: The room code.
         lan_base: ``http://LAN-IP:port/`` to use when the caller is on this machine itself.
+        public_url: The public ``https://...`` address of this server, if it has one.
+        proto: ``X-Forwarded-Proto`` of the request (``http`` or ``https``), if any.
 
     Returns:
         ``<base>?room=CODE``.
     """
+    if public_url:
+        return f"{public_url.rstrip('/')}/?room={code}"
     name = host_header.rsplit(":", 1)[0].strip("[]")
     local = name in (LOOPBACK, "::1", "localhost")
-    base = lan_base if local and lan_base else f"http://{host_header}/"
+    scheme = "https" if proto.strip().lower() == "https" else "http"
+    base = lan_base if local and lan_base else f"{scheme}://{host_header}/"
     return f"{base}?room={code}"
 
 
@@ -624,7 +744,7 @@ def route_create(rooms: Rooms, body: dict[str, Any]) -> dict[str, Any]:
     Returns:
         ``{room, token, id, key, state}``.
     """
-    room, player, state = rooms.create(body.get("name"))
+    room, player, state = rooms.create(body.get("name"), body.get("skin"), body.get("mods"))
     return {
         "room": room.code,
         "token": room.token,
@@ -653,7 +773,7 @@ def route(rooms: Rooms, path: str, body: dict[str, Any]) -> dict[str, Any]:
     room = rooms.get(body.get("room"))
     key = body.get("key")
     if path == "/api/join":
-        player, state = room.join(body.get("name"), key)
+        player, state = room.join(body.get("name"), key, body.get("skin"), body.get("mods"))
         return {"id": player.id, "key": player.key, "state": state}
     if path == "/api/sync":
         return room.sync(key, body)
@@ -679,8 +799,10 @@ class PartyHandler(NoCacheHandler):
     """
 
     protocol_version = "HTTP/1.1"
+    timeout = IDLE_TIMEOUT_S
     rooms: Rooms
     lan_base = ""
+    public_url = ""
 
     def setup(self) -> None:
         """Turn off Nagle's algorithm: a small reply must leave at once."""
@@ -694,7 +816,7 @@ class PartyHandler(NoCacheHandler):
 
     def _reply(self, status: int, payload: dict[str, Any]) -> None:
         """Send a JSON reply."""
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
@@ -734,7 +856,14 @@ class PartyHandler(NoCacheHandler):
             return self.rooms.get(code).state()
         if path == "/api/qr":
             room = self.rooms.get(code)
-            return qr_payload(join_link(self.headers.get("Host", ""), room.code, self.lan_base))
+            link = join_link(
+                self.headers.get("Host", ""),
+                room.code,
+                self.lan_base,
+                getattr(self.server, "public_url", "") or self.public_url,
+                self.headers.get("X-Forwarded-Proto", ""),
+            )
+            return qr_payload(link)
         raise PartyError("not_found", HTTPStatus.NOT_FOUND)
 
     def do_GET(self) -> None:
@@ -743,18 +872,22 @@ class PartyHandler(NoCacheHandler):
         if not path.startswith("/api/"):
             super().do_GET()
             return
+        t0 = time.perf_counter()
         try:
             self._reply(HTTPStatus.OK, self._get_api(path, parse_qs(query).get("room", [""])[0]))
         except PartyError as err:
             self._reply(err.status, {"error": err.code})
+        self.rooms.load.add((time.perf_counter() - t0) * 1000)
 
     def do_POST(self) -> None:
         """Run one API action."""
+        t0 = time.perf_counter()
         try:
             body = self._body()
             self._reply(HTTPStatus.OK, route(self.rooms, self.path.split("?", 1)[0], body))
         except PartyError as err:
             self._reply(err.status, {"error": err.code})
+        self.rooms.load.add((time.perf_counter() - t0) * 1000)
 
 
 def make_party_server(
@@ -763,6 +896,7 @@ def make_party_server(
     rooms: Rooms,
     host: str = BIND_HOST,
     lan_base: str = "",
+    public_url: str = "",
 ) -> LanServer:
     """Create (but do not start) the party server.
 
@@ -772,17 +906,22 @@ def make_party_server(
         rooms: The registry of parties.
         host: Interface to bind.
         lan_base: URL of this server on the LAN, for links shown on this machine itself.
+        public_url: Public ``https`` URL (a tunnel) to put in every join link and QR code.
 
     Returns:
         The bound server.
     """
-    handler = type("BoundPartyHandler", (PartyHandler,), {"rooms": rooms, "lan_base": lan_base})
+    attrs = {"rooms": rooms, "lan_base": lan_base, "public_url": public_url}
+    handler = type("BoundPartyHandler", (PartyHandler,), attrs)
 
     def build(*args: Any, **kwargs: Any) -> Any:
         """Create a handler that serves ``directory``."""
         return handler(*args, directory=str(directory), **kwargs)
 
-    return LanServer((host, port), build)
+    server_class = type("PartyServer", (LanServer,), {"request_queue_size": BACKLOG})
+    server = server_class((host, port), build)
+    server.public_url = public_url  # type: ignore[attr-defined]  # a tunnel restart changes it
+    return server
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -799,6 +938,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--build", action="store_true", help="run pipeline.build_game first")
     ap.add_argument("--dir", type=Path, default=DEFAULT_DIR, help="folder to serve")
     ap.add_argument("--host", default=None, help="address to show in the URL (default: detect)")
+    ap.add_argument("--public-url", default="", help="public https URL (a tunnel) for join links")
     ap.add_argument("--plain", action="store_true", help="no ANSI colours around the QR code")
     args = ap.parse_args(argv)
     if args.build and run_build() != 0:
@@ -811,7 +951,11 @@ def main(argv: list[str] | None = None) -> int:
         lan = args.host or detect_lan_ip()
         base = build_url(lan, args.port)
         server = make_party_server(
-            args.dir, args.port, Rooms(sizes=load_sizes(args.dir / "game_data.json")), lan_base=base
+            args.dir,
+            args.port,
+            Rooms(sizes=load_sizes(args.dir / "game_data.json")),
+            lan_base=base,
+            public_url=args.public_url,
         )
     except (OSError, ValueError) as err:
         print(f"cannot start the server: {err}", file=sys.stderr)

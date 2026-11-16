@@ -1,7 +1,7 @@
 (function (root) {
   const PG = root.PG = root.PG || {};
 
-  const MEDAL_COLORS = ['#8a96b3', '#cd7f32', '#c0c8d8', '#ffd700', '#b48cff'];
+  const MEDAL_COLORS = ['var(--muted)', 'var(--bronze)', 'var(--silver)', 'var(--gold)', 'var(--legend)'];
   const MEDAL_NAMES = ['', 'Бронза', 'Срібло', 'Золото', 'Легенда'];
   const TOAST_MS = 2400;
 
@@ -11,6 +11,67 @@
     prog: -1, mark: -1, level: -1, paused: null, fast: null, toast: '',
   };
   let toastTimer = 0;
+
+  // ---- theme: «Авто» follows the shift hour (night 21..04); the choice is remembered ----
+  const THEME_KEY = 'porto.theme';
+  const MODES = [['auto', 'Авто'], ['day', 'День'], ['night', 'Ніч']];
+  const themeSt = { mode: 'auto', hour: null, btn: null };
+
+  function isNight(h) { return h >= PG.C.NIGHT_FROM || h < PG.C.NIGHT_TO; }
+
+  function themeName() {
+    if (themeSt.mode !== 'auto') return themeSt.mode;
+    const h = themeSt.hour !== null ? themeSt.hour : new Date().getHours();   // before any shift: the local clock
+    return isNight(h) ? 'night' : 'day';
+  }
+
+  function applyTheme() {
+    const name = themeName();
+    const changed = PG.theme.name !== name;
+    PG.theme.name = name;
+    PG.theme.mode = themeSt.mode;
+    PG.theme.pal = PG.C.THEMES[name];
+    document.body.setAttribute('data-theme', name);
+    const meta = document.querySelector('meta[name=theme-color]');
+    if (meta) meta.setAttribute('content', name === 'night' ? '#0b1430' : '#eddfc2');
+    paintThemeBtn();
+    if (changed && PG.bus) PG.bus.emit('theme', { name: name });
+  }
+
+  PG.theme = {
+    name: '', mode: 'auto', pal: PG.C.THEMES.night,
+    set(mode) {
+      if (mode !== 'auto' && mode !== 'day' && mode !== 'night') return;
+      themeSt.mode = mode;
+      try { root.localStorage.setItem(THEME_KEY, mode); } catch (e) { /* ignore */ }
+      applyTheme();
+    },
+    hour(h) { themeSt.hour = h; applyTheme(); },
+  };
+
+  // One 44 px icon button cycles Авто -> День -> Ніч.
+  const MODE_ICON = { auto: '◐', day: '☀', night: '☾' };
+  function paintThemeBtn() {
+    const b = themeSt.btn;
+    if (!b) return;
+    const name = MODES.filter(function (m) { return m[0] === themeSt.mode; })[0][1];
+    b.textContent = MODE_ICON[themeSt.mode];
+    b.setAttribute('aria-label', 'Тема: ' + name + '. Натисни, щоб змінити');
+    b.title = 'Тема: ' + name;
+  }
+
+  function buildThemeBtn() {
+    const b = el('button', 'hud-theme');
+    b.type = 'button';
+    b.id = 'btn-theme';
+    themeSt.btn = b;
+    b.addEventListener('click', function () {
+      const i = MODES.findIndex(function (m) { return m[0] === themeSt.mode; });
+      PG.theme.set(MODES[(i + 1) % MODES.length][0]);
+    });
+    paintThemeBtn();
+    return b;
+  }
 
   function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -92,7 +153,10 @@
     hud.appendChild(ghost);
     hud.appendChild(prog);
     hud.appendChild(lad);
-    hud.appendChild(dom.extra);
+    const tools = el('div', 'hud-tools');
+    tools.appendChild(buildThemeBtn());
+    tools.appendChild(dom.extra);
+    hud.appendChild(tools);
   }
 
   function buildDispatch(box) {
@@ -177,6 +241,7 @@
     const U = PG.util;
     if (last.g !== G) {
       last.g = G;
+      PG.theme.hour(G.sh.startHour);
       last.clock = last.money = last.rank = last.ghost = last.delta = '';
       last.ahead = null;
       last.prog = -1;
@@ -225,10 +290,15 @@
   }
 
   function init() {
+    try {
+      const m = root.localStorage.getItem(THEME_KEY);
+      if (m === 'day' || m === 'night') themeSt.mode = m;
+    } catch (e) { /* ignore */ }
     const hud = document.getElementById('hud');
     const dsp = document.getElementById('dispatch');
     if (hud && !dom.clock) buildHud(hud);
     if (dsp && !dom.pause) buildDispatch(dsp);
+    applyTheme();
     PG.bus.on('note', function (e) { if (e && e.text) showToast(e.text, e.ms); });
     PG.bus.on('shift:start', hideToast);
     PG.bus.on('shift:end', hideToast);

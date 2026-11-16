@@ -44,6 +44,7 @@
 
   const MEDAL_COL = ['#8a96b3', '#cd7f32', '#c0c8d8', '#ffd700', '#b48cff'];
   const GOLD = '#ffd700';
+  const pal = function () { return (PG.theme && PG.theme.pal) || PG.C.THEMES.night; };
 
   let initDone = false;
   let stageEl = null, mapEl = null, rankEl = null, comboEl = null, bannerEl = null, confEl = null, confCtx = null;
@@ -122,7 +123,7 @@
     if (!confEl || level < 1) return;
     sizeConf();
     const n = Math.min(NC, (PG.REDUCED ? 20 : 30) + level * (PG.REDUCED ? 10 : 25));
-    const cols = [MEDAL_COL[level], '#ffffff', '#3df5b0', '#5ee6ff', '#ffc857'];
+    const cols = [MEDAL_COL[level], '#ffffff', pal().acc, '#5ee6ff', '#ffc857'];
     cActive = 0;
     for (let i = 0; i < n; i++) {
       cLife[i] = 2.2 + rnd() * 1.4;
@@ -225,7 +226,7 @@
         ctx.globalAlpha = 0.95;
         ctx.fillStyle = '#5ee6ff';
         ctx.fillRect(cx - 5, cy - 3, 10, 7);
-        ctx.strokeStyle = '#0e1424'; ctx.lineWidth = 1;
+        ctx.strokeStyle = pal().ink; ctx.lineWidth = 1;
         ctx.strokeRect(cx - 5, cy - 3, 10, 7);
         ctx.strokeStyle = '#5ee6ff';
         ctx.beginPath(); ctx.moveTo(cx - 2, cy - 3); ctx.lineTo(cx - 2, cy - 5); ctx.lineTo(cx + 2, cy - 5); ctx.lineTo(cx + 2, cy - 3); ctx.stroke();
@@ -290,7 +291,7 @@
     flyEl.style.display = 'block';
     flyCtx.setTransform(flyDpr, 0, 0, flyDpr, 0, 0);
     flyCtx.clearRect(0, 0, flyW, flyH);
-    flyCtx.font = '800 18px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    flyCtx.font = '800 18px "Trebuchet MS", "Helvetica Neue", system-ui, sans-serif';
     flyCtx.textAlign = 'center';
     flyCtx.textBaseline = 'middle';
     const hold = PG.REDUCED ? HOLD_S * 1.6 : HOLD_S;
@@ -321,7 +322,7 @@
       flyCtx.globalAlpha = al;
       flyCtx.save();
       flyCtx.translate(x, y); flyCtx.scale(sc, sc);
-      flyCtx.lineWidth = 4; flyCtx.strokeStyle = 'rgba(7,11,20,0.9)'; flyCtx.lineJoin = 'round';
+      flyCtx.lineWidth = 4; flyCtx.strokeStyle = pal().casing; flyCtx.lineJoin = 'round';
       flyCtx.strokeText(txt, 0, 0);
       flyCtx.fillStyle = fColor[i];
       flyCtx.fillText(txt, 0, 0);
@@ -333,7 +334,7 @@
 
   function setTop() {          // banner and combo badge sit just below the HUD
     const R = PG.render;
-    if (stageEl && R && R.zone) stageEl.style.setProperty('--fx-top', Math.round(R.zone.top + 8) + 'px');
+    if (R && R.zone) root.document.documentElement.style.setProperty('--fx-top', Math.round(R.zone.top + 8) + 'px');
   }
 
   function mk(tag, id, parent) {
@@ -369,7 +370,7 @@
     bus.on('pickup', function (p) {
       const o = p.o;
       const k = PG.rules ? PG.rules.kindOf(o) : 'regular';
-      const col = k === 'vip' ? GOLD : k === 'rush' ? '#ff4d6a' : '#3df5b0';
+      const col = k === 'vip' ? GOLD : k === 'rush' ? '#ff4d6a' : pal().acc;
       burst(o.x0, o.y0, 18, col, 110, 0.7);
       for (let i = 0; i < 4; i++) {
         spawn(o.x0, o.y0, (rnd() - 0.5) * 40, -60 - rnd() * 50, 0.9, 3.5, GOLD);
@@ -377,18 +378,18 @@
       ring(o.x0, o.y0, 12, 70, 0.55, col, true);
       ring(o.x0, o.y0, 8, 42, 0.4, '#ffffff', true);
       if (PG.render && PG.render.kick) PG.render.kick(0.05);
-      fly(o.x0, o.y0, '+' + fmtEur(p.fare), '+' + fmtEur(p.fare), '#3df5b0');
+      fly(o.x0, o.y0, '+' + fmtEur(p.fare), '+' + fmtEur(p.fare), pal().acc);
     });
 
     bus.on('dropoff', function (p) {
       const o = p.o;
-      burst(o.x1, o.y1, p.tip > 0 ? 14 : 9, p.tip > 0 ? GOLD : '#3df5b0', 80, 0.6);
-      ring(o.x1, o.y1, 10, p.tip > 0 ? 58 : 44, 0.5, p.tip > 0 ? GOLD : '#3df5b0', true);
+      burst(o.x1, o.y1, p.tip > 0 ? 14 : 9, p.tip > 0 ? GOLD : pal().acc, 80, 0.6);
+      ring(o.x1, o.y1, 10, p.tip > 0 ? 58 : 44, 0.5, p.tip > 0 ? GOLD : pal().acc, true);
       if (PG.render && PG.render.kick) PG.render.kick(0.035);
       if (p.tip > 0) fly(o.x1, o.y1, '+' + fmtEur(p.tip) + ' чайові', '+' + fmtEur(p.tip), GOLD);
     });
 
-    bus.on('tap:fx', function (p) { ring(p.x, p.y, 6, p.pin ? 34 : 26, 0.35, p.pin ? '#3df5b0' : '#e8eefc', false); });
+    bus.on('tap:fx', function (p) { ring(p.x, p.y, 6, p.pin ? 34 : 26, 0.35, p.pin ? pal().acc : pal().ink, false); });
 
     bus.on('combo', function (p) { showCombo(p.n, p.k); });
     bus.on('combo:break', function () { showCombo(0, 1); });

@@ -1,43 +1,57 @@
-/* HUD and dispatch buttons */
-#hud { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #e8eefc;
-  background: rgba(14, 20, 36, .85); }
-#hud .hud-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+/* HUD and dispatch buttons (spec: money 38 px bold tabular, chips 15 px, captions 13 px, controls 60 px) */
+#hud { font-family: var(--font); color: var(--text); background: var(--hud); border-radius: 0 0 22px 22px; }
+#hud .hud-top { display: grid; grid-template-columns: 86px 1fr 96px; align-items: center; gap: 6px; }
 #hud .hud-cell:nth-child(2) { text-align: center; }
 #hud .hud-cell:last-child { text-align: right; }
 body.party #hud .hud-cell-rank { display: none; }
-#hud .hud-cap { font-size: 10px; line-height: 1.1; color: #8a96b3; white-space: nowrap; }
-#hud .hud-clock { font-size: 15px; color: #8a96b3; font-variant-numeric: tabular-nums; }
-#hud .hud-money { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; transition: color .2s; }
-#hud .hud-rank-wrap { font-size: 15px; font-variant-numeric: tabular-nums; }
-#hud .hud-label { color: #8a96b3; }
-#hud .hud-ghost { font-size: 13px; margin-top: 2px; color: #b48cff; font-variant-numeric: tabular-nums; }
-#hud .hud-ghost .hud-label { color: #8a96b3; }
-#hud .ahead { color: #3df5b0; }
-#hud .behind { color: #ff6b6b; }
-#hud .hud-money.ahead { color: #3df5b0; }
-#hud .hud-money.behind { color: #e8eefc; }
-#hud .hud-ghost.ahead .hud-delta { color: #3df5b0; }
-#hud .hud-ghost.behind .hud-delta { color: #ff6b6b; }
-#hud .hud-prog { height: 3px; margin-top: 5px; background: rgba(138, 150, 179, .25); border-radius: 2px; overflow: hidden; }
-#hud .hud-prog-fill { height: 100%; width: 0; background: #5aa9ff; }
+#hud .hud-cap { display: none; }
+#hud .hud-clock, #hud .hud-rank-wrap { display: inline-block; padding: 6px 10px; border-radius: 12px; background: var(--chip); color: var(--text);
+  font-size: var(--fs-chip); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#hud .hud-money { font-size: var(--fs-money); line-height: 1; font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; transition: color .2s; }
+#hud .hud-label { color: var(--muted); font-weight: 600; }
+#hud .hud-rank-wrap .hud-label { font-size: 13px; }
+#hud .hud-ghost { display: flex; gap: 8px; align-items: baseline; margin-top: 6px; font-size: var(--fs-cap); font-weight: 700; color: var(--ghost); font-variant-numeric: tabular-nums; }
+#hud .hud-ghost .hud-label { color: var(--ghost); }
+#hud .ahead { color: var(--ok); }
+#hud .behind { color: var(--bad); }
+#hud .hud-money.ahead { color: var(--ok); }
+#hud .hud-money.behind { color: var(--text); }
+#hud .hud-ghost.ahead .hud-delta { color: var(--ok); }
+#hud .hud-ghost.behind .hud-delta { color: var(--bad); }
+#hud .hud-prog { height: 4px; margin-top: 8px; background: var(--track); border-radius: 2px; overflow: hidden; }
+#hud .hud-prog-fill { height: 100%; width: 0; background: var(--blue); }
 #hud .hud-ladder { margin: 8px 6px 2px; }
-#hud .hud-medals { position: relative; height: 12px; margin-top: 5px; }
-#hud .hud-medal { position: absolute; top: 0; transform: translateX(-50%); font-size: 10px; line-height: 12px; color: #8a96b3; white-space: nowrap; }
+#hud .hud-medals { position: relative; height: 14px; margin-top: 5px; }
+#hud .hud-medal { position: absolute; top: 0; transform: translateX(-50%); font-size: 11px; line-height: 14px; color: var(--muted); white-space: nowrap; }
 #hud .hud-medal.last { transform: translateX(-100%); }
 #hud .hud-medal.got { color: var(--c); font-weight: 700; }
-#hud .hud-ladder-track { position: relative; height: 6px; background: rgba(138, 150, 179, .25); border-radius: 3px; }
-#hud .hud-ladder-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(61, 245, 176, .5); border-radius: 3px; }
-#hud .hud-tick { position: absolute; top: -3px; width: 4px; height: 12px; margin-left: -2px; border-radius: 2px; background: var(--c); }
-#hud .hud-mark { position: absolute; top: -4px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%;
-  background: #3df5b0; border: 2px solid var(--c, #8a96b3); box-sizing: border-box; box-shadow: 0 0 6px rgba(61, 245, 176, .6); }
-#hud-extra { pointer-events: auto; width: max-content; margin-left: auto; display: flex; justify-content: flex-end; gap: 6px; min-height: 0; }
+#hud .hud-ladder-track { position: relative; height: 8px; background: var(--track); border-radius: 99px; }
+#hud .hud-ladder-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--blue); border-radius: 99px; }
+#hud .hud-tick { position: absolute; top: -3px; width: 3px; height: 14px; margin-left: -1.5px; border-radius: 2px; background: var(--c); }
+#hud .hud-mark { position: absolute; top: -5px; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%;
+  background: var(--acc); box-shadow: 0 0 0 3px var(--hud); }
+#hud .hud-tools { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+#hud .hud-theme { flex: none; width: 44px; min-width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: var(--chip); color: var(--text);
+  font: 700 22px/1 var(--font); cursor: pointer; pointer-events: auto; touch-action: manipulation; }
+#hud .hud-theme:active { background: var(--btn); color: var(--btn-ink); }
+#hud-extra { pointer-events: auto; width: max-content; margin-left: auto; display: flex; justify-content: flex-end; align-items: center; gap: 6px; min-height: 0; }
 
-#dispatch { background: rgba(14, 20, 36, .85); }
-#dispatch .dsp-btn { flex: 1 1 0; min-width: 44px; min-height: 44px; max-width: 160px; border: 1px solid #2a3350; border-radius: 10px;
-  background: #0e1424; color: #e8eefc; font: 600 15px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; }
-#dispatch .dsp-btn.on { background: #1d2a4d; border-color: #5aa9ff; }
-#dispatch .dsp-btn:active { background: #1d2a4d; }
+#dispatch .dsp-btn { flex: 1 1 0; min-width: 44px; min-height: var(--ctl-h); max-width: 200px; border: 0; border-radius: 16px; pointer-events: auto;
+  background: var(--btn); color: var(--btn-ink); font: 700 17px var(--font); cursor: pointer; }
+#dispatch .dsp-btn.on { background: var(--blue); color: var(--bg); }
+#dispatch .dsp-btn:active { filter: brightness(1.15); }
 
-#toast { pointer-events: none; padding: 6px 12px; border-radius: 10px; background: rgba(14, 20, 36, .92); box-sizing: border-box; opacity: 0; transition: opacity .2s; text-align: center; font: 600 14px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  color: #e8eefc; }
+#toast { pointer-events: none; padding: 8px 14px; border-radius: 14px; background: var(--hud); box-sizing: border-box; opacity: 0; transition: opacity .2s; text-align: center; font: 700 14px var(--font);
+  color: var(--text); box-shadow: 0 6px 18px var(--shadow); }
 #toast.on { opacity: 1; }
+
+/* Phone: the whole HUD stays near 150 px */
+@media (max-width: 640px) {
+  #hud { padding-top: calc(var(--sat) + 6px); padding-bottom: 6px; }
+  #hud .hud-money { font-size: 32px; }
+  #hud .hud-ghost { margin-top: 3px; }
+  #hud .hud-prog { margin-top: 5px; }
+  #hud .hud-ladder { margin: 5px 6px 0; }
+  #hud .hud-medals { height: 12px; margin-top: 4px; }
+  #hud .hud-tools { margin-top: 3px; }
+}
