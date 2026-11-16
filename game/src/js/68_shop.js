@@ -523,7 +523,7 @@
     }
     CATS.forEach(function (c) { chip(c[0], c[1], function () { flt.cat = c[0]; }); });
     chip('can', 'Можу купити', function () { flt.can = !flt.can; });
-    chip('cheap', 'До 100 €', function () { flt.max = flt.max < MAXP ? MAXP : 100; });
+    chip('cheap', 'До €100', function () { flt.max = flt.max < MAXP ? MAXP : 100; });
     bar.appendChild(chips);
 
     side.appendChild(el('h2', 'olx-side-h', 'Фільтри'));
