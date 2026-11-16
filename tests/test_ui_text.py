@@ -205,6 +205,14 @@ def test_euro_rejects_other_formats(text: str) -> None:
     assert rules_of(ut.rule_euro(ui(text))) == ["euro"]
 
 
+def test_euro_glued_suffix_and_letterless_strings() -> None:
+    assert rules_of(ut.rule_euro(ui(" €", glued=True))) == ["euro"]
+    assert ut.rule_euro(ui("€", glued=True)) == []  # '€' + number is the right order
+    assert ut.rule_euro(ui(" €", glued=False)) == []
+    assert ut.rule_euro(ui(" €/км", glued=True)) == []
+    assert texts("el('div', 'hud-money', '€0,00'); n + ' €'; m = '+€';") == ["€0,00", " €", "+€"]
+
+
 def test_gender_flags_player_forms() -> None:
     assert rules_of(ut.rule_gender(ui("ти заробив €5"))) == ["gender"]
     assert rules_of(ut.rule_gender(ui("Ти вже встиг"))) == ["gender"]
@@ -242,8 +250,12 @@ def test_plural_concatenation_is_a_warning() -> None:
     found = ut.rule_plural(ui(" поїздок", glued=True))
     assert [(f.rule, f.severity) for f in found] == [("plural", ut.WARNING)]
     assert ut.rule_plural(ui(" поїздок", glued=False)) == []
-    assert ut.rule_plural(ui(" з водіїв", glued=True)) == []
+    assert ut.rule_plural(ui(" з гравців", glued=True)) == []
     assert rules_of(ut.rule_plural(ui(" хвилин тому", glued=True))) == ["plural"]
+    assert rules_of(ut.rule_plural(ui(" справжніх водіїв", glued=True))) == ["plural"]
+    assert ut.rule_plural(ui(" справжніх таксі на мапі", glued=True)) == []
+    assert ut.rule_plural(ui(" а б в г поїздок", glued=True)) == []  # too far from the number
+    assert ut.rule_plural(ui(" хвиля замовлень біля ", glued=True)) == []  # fixed phrase
 
 
 # --- driver ----------------------------------------------------------------------------------

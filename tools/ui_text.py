@@ -63,7 +63,6 @@ PLURAL_FORMS: dict[str, tuple[str, str, str]] = {
     "секунда": ("секунда", "секунди", "секунд"),
     "година": ("година", "години", "годин"),
     "водій": ("водій", "водії", "водіїв"),
-    "замовлення": ("замовлення", "замовлення", "замовлень"),
 }
 PLURAL_LOOKUP: dict[str, tuple[str, ...]] = {
     form: forms for forms in PLURAL_FORMS.values() for form in forms
@@ -88,6 +87,10 @@ NUMBER_NOUN_RE = re.compile(r"(?<![\d,.])(\d+)\s+([^\W\d_]+)")
 EURO_PREFIX_RE = re.compile(r"€(\s*)(\d+)([.,]\d*)?")
 EURO_SUFFIX_RE = re.compile(r"(\d+)([.,]\d+)?\s*€(?!/)")
 EURO_RATE_RE = re.compile(r"\d+\.\d+\s*€")
+EURO_GLUED_SUFFIX_RE = re.compile(r"\s+€(?!/)")
+EURO_FRACTION_LEN = 3  # "," plus two digits
+MIN_PAST_VERB_LEN = 3  # shortest gendered past form, «був»
+PLURAL_SCAN_WORDS = 3  # how many leading words of a glued string may hold the counted noun
 
 # Calls whose string arguments are never player-visible text.
 SKIP_CALLS = frozenset(
@@ -467,7 +470,7 @@ def is_ui_string(tokens: list[Token], i: int, ctx: tuple[str, int, str]) -> bool
         True for text the player can read.
     """
     tok = tokens[i]
-    if not any(c.isalpha() for c in tok.text) or tok.text in IGNORED_TEXTS:
+    if not any(c.isalpha() or c == "€" for c in tok.text) or tok.text in IGNORED_TEXTS:
         return False
     callee, arg, first = ctx
     prop = _assigned_property(tokens, i)
@@ -477,7 +480,7 @@ def is_ui_string(tokens: list[Token], i: int, ctx: tuple[str, int, str]) -> bool
         return False
     if callee == "setAttribute" and (arg == 0 or first not in UI_ATTRIBUTES):
         return False
-    if _has_cyrillic(tok.text) or SENTENCE_RE.match(tok.text.strip()):
+    if _has_cyrillic(tok.text) or "€" in tok.text or SENTENCE_RE.match(tok.text.strip()):
         return True
     capitalised = tok.text.strip()[:1].isupper()
     return capitalised and _in_ui_sink(callee, first, arg, prop)
@@ -641,12 +644,14 @@ def rule_euro(s: UiString) -> list[Finding]:
         space, _, frac = m.groups()
         if space:
             out.append(_finding(s, "euro", "no space between € and the number (€12,40)"))
-        elif frac and (frac[0] == "." or len(frac) != 3):
+        elif frac and (frac[0] == "." or len(frac) != EURO_FRACTION_LEN):
             out.append(_finding(s, "euro", "decimal comma and two digits: €12,40"))
     if EURO_SUFFIX_RE.search(s.text):
         out.append(_finding(s, "euro", "put € before the number: €12,40"))
     if EURO_RATE_RE.search(s.text):
         out.append(_finding(s, "euro", "decimal comma, not a point, in a rate"))
+    if s.glued and EURO_GLUED_SUFFIX_RE.match(s.text):
+        out.append(_finding(s, "euro", "number + ' €' built by concatenation; use U.eur(x)"))
     return out
 
 
@@ -660,7 +665,9 @@ def rule_gender(s: UiString) -> list[Finding]:
         out.append(_finding(s, "gender", detail, WARNING))
     for m in ADDRESS_VERB.finditer(s.text):
         word = m.group(1).casefold()
-        gendered = word in IRREGULAR_PAST or (len(word) >= 3 and word.endswith(("в", "ла")))
+        gendered = word in IRREGULAR_PAST or (
+            len(word) >= MIN_PAST_VERB_LEN and word.endswith(("в", "ла"))
+        )
         if gendered:
             detail = f"«ти {word}» is gendered; use a neutral wording"
             out.append(_finding(s, "gender", detail, WARNING))
@@ -683,23 +690,37 @@ def plural_index(n: int) -> int:
     return 2
 
 
-def rule_plural(s: UiString) -> list[Finding]:
-    """Check the plural of counted nouns: literal «5 поїздка» and numbers glued by ``+``."""
+def _plural_literals(s: UiString) -> list[Finding]:
+    """Check literal «number noun» pairs such as «5 поїздка»."""
     out: list[Finding] = []
     for m in NUMBER_NOUN_RE.finditer(s.text):
-        forms = PLURAL_LOOKUP.get(m.group(2).casefold())
+        noun = m.group(2).casefold()
+        forms = PLURAL_LOOKUP.get(noun)
         if forms is None:
             continue
         n = int(m.group(1))
         want = plural_index(n)
         allowed = {want, 1} if want == 0 else {want}  # «з 21 поїздки» (genitive) is fine
-        if not allowed & {i for i, f in enumerate(forms) if f == m.group(2).casefold()}:
+        if not allowed & {i for i, f in enumerate(forms) if f == noun}:
             out.append(_finding(s, "plural", f"{n} needs «{forms[want]}», not «{m.group(2)}»"))
-    first = WORD_RE.match(s.text.lstrip())
-    if s.glued and first and first.group(0).casefold() in PLURAL_LOOKUP:
-        detail = f"«{first.group(0)}» glued to a number; use U.plural(n, one, few, many)"
-        out.append(_finding(s, "plural", detail, WARNING))
     return out
+
+
+def _plural_glued(s: UiString) -> list[Finding]:
+    """Warn if a counted noun opens a string that is glued to a number with ``+``."""
+    if not s.glued:
+        return []
+    words = WORD_RE.findall(s.text)[:PLURAL_SCAN_WORDS]
+    for word in words:
+        if word.casefold() in PLURAL_LOOKUP:
+            detail = f"«{word}» glued to a number; use U.plural(n, one, few, many)"
+            return [_finding(s, "plural", detail, WARNING)]
+    return []
+
+
+def rule_plural(s: UiString) -> list[Finding]:
+    """Check the plural of counted nouns: literal «5 поїздка» and numbers glued by ``+``."""
+    return [*_plural_literals(s), *_plural_glued(s)]
 
 
 RULES: tuple[Rule, ...] = (
