@@ -26,6 +26,7 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
+from qr import QRError, encode
 from serve import (
     BIND_HOST,
     DEFAULT_DIR,
@@ -96,8 +97,8 @@ class Player:
     key: str
     name: str
     color: str
-    x: float = 0.0
-    y: float = 0.0
+    x: float | None = None  # unknown until the first sync
+    y: float | None = None
     hx: float = 0.0
     hy: float = -1.0
     money: float = 0.0
@@ -200,8 +201,8 @@ class Party:
                 "id": p.id,
                 "name": p.name,
                 "color": p.color,
-                "x": round(p.x, 1),
-                "y": round(p.y, 1),
+                "x": None if p.x is None or p.y is None else round(p.x, 1),
+                "y": None if p.x is None or p.y is None else round(p.y, 1),
                 "hx": round(p.hx, 3),
                 "hy": round(p.hy, 3),
                 "money": round(p.money, 2),
@@ -391,13 +392,33 @@ class Party:
             return self._state()
 
 
-def make_handler(party: Party, host_ips: frozenset[str], open_host: bool) -> type:
+def qr_payload(url: str) -> dict[str, Any]:
+    """The QR code of the player URL for the host's big screen.
+
+    Args:
+        url: URL the phones should open (empty: no code).
+
+    Returns:
+        ``{"url", "rows"}`` where ``rows`` are strings of ``1`` (dark) and ``0`` (light) modules;
+        ``rows`` is empty if there is no URL or it is too long for the encoder.
+    """
+    try:
+        matrix = encode(url, "M") if url else []
+    except QRError:
+        matrix = []
+    return {"url": url, "rows": ["".join("1" if m else "0" for m in row) for row in matrix]}
+
+
+def make_handler(
+    party: Party, host_ips: frozenset[str], open_host: bool, join_url: str = ""
+) -> type:
     """Build the request handler class bound to a party.
 
     Args:
         party: The game state.
         host_ips: Client addresses allowed to start and reset the game.
         open_host: Allow host actions from any address.
+        join_url: URL of the players' page, served as a QR code at ``/api/qr``.
 
     Returns:
         A handler class for :class:`serve.LanServer`.
@@ -445,6 +466,8 @@ def make_handler(party: Party, host_ips: frozenset[str], open_host: bool) -> typ
             path = self.path.split("?", 1)[0]
             if path == "/api/party":
                 self._reply(HTTPStatus.OK, party.state())
+            elif path == "/api/qr":
+                self._reply(HTTPStatus.OK, qr_payload(join_url))
             elif path.startswith("/api/"):
                 self._reply(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             else:
@@ -500,6 +523,7 @@ def make_party_server(
     host_ips: frozenset[str] = frozenset({LOOPBACK, "::1"}),
     open_host: bool = False,
     host: str = BIND_HOST,
+    join_url: str = "",
 ) -> LanServer:
     """Create (but do not start) the party server.
 
@@ -510,11 +534,12 @@ def make_party_server(
         host_ips: Client addresses allowed to start and reset the game.
         open_host: Allow host actions from any address.
         host: Interface to bind.
+        join_url: URL of the players' page for the QR code on the host screen.
 
     Returns:
         The bound server.
     """
-    handler = make_handler(party, host_ips, open_host)
+    handler = make_handler(party, host_ips, open_host, join_url)
 
     def build(*args: Any, **kwargs: Any) -> Any:
         """Create a handler that serves ``directory``."""
@@ -551,7 +576,9 @@ def main(argv: list[str] | None = None) -> int:
         player_url = build_url(lan, args.port) + "?party=1"
         host_url = build_url(LOOPBACK, args.port) + "?party=1&host=1"
         ips = frozenset({LOOPBACK, "::1", lan})
-        server = make_party_server(args.dir, args.port, Party(), ips, args.open_host)
+        server = make_party_server(
+            args.dir, args.port, Party(), ips, args.open_host, join_url=player_url
+        )
     except (OSError, ValueError) as err:
         print(f"cannot start the server: {err}", file=sys.stderr)
         return EXIT_FAIL

@@ -146,6 +146,7 @@ def test_concurrent_claims_have_one_winner() -> None:
 
 def test_sync_stores_clamped_numbers_and_rejects_junk() -> None:
     p, _, (a, _b) = running()
+    assert p.state()["players"][0]["x"] is None
     st = p.sync(a.key, {"x": 100.5, "y": -3, "hx": 5, "hy": 0, "money": 12.345, "trips": 4})
     me = st["players"][0]
     assert (me["x"], me["y"], me["hx"], me["money"], me["trips"]) == (100.5, -3, 1.0, 12.35, 4)
@@ -213,6 +214,33 @@ def test_http_round(tmp_path: Path) -> None:
         assert call(port, "POST", "/api/nothing", {})[0] == 404
         assert call(port, "GET", "/api/nothing")[0] == 404
         assert call(port, "POST", "/api/reset", {})[1]["phase"] == "lobby"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_qr_payload_rows_are_square() -> None:
+    q = party.qr_payload("http://192.168.1.5:8090/?party=1")
+    assert q["url"].endswith("?party=1")
+    assert len(q["rows"]) == len(q["rows"][0]) >= 21
+    assert set("".join(q["rows"])) == {"0", "1"}
+    assert party.qr_payload("")["rows"] == []
+    assert party.qr_payload("x" * 500)["rows"] == []
+
+
+def test_http_serves_the_qr(tmp_path: Path) -> None:
+    server = party.make_party_server(
+        tmp_path, 0, party.Party(), host="127.0.0.1", join_url="http://10.0.0.2:8090/?party=1"
+    )
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, q = call(port, "GET", "/api/qr")
+        assert status == 200
+        assert q["url"] == "http://10.0.0.2:8090/?party=1"
+        assert len(q["rows"]) >= 21
     finally:
         server.shutdown()
         server.server_close()
