@@ -86,3 +86,61 @@ def test_road_mask_needs_three_trips():
     three = roads.road_mask(roads.count_trips([trip, trip, trip], GRID))
     assert not two.any()
     assert three.sum() == 87
+
+
+# graph building
+
+
+def skeleton_graph(trips, grid=GRID):
+    """Run the raster steps up to the unpruned graph."""
+    mask = roads.close_mask(roads.road_mask(roads.count_trips(trips, grid)))
+    return roads.skeleton_to_graph(roads.thin_mask(mask), grid.cell_m)
+
+
+def edge_lengths(graph):
+    """Sorted edge lengths in metres."""
+    return sorted(d["len"] for *_, d in graph.edges(data=True))
+
+
+def plus_trips():
+    """Five trips forming a plus with 350 m arms around (480, 480), three copies each."""
+    c = 480.0
+    arms = [
+        line((c - 350, c), (c, c)),
+        line((c, c), (c + 350, c)),
+        line((c, c - 350), (c, c)),
+        line((c, c), (c, c + 350)),
+        line((c - 350, c), (c + 350, c)),
+    ]
+    return thrice(arms)
+
+
+def test_plus_has_five_nodes_and_four_edges():
+    graph = skeleton_graph(plus_trips())
+    assert graph.number_of_nodes() == 5
+    assert graph.number_of_edges() == 4
+    for length in edge_lengths(graph):
+        assert length == pytest.approx(350.0, abs=GRID.cell_m)
+    degrees = sorted(d for _, d in graph.degree)
+    assert degrees == [1, 1, 1, 1, 4]
+
+
+def test_edge_polyline_runs_from_node_a_to_node_b():
+    graph = skeleton_graph(plus_trips())
+    for *_, data in graph.edges(data=True):
+        pts = roads.oriented(data, data["a"])
+        assert pts[0] == graph.nodes[data["a"]]["pos"]
+        assert pts[-1] == graph.nodes[data["b"]]["pos"]
+        assert roads.oriented(data, data["b"])[0] == pts[-1]
+        assert roads.polyline_length(pts) == pytest.approx(data["len"])
+
+
+def test_ring_without_junction_gets_a_node():
+    c, r = 480.0, 200.0
+    t = np.linspace(0, 2 * np.pi, 80)
+    ring = np.column_stack([c + r * np.cos(t), c + r * np.sin(t)])
+    graph = skeleton_graph(thrice([ring]))
+    assert graph.number_of_nodes() == 1
+    assert graph.number_of_edges() == 1
+    (length,) = edge_lengths(graph)
+    assert length == pytest.approx(2 * np.pi * r, rel=0.1)
