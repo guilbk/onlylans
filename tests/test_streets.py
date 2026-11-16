@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from pipeline import geo, streets
+from pipeline import geo, streets, trace
 
-GRID = streets.Grid(width=100, height=100, cell_m=10.0)  # 1 km x 1 km of 10 m pixels
+GRID = trace.Grid(width=100, height=100, cell_m=10.0)  # 1 km x 1 km of 10 m pixels
 
 
 def trip(*pts):
@@ -38,61 +38,7 @@ def decode(png):
 
 # grid
 
-def test_map_grid_covers_map():
-    g = streets.map_grid(5.0)
-    assert (g.width, g.height) == (3000, 3800)
-    g = streets.map_grid(7.0)
-    assert g.width * 7 >= geo.MAP_W_M and g.height * 7 >= geo.MAP_H_M
-    assert (g.width - 1) * 7 < geo.MAP_W_M and (g.height - 1) * 7 < geo.MAP_H_M
-
-
 # sampling and rasterizing
-
-def test_sample_polyline_spacing_and_ends():
-    s = streets.sample_polyline(trip((0, 0), (100, 0)), 10.0)
-    assert np.allclose(s[0], (0, 0)) and np.allclose(s[-1], (100, 0))
-    assert np.max(np.hypot(*np.diff(s, axis=0).T)) <= 10.0 + 1e-9
-
-
-def test_sample_polyline_keeps_vertices():
-    s = streets.sample_polyline(trip((0, 0), (33, 0), (33, 40)), 10.0)
-    assert any(np.allclose(p, (33, 0)) for p in s)
-    assert np.allclose(s[-1], (33, 40))
-
-
-def test_sample_polyline_single_point():
-    assert streets.sample_polyline(trip((5, 5)), 10.0).shape == (1, 2)
-
-
-def test_straight_line_lights_the_right_pixels():
-    # horizontal line at y = 255 m (row 25) from x = 100 m to x = 400 m (cols 10..40)
-    idx = streets.trip_pixels(trip((100, 255), (400, 255)), GRID)
-    rows, cols = np.divmod(idx, GRID.width)
-    assert set(rows) == {25}
-    assert set(cols) == set(range(10, 41))
-
-
-def test_diagonal_line_is_connected():
-    idx = streets.trip_pixels(trip((5, 5), (505, 505)), GRID)
-    rows, cols = np.divmod(idx, GRID.width)
-    order = np.argsort(cols, kind="stable")
-    steps = np.abs(np.diff(rows[order])) + np.abs(np.diff(cols[order]))
-    assert len(idx) >= 50 and steps.max() <= 2
-    assert idx.min() == 0 and idx.max() == 50 * GRID.width + 50
-
-
-def test_trip_pixels_unique_and_sorted():
-    # a trip that doubles back over itself still lists each pixel once
-    idx = streets.trip_pixels(trip((100, 255), (400, 255), (100, 255)), GRID)
-    assert len(idx) == len(set(idx.tolist()))
-    assert idx.tolist() == sorted(idx.tolist())
-
-
-def test_trip_pixels_drops_outside_samples():
-    idx = streets.trip_pixels(trip((-500, 55), (500, 55)), GRID)
-    rows, cols = np.divmod(idx, GRID.width)
-    assert set(rows) == {5} and cols.min() == 0 and cols.max() == 50
-
 
 def test_accumulate_counts_a_trip_once_per_pixel():
     t = trip((100, 255), (400, 255), (100, 255))  # out and back
@@ -162,7 +108,7 @@ def test_encode_png_is_deterministic():
 # render and size budget
 
 def test_render_png_size_matches_resolution_and_is_deterministic():
-    trips = [streets.project_trip(lonlat_line())]
+    trips = [trace.project_trip(lonlat_line())]
     a = streets.render_png(trips, 50.0)
     assert a == streets.render_png(trips, 50.0)
     img = Image.open(io.BytesIO(a))
@@ -185,47 +131,25 @@ def test_next_m_per_px():
 
 
 def test_build_within_budget_keeps_resolution_when_it_fits():
-    trips = [streets.project_trip(lonlat_line())]
+    trips = [trace.project_trip(lonlat_line())]
     data, used = streets.build_within_budget(trips, 20.0, budget=10**9, limit=30.0)
     assert used == 20.0 and streets.fits_budget(len(data), 10**9)
 
 
 def test_build_within_budget_coarsens_until_it_fits():
-    trips = [streets.project_trip(lonlat_line())]
+    trips = [trace.project_trip(lonlat_line())]
     size20 = len(streets.render_png(trips, 20.0))
     data, used = streets.build_within_budget(trips, 20.0, budget=size20 - 1, limit=40.0)
     assert used > 20.0 and len(data) < size20
 
 
 def test_build_within_budget_stops_at_limit():
-    trips = [streets.project_trip(lonlat_line())]
+    trips = [trace.project_trip(lonlat_line())]
     data, used = streets.build_within_budget(trips, 20.0, budget=1, limit=22.0)
     assert used == 22.0 and not streets.fits_budget(len(data), 1)
 
 
 # loading and CLI
-
-def test_parse_polyline():
-    assert streets.parse_polyline("[[1, 2], [3, 4]]") == [[1, 2], [3, 4]]
-    assert streets.parse_polyline("not json") is None
-    assert streets.parse_polyline('{"a": 1}') is None
-
-
-def test_project_trip_matches_geo_proj():
-    out = streets.project_trip([[-8.6112, 41.1481], [-8.60, 41.15]])
-    assert out.shape == (2, 2)
-    assert tuple(out[0]) == pytest.approx(geo.proj(-8.6112, 41.1481))
-
-
-def test_load_trips_filters_with_trip_ok(tmp_path):
-    week = tmp_path / "week.csv"
-    write_week(
-        week,
-        [json.dumps(lonlat_line()), json.dumps(lonlat_line(n=2)), "garbage", "[]"],
-    )
-    trips = streets.load_trips(week)
-    assert len(trips) == 1 and trips[0].shape == (12, 2)
-
 
 def test_main_writes_png_and_is_deterministic(tmp_path, capsys):
     week = tmp_path / "week.csv"

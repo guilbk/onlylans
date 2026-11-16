@@ -10,12 +10,10 @@ Pixel indices are ``(row, col)`` = ``(y, x)``; all map coordinates are metres in
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import math
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
 import networkx as nx
@@ -23,18 +21,14 @@ import numpy as np
 from scipy import ndimage
 from skimage.morphology import closing, skeletonize
 
-from pipeline import geo
+from pipeline import geo, raw, trace
+from pipeline.trace import Grid
 
 DEFAULT_WEEK = Path("data/work/week.csv")
 DEFAULT_OUT = Path("game/roads.json")
-POLYLINE_COLUMN = "POLYLINE"
-
-# The polyline column holds long JSON strings; lift the csv module's default field limit.
-CSV_FIELD_LIMIT = 1 << 27
 
 CELL_M = 8.0  # raster pixel size, metres
 MIN_TRIPS = 3  # a pixel is road if at least this many different trips touch it
-SAMPLE_STEP_M = CELL_M / 2  # spacing of the points sampled along a segment, metres
 MIN_SPUR_M = 40.0  # dead-end edges shorter than this are pruned, metres
 DP_START_M = 6.0  # polyline simplification tolerance, metres
 DP_MAX_M = 10.0
@@ -46,95 +40,6 @@ M_PER_KM = 1000.0  # metres in a kilometre
 EIGHT = np.ones((3, 3), dtype=int)  # 8-connectivity structure
 CLOSING_SQUARE = np.ones((3, 3), dtype=np.uint8)  # structuring element of the closing
 NEIGHBOURS = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
-
-
-def parse_polyline(text: str) -> list[list[float]] | None:
-    """Parse a POLYLINE cell.
-
-    Args:
-        text: JSON text ``[[lon, lat], ...]``.
-
-    Returns:
-        The list of lon/lat points, or None if the text is not a JSON list.
-    """
-    try:
-        value = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    return value if isinstance(value, list) else None
-
-
-def project_trip(pts: list[list[float]]) -> np.ndarray:
-    """Project a lon/lat polyline to map-frame metres.
-
-    Args:
-        pts: Points ``[lon, lat]`` in degrees.
-
-    Returns:
-        Array of shape ``(n, 2)`` with columns x, y in metres.
-    """
-    return np.array([geo.proj(p[0], p[1]) for p in pts], dtype=np.float64)
-
-
-def load_trips(week_csv: Path) -> list[np.ndarray]:
-    """Read the week file and keep the trips that pass ``geo.trip_ok``.
-
-    Args:
-        week_csv: CSV with a POLYLINE column (one lon/lat point per 15 s).
-
-    Returns:
-        One ``(n, 2)`` metre array per accepted trip, in file order.
-    """
-    csv.field_size_limit(CSV_FIELD_LIMIT)
-    trips: list[np.ndarray] = []
-    with week_csv.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            pts = parse_polyline(row[POLYLINE_COLUMN])
-            if pts is not None and geo.trip_ok(pts):
-                trips.append(project_trip(pts))
-    return trips
-
-
-@dataclass(frozen=True)
-class Grid:
-    """Raster geometry: ``width`` x ``height`` pixels of ``cell_m`` metres, origin at (0, 0)."""
-
-    width: int
-    height: int
-    cell_m: float = CELL_M
-
-
-def map_grid() -> Grid:
-    """Build the grid that covers the whole game map (CONTRACT section 3).
-
-    Returns:
-        A 1875 x 2375 pixel grid of 8 m cells.
-    """
-    return Grid(math.ceil(geo.MAP_W_M / CELL_M), math.ceil(geo.MAP_H_M / CELL_M))
-
-
-def trip_pixels(trip: np.ndarray, grid: Grid) -> np.ndarray:
-    """List the pixels a trip passes through, each once.
-
-    The polyline is sampled every ``SAMPLE_STEP_M`` metres, so consecutive samples are
-    8-connected pixels.
-
-    Args:
-        trip: Array ``(n, 2)`` of x, y in metres.
-        grid: Raster geometry.
-
-    Returns:
-        Sorted unique flat pixel indices ``row * width + col``.
-    """
-    seg = np.diff(trip, axis=0)
-    steps = np.maximum(1, np.ceil(np.hypot(seg[:, 0], seg[:, 1]) / SAMPLE_STEP_M)).astype(int)
-    seg_id = np.repeat(np.arange(len(seg)), steps)
-    first = np.repeat(np.cumsum(steps) - steps, steps)
-    frac = (np.arange(steps.sum()) - first) / np.repeat(steps, steps)
-    pts = np.vstack([trip[seg_id] + frac[:, None] * seg[seg_id], trip[-1:]])
-    col = np.clip((pts[:, 0] // grid.cell_m).astype(int), 0, grid.width - 1)
-    row = np.clip((pts[:, 1] // grid.cell_m).astype(int), 0, grid.height - 1)
-    return np.unique(row * grid.width + col)
 
 
 def count_trips(trips: list[np.ndarray], grid: Grid) -> np.ndarray:
@@ -149,7 +54,7 @@ def count_trips(trips: list[np.ndarray], grid: Grid) -> np.ndarray:
     """
     counts = np.zeros(grid.width * grid.height, dtype=np.uint16)
     for trip in trips:
-        counts[trip_pixels(trip, grid)] += 1
+        counts[trace.trip_pixels(trip, grid, clip=True)] += 1
     return counts.reshape(grid.height, grid.width)
 
 
@@ -602,22 +507,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
     t0 = time.perf_counter()
-    grid = map_grid()
-    trips = load_trips(args.week)
+    grid = trace.map_grid(CELL_M)
+    raw.set_csv_limit()
+    trips = trace.load_trips(args.week)
     graph, kept = build_graph(trips, grid)
     if graph.number_of_nodes() == 0:
         print("no road found")
         return 1
     payload, tol, doc = encode_within_budget(graph)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_bytes(payload)
     draw_debug(doc, grid, args.debug)
     print(f"trips used: {len(trips)}  pixels kept: {kept}  DP tolerance: {tol:g} m")
     print(
         f"nodes: {len(doc['nodes']) // 2}  edges: {len(doc['edges'])}  road: {total_km(doc):.1f} km"
     )
     print(f"file: {len(payload)} bytes  seconds: {time.perf_counter() - t0:.1f}")
-    return 0 if len(payload) <= MAX_BYTES else 1
+    if len(payload) > MAX_BYTES:
+        print(f"over the {MAX_BYTES} byte budget: {args.out} not written")
+        return 1
+    raw.write_atomic(args.out, payload)
+    return 0
 
 
 if __name__ == "__main__":
