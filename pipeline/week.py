@@ -85,7 +85,9 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser."""
     parser = argparse.ArgumentParser(description="Cut the campaign week out of the Porto data.")
     parser.add_argument("--root", type=Path, default=Path("."), help="repository root")
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output CSV path")
+    parser.add_argument(
+        "--out", type=Path, default=None, help=f"output CSV path (default: ROOT/{DEFAULT_OUT})"
+    )
     return parser
 
 
@@ -102,7 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     train_zip = ensure_raw(args.root)
     w0, w1 = campaign_window()
-    read, kept = filter_week(iter_train_rows(train_zip), args.out, w0, w1)
+    out = args.out if args.out is not None else args.root / DEFAULT_OUT
+    read, kept = filter_week(iter_train_rows(train_zip), out, w0, w1)
     print(f"rows read: {read}")
     print(f"rows kept: {kept}")
     print(f"seconds: {time.monotonic() - started:.1f}")
