@@ -11,6 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 import make_fixture as mf  # noqa: E402
 
+from pipeline import geo, shifts  # noqa: E402
+
 
 def test_fare_rounds_half_up_to_cents() -> None:
     assert mf.fare(0.0) == 3.25
@@ -28,6 +30,23 @@ def test_make_trip_fields_and_geometry() -> None:
     assert (x1, y1) == (x0 + sum(deltas[0::2]), y0 + sum(deltas[1::2]))
     assert km > 0 and fare == mf.fare(km)
     assert call in (0, 1, 2) and (stand == 0) == (call != 1)
+
+
+def test_every_trip_is_a_possible_real_order() -> None:
+    """At least 4 points and a path of 0.8 km or more, like the pipeline's own filter."""
+    rng = random.Random(11)
+    for t in range(0, 7000, 20):
+        o = mf.make_trip(rng, t)
+        n_pts = len(o[5]) // 2 + 1
+        assert geo.MIN_POINTS <= n_pts <= mf.MAX_PTS
+        assert o[7] >= geo.MIN_PATH_KM
+
+
+def test_ranking_and_ghost_use_the_shift_helpers() -> None:
+    shift = mf.build_shift()
+    assert shift["ghost"] == shifts.ghost_of(shift["orders"], shift["ranking"])
+    assert shift["median"] == shifts.median(shift["ranking"])
+    assert shift["top10"] == shifts.top10_of(shift["ranking"])
 
 
 def test_schedule_trips_do_not_overlap_and_fit_the_shift() -> None:
@@ -58,11 +77,6 @@ def test_rank_drivers_ties_go_to_the_smaller_taxi_id() -> None:
     taxis, ranking = mf.rank_drivers(orders, [300, 200])
     assert taxis == [200, 300] and ranking == [5.0, 5.0]
     assert [o[11] for o in orders] == [1, 0]
-
-
-def test_median_odd_and_even() -> None:
-    assert mf.median([1.0, 2.0, 9.0]) == 2.0
-    assert mf.median([1.0, 2.0, 3.0, 5.0]) == 2.5
 
 
 def test_hot_spots_and_surge_shapes() -> None:
