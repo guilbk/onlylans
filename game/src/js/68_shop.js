@@ -178,7 +178,7 @@
       [-1, 1].forEach(function (s) {
         for (let i = 0; i < 3; i++) {
           const x = 8 - i * 6;
-          fillPoly(c, i === 1 ? '#ffd23f' : '#ff6a2d', [x, s * h, x - 5.2, s * (h - 1.8 + 0.4 * i), x - 1.8, s * (h + 0.2), x - 4.6, s * (h + 0.4)]);
+          fillPoly(c, i === 1 ? '#ffd23f' : '#1c1a2e', [x, s * h, x - 5.2, s * (h - 1.8 + 0.4 * i), x - 1.8, s * (h + 0.2), x - 4.6, s * (h + 0.4)]);
         }
       });
     },
