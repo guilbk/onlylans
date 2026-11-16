@@ -1,8 +1,8 @@
 (function (root) {
   const PG = root.PG = root.PG || {};
-  // One overlay at a time under the HUD. Priority: order card > coach > toast > missions card > radio banner > combo.
+  // One overlay at a time under the HUD. Priority: order card > coach > hint > toast > missions card > radio banner > combo.
   // The order card hides the whole stack; of the rest only the first one that is «on» stays visible.
-  const STACK = ['.coach-card', '#toast', '.msn-card', '#fx-banner', '#fx-combo'];
+  const STACK = ['.coach-card', '.hint-card', '#toast', '.msn-card', '#fx-banner', '#fx-combo'];
   const PHONE_W = 640;
 
   function visible(el) { return !!el && el.classList.contains('on'); }
@@ -24,6 +24,18 @@
     }
   }
 
-  PG.overlay = { tick: tick };
+  // true while the order card or any overlay other than `self` is showing (the hint card waits for it)
+  function busy(self) {
+    const d = root.document;
+    const oc = d.getElementById('order-card');
+    if (oc && !oc.classList.contains('hidden')) return true;
+    for (let i = 0; i < STACK.length; i++) {
+      const e = d.querySelector(STACK[i]);
+      if (e && e !== self && visible(e) && STACK[i] !== '.hint-card' && STACK[i] !== '#fx-combo') return true;
+    }
+    return false;
+  }
+
+  PG.overlay = { tick: tick, busy: busy };
   if (PG.bus) PG.bus.on('frame', tick);
 })(typeof window !== 'undefined' ? window : globalThis);

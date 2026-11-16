@@ -26,7 +26,7 @@
   const POP_S = 0.4;              // real s of the pin pop-in
   const EXPIRE_S = 0.35;          // real s of the pin expiry fade
   const EXPIRE_N = 16;
-  const LABEL_S = 1.4;            // real s a «Забрав …» / «Минув час» label stays
+  const LABEL_S = 0.9;            // real s a «Забрав …» / «Минув час» label stays
   const PAN_HOLD_S = 4;           // camera stays put this long after a manual pan
   const VIEW_PHONE_M = 2800;      // metres across on a phone at start
   const VIEW_WIDE_M = 5000;       // metres across on a wide screen at start
@@ -68,6 +68,7 @@
   let faintN = 0;
   const labelRects = new Float32Array(MAX_LABELS * 4);
   let labelN = 0;
+  let vanishN = 0;
   const ghostOut = { x: 0, y: 0, hx: 1, hy: 0 };
   const ghostTrail = new Float32Array(GHOST_TRAIL_N * 2);
   let ghostTrailN = 0;
@@ -821,11 +822,17 @@
       ctx.arc(pOut.x, pOut.y, r, 0, TAU);
       ctx.fill();
       ring(pOut.x, pOut.y, r + 4 + f * 10, 2, pal.dot, 0.6 * (1 - f));
-      if (e.label) {
+      if (e.label && e.ok !== false) {
         ctx.font = FONT_LABEL;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const w = ctx.measureText(e.label).width + 16;
+        if (e.ok === undefined) {       // decided once: on screen, at most 2 per frame, never over another label
+          e.ok = vanishN < 2 && pOut.x - w / 2 >= 2 && pOut.x + w / 2 <= W - 2 && pOut.y - 40 >= 2 && pOut.y <= H &&
+            labelFree(pOut.x - w / 2, pOut.y - 40, w, 20) && addLabelRect(pOut.x - w / 2, pOut.y - 40, w, 20);
+        } else if (e.ok) addLabelRect(pOut.x - w / 2, pOut.y - 40, w, 20);
+        if (!e.ok) continue;
+        vanishN++;
         ctx.globalAlpha = f < 0.6 ? 1 : 1 - (f - 0.6) / 0.4;
         ctx.fillStyle = pal.card;
         ctx.fillRect(pOut.x - w / 2, pOut.y - 40, w, 20);
@@ -1180,6 +1187,7 @@
     }
 
     labelN = 0;
+    vanishN = 0;
     collectPins(G, t);
     drawFaint(G);
     drawRoutes(G);

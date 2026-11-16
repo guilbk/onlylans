@@ -259,5 +259,5 @@
     PG.bus.on('ui:screen', function (e) { if (e && e.name !== 'play') stop(); });
   }
 
-  PG.coach = { init: init, rearm: rearm };
+  PG.coach = { init: init, rearm: rearm, active: function () { return S.on || (!!S.card && S.card.classList.contains('on')); } };
 })(typeof window !== 'undefined' ? window : globalThis);
