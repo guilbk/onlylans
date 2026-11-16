@@ -99,7 +99,10 @@
     sheet.className = 'help-sheet';
     sheet.hidden = true;
     sheet.addEventListener('click', function (e) { if (e.target === sheet) closeSheet(); });
-    const dots = RIV.map(function (r) {
+    // names come from the game's own rival list so a rename in 25_ai.js shows here too
+    const live = PG.ai && PG.ai.RIVALS;
+    const list = live ? live.map(function (r) { return [r.color, r.name]; }) : RIV;
+    const dots = list.map(function (r) {
       return '<span class="help-dot" style="background:' + r[0] + '"></span>' + r[1];
     }).join(', ');
     sheet.innerHTML = '<div class="help-box" role="dialog" aria-modal="true" aria-label="Як грати">' +
