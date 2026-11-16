@@ -376,3 +376,43 @@ def largest_component(graph: nx.MultiGraph) -> nx.MultiGraph:
 
     best = max(nx.connected_components(graph), key=total)
     return graph.subgraph(best).copy()
+
+
+def _unit_point(p: Point) -> tuple[int, int]:
+    """Convert a metre point to integer coordinates in 2.5 m units."""
+    return round(p[0] / UNIT_M), round(p[1] / UNIT_M)
+
+
+def encode_roads(graph: nx.MultiGraph, tol_m: float) -> dict:
+    """Build the CONTRACT section 5 document from a road graph.
+
+    Args:
+        graph: Connected road graph.
+        tol_m: Douglas-Peucker tolerance for edge interiors, metres.
+
+    Returns:
+        Dict with ``v``, ``unit_m``, ``nodes`` (flat x, y, sorted by (y, x)) and ``edges``
+        ``[a, b, flat interior points]`` with ``a <= b``, sorted.
+    """
+    units = {n: _unit_point(d["pos"]) for n, d in graph.nodes(data=True)}
+    ordered = sorted(units, key=lambda n: (units[n][1], units[n][0]))
+    index = {n: i for i, n in enumerate(ordered)}
+    edges = []
+    for _, _, data in graph.edges(data=True):
+        a, b = sorted((data["a"], data["b"]), key=lambda n: index[n])
+        pts = geo.rdp(oriented(data, a), tol_m)[1:-1]
+        flat: list[int] = []
+        prev = units[a]
+        for u in map(_unit_point, pts):
+            if u != prev and u != units[b]:
+                flat += [u[0], u[1]]
+                prev = u
+        edges.append([index[a], index[b], flat])
+    edges.sort()
+    nodes = [v for n in ordered for v in units[n]]
+    return {"v": 1, "unit_m": UNIT_M, "nodes": nodes, "edges": edges}
+
+
+def dumps_roads(doc: dict) -> bytes:
+    """Serialise the document compactly and deterministically (UTF-8, no spaces)."""
+    return json.dumps(doc, separators=(",", ":")).encode("utf-8")
