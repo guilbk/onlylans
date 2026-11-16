@@ -35,7 +35,10 @@ SHIFT_COUNT = 28
 SHIFT_S = 7200  # game seconds per shift
 RIDE_STEP_S = 15  # seconds between GPS points
 HOUR_S = 3600
+CENTS_PER_EUR = 100  # rankings and fares are compared in whole cents
 ORDER_LEN = 12
+EDGE_LEN = 3  # a road edge is [a, b, interior points]
+HOUR_SLICE = slice(11, 13)  # the hh part of 'YYYY-MM-DD hh:mm'
 MIN_RIDE_POINTS = geo.MIN_POINTS
 MAX_RIDE_POINTS = geo.MAX_POINTS
 SURGE_T0_MIN = 150  # game s
@@ -75,6 +78,9 @@ SHIFT_FIELDS = {
     "surges": "list",
 }
 GHOST_KEYS = frozenset({"taxi", "total", "orders"})
+# Index of each field of an order array (section 4): t, x0, y0, x1, y1, pts, d, km, fare, c,
+# stand, taxi.
+F_T, F_X0, F_Y0, F_X1, F_Y1, F_PTS, F_D, F_KM, F_FARE, F_CALL, F_STAND, F_TAXI = range(12)
 ORDER_KINDS = ("int", "int", "int", "int", "int", "list", "int", "num", "num", "int", "int", "int")
 HOT_KEYS = frozenset({"x", "y", "w", "name"})
 SURGE_KEYS = frozenset({"x", "y", "r", "t0", "t1", "n", "name"})
@@ -301,7 +307,7 @@ def check_shift_hours(shift: dict[str, Any], where: str) -> list[str]:
         out.append(viol("shift-hours", where, f"start_hour {shift['start_hour']}, expected {want}"))
     local = shift.get("start_local")
     local_ok = isinstance(local, str) and START_LOCAL_RE.match(local)
-    if local_ok and int(local[11:13]) != shift["start_hour"]:
+    if local_ok and int(local[HOUR_SLICE]) != shift["start_hour"]:
         out.append(viol("shift-hours", where, "start_local hour differs from start_hour"))
     return out
 
@@ -324,7 +330,7 @@ def check_order_shape(order: Any, where: str = "order") -> list[str]:
         for i, kind in enumerate(ORDER_KINDS)
         if not kind_ok(order[i], kind)
     ]
-    pts = order[5]
+    pts = order[F_PTS]
     if isinstance(pts, list) and not all(is_int(v) for v in pts):
         out.append(viol("order-types", where, "pts must hold integers only"))
     return out
@@ -346,19 +352,19 @@ def check_order_units(
         ``taxi``.
     """
     out: list[str] = []
-    if not 0 <= order[0] < SHIFT_S:
-        out.append(viol("order-t", where, f"t={order[0]} must be in 0..{SHIFT_S - 1} game s"))
-    for label, (x, y) in (("pickup", order[1:3]), ("drop-off", order[3:5])):
+    if not 0 <= order[F_T] < SHIFT_S:
+        out.append(viol("order-t", where, f"t={order[F_T]} must be in 0..{SHIFT_S - 1} game s"))
+    for label, (x, y) in (("pickup", order[F_X0 : F_Y0 + 1]), ("drop-off", order[F_X1 : F_Y1 + 1])):
         if not in_bounds(x, y, bounds):
             out.append(viol("order-bounds", where, f"{label} ({x}, {y}) outside {list(bounds)}"))
-    if not order[7] > 0:
-        out.append(viol("order-km", where, f"km={order[7]} must be positive"))
-    if order[9] not in CALL_TYPES:
-        out.append(viol("order-call", where, f"c={order[9]} must be 0, 1 or 2"))
-    if order[10] < 0:
-        out.append(viol("order-stand", where, f"stand={order[10]} must be >= 0"))
-    if not 0 <= order[11] < taxi_count:
-        out.append(viol("order-taxi", where, f"taxi={order[11]} not in 0..{taxi_count - 1}"))
+    if not order[F_KM] > 0:
+        out.append(viol("order-km", where, f"km={order[F_KM]} must be positive"))
+    if order[F_CALL] not in CALL_TYPES:
+        out.append(viol("order-call", where, f"c={order[F_CALL]} must be 0, 1 or 2"))
+    if order[F_STAND] < 0:
+        out.append(viol("order-stand", where, f"stand={order[F_STAND]} must be >= 0"))
+    if not 0 <= order[F_TAXI] < taxi_count:
+        out.append(viol("order-taxi", where, f"taxi={order[F_TAXI]} not in 0..{taxi_count - 1}"))
     return out
 
 
@@ -374,7 +380,7 @@ def check_order_path(order: list[Any], bounds: Bounds, where: str = "order") -> 
         Violations of the point count, ``d = 15 * (n - 1)`` s, bounds of every point and the
         reconstructed end point against ``(x1, y1)``.
     """
-    pts = order[5]
+    pts = order[F_PTS]
     if len(pts) % 2:
         return [viol("order-pts", where, "pts has an odd length")]
     n = len(pts) // 2 + 1
@@ -383,17 +389,21 @@ def check_order_path(order: list[Any], bounds: Bounds, where: str = "order") -> 
         out.append(
             viol("order-pts", where, f"{n} points, expected {MIN_RIDE_POINTS}..{MAX_RIDE_POINTS}")
         )
-    if order[6] != RIDE_STEP_S * (n - 1):
-        out.append(viol("order-d", where, f"d={order[6]} s, expected {RIDE_STEP_S * (n - 1)} s"))
-    x, y = order[1], order[2]
+    if order[F_D] != RIDE_STEP_S * (n - 1):
+        out.append(viol("order-d", where, f"d={order[F_D]} s, expected {RIDE_STEP_S * (n - 1)} s"))
+    x, y = order[F_X0], order[F_Y0]
     for i in range(0, len(pts), 2):
         x, y = x + pts[i], y + pts[i + 1]
         if not in_bounds(x, y, bounds):
             out.append(viol("order-bounds", where, f"path point {i // 2 + 1} ({x}, {y}) outside"))
             break
-    if (x, y) != (order[3], order[4]):
+    if (x, y) != (order[F_X1], order[F_Y1]):
         out.append(
-            viol("order-pts", where, f"path ends at ({x}, {y}), x1/y1 is ({order[3]}, {order[4]})")
+            viol(
+                "order-pts",
+                where,
+                f"path ends at ({x}, {y}), x1/y1 is ({order[F_X1]}, {order[F_Y1]})",
+            )
         )
     return out
 
@@ -409,12 +419,11 @@ def check_order_fare(order: list[Any], start_hour: int, where: str = "order") ->
     Returns:
         A violation if ``fare != fare(km, night)`` for the local pickup hour.
     """
-    hour = (start_hour + order[0] // HOUR_S) % HOURS_PER_DAY
-    want = geo.fare(order[7], geo.night_hour(hour))
-    if not math.isclose(order[8], want, abs_tol=EXACT_TOLERANCE_EUR):
-        return [
-            viol("order-fare", where, f"fare={order[8]} EUR, expected {want} EUR for km={order[7]}")
-        ]
+    hour = (start_hour + order[F_T] // HOUR_S) % HOURS_PER_DAY
+    km, fare = order[F_KM], order[F_FARE]
+    want = geo.fare(km, geo.night_hour(hour))
+    if not math.isclose(fare, want, abs_tol=EXACT_TOLERANCE_EUR):
+        return [viol("order-fare", where, f"fare={fare} EUR, expected {want} EUR for km={km}")]
     return []
 
 
@@ -469,7 +478,7 @@ def check_ranking_order(shift: dict[str, Any]) -> list[str]:
         )
     if not all(is_num(v) for v in ranking) or not all(is_int(v) for v in taxis):
         return out + [viol("ranking", where, "ranking must be numbers and taxis integers")]
-    cents = [round(v * 100) for v in ranking]
+    cents = [round(v * CENTS_PER_EUR) for v in ranking]
     for i in range(1, min(len(cents), len(taxis))):
         if cents[i] > cents[i - 1] or (cents[i] == cents[i - 1] and taxis[i] <= taxis[i - 1]):
             out.append(viol("ranking", where, f"position {i} breaks 'total desc, ties by TAXI_ID'"))
@@ -489,15 +498,15 @@ def check_ranking_totals(shift: dict[str, Any]) -> list[str]:
     where = f"shift {shift.get('id')}"
     sums: Counter[int] = Counter()
     for order in shift["orders"]:
-        sums[order[11]] += round(order[8] * 100)
+        sums[order[F_TAXI]] += round(order[F_FARE] * CENTS_PER_EUR)
     out = [
         viol(
             "ranking-total",
             where,
-            f"taxi index {i}: ranking {value} EUR, orders sum {sums[i] / 100} EUR",
+            f"taxi index {i}: ranking {value} EUR, orders sum {sums[i] / CENTS_PER_EUR} EUR",
         )
         for i, value in enumerate(shift["ranking"])
-        if sums[i] != round(value * 100)
+        if sums[i] != round(value * CENTS_PER_EUR)
     ]
     extra = sorted(set(sums) - set(range(len(shift["ranking"]))))
     if extra:
@@ -531,7 +540,7 @@ def check_ghost(shift: dict[str, Any]) -> list[str]:
                 "ghost", where, f"total={ghost['total']} EUR, ranking[0]={shift['ranking'][0]} EUR"
             )
         )
-    mine = [i for i, o in enumerate(shift["orders"]) if o[11] == 0]
+    mine = [i for i, o in enumerate(shift["orders"]) if o[F_TAXI] == 0]
     if ghost["orders"] != mine:
         out.append(viol("ghost", where, "orders must be the ascending indices of taxi 0's orders"))
     return out
@@ -748,7 +757,7 @@ def check_roads_edges(edges: Sequence[Any], node_count: int) -> list[str]:
     out: list[str] = []
     for i, edge in enumerate(edges):
         where = f"edge {i}"
-        if not (isinstance(edge, list) and len(edge) == 3 and isinstance(edge[2], list)):
+        if not (isinstance(edge, list) and len(edge) == EDGE_LEN and isinstance(edge[2], list)):
             out.append(viol("roads-edge", where, "must be [a, b, [x, y, ...]]"))
             continue
         a, b, inner = edge
@@ -760,7 +769,7 @@ def check_roads_edges(edges: Sequence[Any], node_count: int) -> list[str]:
             not in_bounds(x, y, bounds) for x, y in zip(inner[0::2], inner[1::2], strict=True)
         ):
             out.append(viol("roads-bounds", where, "interior point outside the map"))
-    keys = [(e[0], e[1]) for e in edges if isinstance(e, list) and len(e) == 3]
+    keys = [(e[0], e[1]) for e in edges if isinstance(e, list) and len(e) == EDGE_LEN]
     if keys != sorted(keys):
         out.append(viol("roads-sorted", "edges", "must be sorted by (a, b)"))
     return out
@@ -779,7 +788,14 @@ def count_components(node_count: int, edges: Sequence[Sequence[Any]]) -> int:
     parent = list(range(node_count))
 
     def find(i: int) -> int:
-        """Return the root of node ``i`` with path halving."""
+        """Find the root of a node with path halving.
+
+        Args:
+            i: Node index.
+
+        Returns:
+            Index of the root of the component that contains node ``i``.
+        """
         while parent[i] != i:
             parent[i] = parent[parent[i]]
             i = parent[i]
