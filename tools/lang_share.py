@@ -32,7 +32,9 @@ LANGUAGE_ORDER = (PYTHON, "JavaScript", "CSS", "HTML")
 EXCLUDED_DIRS = frozenset({"data"})
 EXCLUDING_ATTRS = ("linguist-generated", "linguist-vendored", "linguist-documentation")
 ATTR_ON = frozenset({"set", "true"})
-SUBMODULE_MODE = "160000"
+SUBMODULE_MODE = "160000"  # git file mode of a submodule entry
+ATTR_FIELDS = 3  # check-attr prints path, attribute, value
+PERCENT = 100.0
 
 
 def run_git(root: Path, args: list[str], stdin: bytes | None = None) -> bytes:
@@ -142,8 +144,8 @@ def parse_check_attr(raw: bytes) -> dict[str, set[str]]:
     """
     items = parse_nul_list(raw)
     on: dict[str, set[str]] = {}
-    for i in range(0, len(items) - 2, 3):
-        path, attr, value = items[i : i + 3]
+    for i in range(0, len(items) - ATTR_FIELDS + 1, ATTR_FIELDS):
+        path, attr, value = items[i : i + ATTR_FIELDS]
         on.setdefault(path, set())
         if value in ATTR_ON:
             on[path].add(attr)
@@ -217,7 +219,7 @@ def python_percent(totals: Mapping[str, int]) -> float:
         Percentage 0..100; 0.0 if there are no counted bytes.
     """
     whole = sum(totals.values())
-    return 100.0 * totals.get(PYTHON, 0) / whole if whole else 0.0
+    return PERCENT * totals.get(PYTHON, 0) / whole if whole else 0.0
 
 
 def format_table(totals: Mapping[str, int]) -> str:
@@ -232,7 +234,7 @@ def format_table(totals: Mapping[str, int]) -> str:
     whole = sum(totals.values())
     rows = [f"{'language':<12}{'bytes':>10}{'share':>9}"]
     for lang in LANGUAGE_ORDER:
-        share = 100.0 * totals.get(lang, 0) / whole if whole else 0.0
+        share = PERCENT * totals.get(lang, 0) / whole if whole else 0.0
         rows.append(f"{lang:<12}{totals.get(lang, 0):>10}{share:>8.2f}%")
     rows.append(f"{'total':<12}{whole:>10}")
     rows.append(f"Python share: {python_percent(totals):.2f}%")

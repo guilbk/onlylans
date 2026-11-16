@@ -251,12 +251,28 @@ def render_png(trips: list[NDArray[np.float64]], m_per_px: float) -> bytes:
 
 
 def fits_budget(size_bytes: int, budget: int = MAX_BYTES) -> bool:
-    """Return True if a PNG of ``size_bytes`` is within the size budget."""
+    """Tell whether a PNG is within the size budget.
+
+    Args:
+        size_bytes: PNG size, bytes.
+        budget: Largest allowed size, bytes.
+
+    Returns:
+        True if ``size_bytes`` is at most ``budget``.
+    """
     return size_bytes <= budget
 
 
 def next_m_per_px(m_per_px: float, limit: float = MAX_M_PER_PX) -> float | None:
-    """Return the next coarser resolution to try, or None if ``limit`` would be exceeded."""
+    """Pick the next coarser resolution to try.
+
+    Args:
+        m_per_px: Current pixel size, metres.
+        limit: Coarsest pixel size allowed, metres.
+
+    Returns:
+        ``m_per_px + M_PER_PX_STEP`` in metres, or None if that would exceed ``limit``.
+    """
     nxt = m_per_px + M_PER_PX_STEP
     return nxt if nxt <= limit else None
 
@@ -289,7 +305,14 @@ def build_within_budget(
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
-    """Parse the command line (``None`` means ``sys.argv[1:]``)."""
+    """Parse the command line.
+
+    Args:
+        argv: Arguments (``None`` means ``sys.argv[1:]``).
+
+    Returns:
+        Namespace with ``week`` and ``out`` paths and ``m_per_px`` (metres per pixel).
+    """
     ap = argparse.ArgumentParser(prog="pipeline.streets", description=__doc__)
     ap.add_argument("--week", type=Path, default=DEFAULT_WEEK, help="week CSV")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output PNG")
@@ -301,6 +324,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     """Build ``game/streets.png`` from the week CSV.
+
+    Args:
+        argv: Arguments (default ``sys.argv[1:]``).
 
     Returns:
         0 on success, 1 if the week file is missing, the pixel size is not positive or the

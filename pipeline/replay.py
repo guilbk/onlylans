@@ -88,6 +88,20 @@ HUD_MARGIN = 8.0
 HUD_PAD = 5.0
 GLYPH_PX = 3  # glyph cell size at BASE_SIZE, pixels
 GLYPH_GAP = 1  # blank columns between glyphs, in glyph cells
+GLYPH_ROWS = 7  # height of a glyph, in glyph cells
+PIN_HALF_W = 0.75  # half width of the pin's tail, in pin radii
+PIN_TAIL_H = 0.8  # height of the pin's tail above the tip, in pin radii
+PIN_HEAD_LIFT = 1.6  # distance of the pin's head centre above the tip, in pin radii
+PIN_HOLE = 0.35  # radius of the pin's hole, in pin radii
+FLAG_POLE_W = 1.5  # flag pole width at BASE_SIZE, pixels
+FLAG_CLOTH_W = 0.6  # flag cloth width, in flag heights
+FLAG_CLOTH_TOP = 0.75  # height of the cloth's upper corner, in flag heights
+FLAG_CLOTH_MID = 0.5  # height of the cloth's inner corner, in flag heights
+HALO_MIX = 0.7  # share of the background mixed into the halo of the ghost's head
+MINUTES_PER_HOUR = 60
+HOURS_PER_DAY = 24
+ALPHA_MAX = 255  # largest 8-bit value
+ALPHA_LEVELS = 256  # number of 8-bit alpha values
 
 Point = tuple[float, float]
 Order = Sequence[Any]
@@ -168,8 +182,10 @@ def clock_text(start_local: str, t_s: float) -> str:
         Hours and minutes; the clock wraps at midnight.
     """
     hh, mm = (int(p) for p in start_local.split(" ")[1].split(":"))
-    total = (hh * 60 + mm + int(t_s // 60)) % (24 * 60)
-    return f"{total // 60:02d}:{total % 60:02d}"
+    total = (hh * MINUTES_PER_HOUR + mm + int(t_s // MINUTES_PER_HOUR)) % (
+        HOURS_PER_DAY * MINUTES_PER_HOUR
+    )
+    return f"{total // MINUTES_PER_HOUR:02d}:{total % MINUTES_PER_HOUR:02d}"
 
 
 def replay_end_s(orders: Sequence[Order]) -> float:
@@ -232,7 +248,14 @@ def money_timeline(orders: Sequence[Order]) -> list[tuple[float, float]]:
 
 
 def money_text(value: float) -> str:
-    """Format money for the picture, for example ``€12.56``."""
+    """Format money for the picture, for example ``€12.56``.
+
+    Args:
+        value: Amount in euro.
+
+    Returns:
+        ``€`` and the amount with two decimals.
+    """
     return f"€{value:.2f}"
 
 
@@ -296,12 +319,30 @@ def build_timeline(orders: Sequence[Order], unit_m: float, end_s: float) -> list
 
 
 def _lerp(a: Point, b: Point, f: float) -> Point:
-    """Return the point a fraction ``f`` (0..1) of the way from ``a`` to ``b``."""
+    """Interpolate linearly between two points.
+
+    Args:
+        a: Start point, metres.
+        b: End point, metres.
+        f: Fraction of the way, 0..1.
+
+    Returns:
+        The point ``f`` of the way from ``a`` to ``b``, metres.
+    """
     return (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
 
 
 def _leg_index(leg: Leg, t_s: float) -> tuple[int, float]:
-    """Return the polyline segment index and fraction of ``leg`` at ``t_s`` (clamped)."""
+    """Locate a time on a leg's polyline.
+
+    Args:
+        leg: One leg.
+        t_s: Shift seconds (clamped to the leg).
+
+    Returns:
+        ``(segment index, fraction 0..1 within that segment)``; ``(0, 0.0)`` for a leg that
+        has fewer than two points or lasts no time.
+    """
     n = len(leg.pts)
     if n < 2 or leg.t1 <= leg.t0:
         return 0, 0.0
@@ -385,7 +426,16 @@ def to_px(view: View, size: float, x_m: float, y_m: float) -> Point:
 
 
 def mix(a: tuple[int, int, int], b: tuple[int, int, int], share: float) -> tuple[int, int, int]:
-    """Return colour ``a`` blended with ``b``; ``share`` is the weight of ``b`` (0..1)."""
+    """Blend two colours.
+
+    Args:
+        a: First RGB colour, 0..255 per channel.
+        b: Second RGB colour.
+        share: Weight of ``b``, 0..1.
+
+    Returns:
+        The blended RGB colour, rounded to integers.
+    """
     return (
         round(a[0] + (b[0] - a[0]) * share),
         round(a[1] + (b[1] - a[1]) * share),
@@ -397,7 +447,15 @@ def mix(a: tuple[int, int, int], b: tuple[int, int, int], share: float) -> tuple
 
 
 def fits_budget(size_bytes: int, budget: int = GIF_MAX_BYTES) -> bool:
-    """Return True if a file of ``size_bytes`` is within the budget."""
+    """Tell whether a file is within the size budget.
+
+    Args:
+        size_bytes: File size, bytes.
+        budget: Largest allowed size, bytes.
+
+    Returns:
+        True if ``size_bytes`` is at most ``budget``.
+    """
     return size_bytes <= budget
 
 
@@ -446,12 +504,27 @@ def build_within_budget(
 
 
 def glyph_width(ch: str) -> int:
-    """Return the width of a glyph in cells."""
+    """Measure a glyph.
+
+    Args:
+        ch: A character that is a key of ``GLYPHS``.
+
+    Returns:
+        Width in glyph cells.
+    """
     return len(GLYPHS[ch][0])
 
 
 def text_width(text: str, cell: int) -> int:
-    """Return the width in pixels of ``text`` drawn with glyph cells of ``cell`` pixels."""
+    """Measure a text.
+
+    Args:
+        text: Characters from ``GLYPHS``.
+        cell: Pixels per glyph cell.
+
+    Returns:
+        Width in pixels, gaps between glyphs included.
+    """
     cells = sum(glyph_width(c) + GLYPH_GAP for c in text) - GLYPH_GAP
     return cells * cell
 
@@ -482,8 +555,18 @@ def draw_text(
 
 
 def alpha_mask(alpha: Image.Image) -> Image.Image:
-    """Turn the alpha of ``streets.png`` into the glow mask (0..255 weight of ``STREET``)."""
-    table = [min(255, round(a / GLOW_ALPHA_REF * GLOW_PEAK * 255)) for a in range(256)]
+    """Turn the alpha of ``streets.png`` into the glow mask.
+
+    Args:
+        alpha: 8-bit alpha picture, 0..255.
+
+    Returns:
+        8-bit picture whose value is the weight of ``STREET`` (0..255).
+    """
+    table = [
+        min(ALPHA_MAX, round(a / GLOW_ALPHA_REF * GLOW_PEAK * ALPHA_MAX))
+        for a in range(ALPHA_LEVELS)
+    ]
     return alpha.point(table)
 
 
@@ -520,23 +603,107 @@ def draw_backdrop(view: View, side: int, backdrop: Backdrop) -> Image.Image:
 
 
 def _pin(draw: ImageDraw.ImageDraw, p: Point, u: float, rgb: tuple[int, int, int]) -> None:
-    """Draw a pickup pin whose tip is at ``p``; ``u`` is the pixel scale."""
+    """Draw a pickup pin.
+
+    Args:
+        draw: Target drawing context.
+        p: Pixel of the pin's tip.
+        u: Pixel scale (picture side over ``BASE_SIZE``).
+        rgb: Pin colour.
+    """
     x, y = p
     r = PIN_R * u
-    draw.polygon([(x - 0.75 * r, y - 0.8 * r), (x + 0.75 * r, y - 0.8 * r), (x, y)], fill=rgb)
-    draw.ellipse((x - r, y - 1.6 * r - r, x + r, y - 1.6 * r + r), fill=rgb)
-    draw.ellipse(
-        (x - 0.35 * r, y - 1.6 * r - 0.35 * r, x + 0.35 * r, y - 1.6 * r + 0.35 * r),
-        fill=BACKGROUND,
-    )
+    tail_w, tail_h, lift, hole = PIN_HALF_W * r, PIN_TAIL_H * r, PIN_HEAD_LIFT * r, PIN_HOLE * r
+    draw.polygon([(x - tail_w, y - tail_h), (x + tail_w, y - tail_h), (x, y)], fill=rgb)
+    draw.ellipse((x - r, y - lift - r, x + r, y - lift + r), fill=rgb)
+    draw.ellipse((x - hole, y - lift - hole, x + hole, y - lift + hole), fill=BACKGROUND)
 
 
 def _flag(draw: ImageDraw.ImageDraw, p: Point, u: float, rgb: tuple[int, int, int]) -> None:
-    """Draw a drop-off flag whose pole foot is at ``p``; ``u`` is the pixel scale."""
+    """Draw a drop-off flag.
+
+    Args:
+        draw: Target drawing context.
+        p: Pixel of the pole's foot.
+        u: Pixel scale (picture side over ``BASE_SIZE``).
+        rgb: Cloth colour.
+    """
     x, y = p
     h = FLAG_H * u
-    draw.line([(x, y), (x, y - h)], fill=TEXT, width=max(1, round(1.5 * u)))
-    draw.polygon([(x, y - h), (x + 0.6 * h, y - 0.75 * h), (x, y - 0.5 * h)], fill=rgb)
+    draw.line([(x, y), (x, y - h)], fill=TEXT, width=max(1, round(FLAG_POLE_W * u)))
+    cloth = [
+        (x, y - h),
+        (x + FLAG_CLOTH_W * h, y - FLAG_CLOTH_TOP * h),
+        (x, y - FLAG_CLOTH_MID * h),
+    ]
+    draw.polygon(cloth, fill=rgb)
+
+
+def scene_px(scene: Scene, side: int, p: Point) -> Point:
+    """Convert a map point to a pixel of the scene picture.
+
+    Args:
+        scene: Shift data and view.
+        side: Picture side, pixels.
+        p: Map-frame point, metres.
+
+    Returns:
+        ``(px, py)`` in pixels.
+    """
+    return to_px(scene.view, side, p[0], p[1])
+
+
+def draw_trails(draw: ImageDraw.ImageDraw, scene: Scene, side: int, t_s: float) -> None:
+    """Draw the travelled part of every ride (trail) and glide (thin dim line).
+
+    Args:
+        draw: Target drawing context.
+        scene: Shift data and view.
+        side: Picture side, pixels.
+        t_s: Shift seconds.
+    """
+    u = side / BASE_SIZE
+    for leg in scene.legs:
+        pts = [scene_px(scene, side, p) for p in leg_points_until(leg, t_s)]
+        if leg.kind == "ride" and len(pts) > 1:
+            draw.line(
+                pts, fill=mix(GHOST, BACKGROUND, TRAIL_MIX), width=round(TRAIL_W * u), joint="curve"
+            )
+        elif leg.kind == "glide" and len(pts) > 1:
+            draw.line(pts, fill=mix(GHOST, BACKGROUND, DEADHEAD_MIX), width=max(1, round(u)))
+
+
+def draw_orders(draw: ImageDraw.ImageDraw, scene: Scene, side: int, t_s: float) -> None:
+    """Draw a flag at every drop-off and a pin at every pickup; used ones are dimmed.
+
+    Args:
+        draw: Target drawing context.
+        scene: Shift data and view.
+        side: Picture side, pixels.
+        t_s: Shift seconds.
+    """
+    u = side / BASE_SIZE
+    for o in scene.orders:
+        rgb = CALL_RGB.get(o[I_CALL], MUTED)
+        pts = ride_points_m(o, scene.unit_m)
+        taken = o[I_T] <= t_s
+        _flag(draw, scene_px(scene, side, pts[-1]), u, rgb if taken else mix(rgb, BACKGROUND, DIM))
+        _pin(draw, scene_px(scene, side, pts[0]), u, mix(rgb, BACKGROUND, DIM) if taken else rgb)
+
+
+def draw_ghost(draw: ImageDraw.ImageDraw, scene: Scene, side: int, t_s: float) -> None:
+    """Draw the ghost's head with its halo at its position.
+
+    Args:
+        draw: Target drawing context.
+        scene: Shift data and view.
+        side: Picture side, pixels.
+        t_s: Shift seconds.
+    """
+    u = side / BASE_SIZE
+    hx, hy = scene_px(scene, side, position_at(scene.legs, t_s))
+    for r, rgb in ((HALO_R, mix(GHOST, BACKGROUND, HALO_MIX)), (HEAD_R, GHOST)):
+        draw.ellipse((hx - r * u, hy - r * u, hx + r * u, hy + r * u), fill=rgb)
 
 
 def draw_scene(scene: Scene, base: Image.Image, side: int, t_s: float) -> Image.Image:
@@ -553,29 +720,9 @@ def draw_scene(scene: Scene, base: Image.Image, side: int, t_s: float) -> Image.
     """
     img = base.copy()
     draw = ImageDraw.Draw(img)
-    u = side / BASE_SIZE
-
-    def px(p: Point) -> Point:
-        """Return the pixel of a map point."""
-        return to_px(scene.view, side, p[0], p[1])
-
-    for leg in scene.legs:
-        pts = [px(p) for p in leg_points_until(leg, t_s)]
-        if leg.kind == "ride" and len(pts) > 1:
-            draw.line(
-                pts, fill=mix(GHOST, BACKGROUND, TRAIL_MIX), width=round(TRAIL_W * u), joint="curve"
-            )
-        elif leg.kind == "glide" and len(pts) > 1:
-            draw.line(pts, fill=mix(GHOST, BACKGROUND, DEADHEAD_MIX), width=max(1, round(u)))
-    for o in scene.orders:
-        rgb = CALL_RGB.get(o[I_CALL], MUTED)
-        pts = ride_points_m(o, scene.unit_m)
-        taken = o[I_T] <= t_s
-        _flag(draw, px(pts[-1]), u, rgb if taken else mix(rgb, BACKGROUND, DIM))
-        _pin(draw, px(pts[0]), u, mix(rgb, BACKGROUND, DIM) if taken else rgb)
-    hx, hy = px(position_at(scene.legs, t_s))
-    for r, rgb in ((HALO_R, mix(GHOST, BACKGROUND, 0.7)), (HEAD_R, GHOST)):
-        draw.ellipse((hx - r * u, hy - r * u, hx + r * u, hy + r * u), fill=rgb)
+    draw_trails(draw, scene, side, t_s)
+    draw_orders(draw, scene, side, t_s)
+    draw_ghost(draw, scene, side, t_s)
     return img
 
 
@@ -591,7 +738,7 @@ def draw_hud(img: Image.Image, scene: Scene, t_s: float) -> None:
     cell = max(1, round(GLYPH_PX * side / BASE_SIZE))
     pad, margin = round(HUD_PAD * cell), round(HUD_MARGIN * cell)
     draw = ImageDraw.Draw(img)
-    height = 7 * cell
+    height = GLYPH_ROWS * cell
     for text, rgb, right in (
         (clock_text(scene.start_local, t_s), TEXT, False),
         (money_text(money_at(scene.orders, t_s)), GHOST, True),
@@ -623,7 +770,17 @@ def render_frame(scene: Scene, backdrop: Backdrop, size: int, t_s: float) -> Ima
 
 
 def finish_frame(scene: Scene, big: Image.Image, size: int, t_s: float) -> Image.Image:
-    """Reduce a supersampled scene picture to ``size`` and add the HUD."""
+    """Reduce a supersampled scene picture to its final size and add the HUD.
+
+    Args:
+        scene: Shift data.
+        big: Supersampled scene picture (``size * SUPERSAMPLE`` pixels a side).
+        size: Final side, pixels.
+        t_s: Shift seconds.
+
+    Returns:
+        RGB picture ``size`` x ``size``.
+    """
     img = big.resize((size, size), Image.Resampling.LANCZOS)
     draw_hud(img, scene, t_s)
     return img
@@ -690,7 +847,15 @@ def encode_gif(frames: Sequence[Image.Image]) -> bytes:
 
 
 def encode_png(img: Image.Image) -> bytes:
-    """Encode a picture as an optimised palette PNG (``STILL_COLORS`` colours, no dithering)."""
+    """Encode a picture as an optimised palette PNG.
+
+    Args:
+        img: RGB picture.
+
+    Returns:
+        PNG bytes with ``STILL_COLORS`` colours and no dithering; the same picture always gives
+        the same bytes.
+    """
     buf = io.BytesIO()
     img.quantize(STILL_COLORS, Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(
         buf, format="PNG", optimize=True
@@ -702,12 +867,27 @@ def encode_png(img: Image.Image) -> bytes:
 
 
 def find_shift(data: dict[str, Any], shift_id: str) -> dict[str, Any] | None:
-    """Return the shift object with ``id == shift_id``, or None."""
+    """Look a shift up by id.
+
+    Args:
+        data: Parsed ``game_data.json``.
+        shift_id: Shift id such as ``mon-am``.
+
+    Returns:
+        The shift object, or None if there is no such id.
+    """
     return next((s for s in data["shifts"] if s["id"] == shift_id), None)
 
 
 def ghost_orders(shift: dict[str, Any]) -> list[Order]:
-    """Return the ghost's order arrays of a shift, by pickup time."""
+    """List the ghost's orders of a shift.
+
+    Args:
+        shift: Shift object (section 4).
+
+    Returns:
+        The order arrays named by ``ghost.orders``, in that (ascending index) order.
+    """
     return [shift["orders"][i] for i in shift["ghost"]["orders"]]
 
 
@@ -737,7 +917,14 @@ def make_scene(shift: dict[str, Any], unit_m: float) -> Scene | None:
 
 
 def load_roads(path: Path) -> list[list[Point]]:
-    """Read ``roads.json`` (section 5) as polylines in metres."""
+    """Read ``roads.json`` (section 5) as polylines.
+
+    Args:
+        path: Path of ``roads.json``.
+
+    Returns:
+        One polyline of ``(x, y)`` map-frame points in metres per edge.
+    """
     data = json.loads(path.read_text(encoding="utf-8"))
     unit = float(data["unit_m"])
     nodes = data["nodes"]
@@ -749,7 +936,16 @@ def load_roads(path: Path) -> list[list[Point]]:
 
 
 def load_backdrop(streets: Path, roads: Path) -> Backdrop:
-    """Load the street layer: ``streets`` if the file exists, else ``roads``, else nothing."""
+    """Load the street layer.
+
+    Args:
+        streets: Path of ``streets.png``.
+        roads: Path of ``roads.json``, used when ``streets`` is missing.
+
+    Returns:
+        The alpha of ``streets`` if that file exists, else the lines of ``roads`` if that file
+        exists, else an empty backdrop.
+    """
     if streets.is_file():
         with Image.open(streets) as im:
             return Backdrop(im.convert("RGBA").getchannel("A"), [])
@@ -780,7 +976,15 @@ def render_shift(
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
-    """Parse the command line (``None`` means ``sys.argv[1:]``)."""
+    """Parse the command line.
+
+    Args:
+        argv: Arguments (``None`` means ``sys.argv[1:]``).
+
+    Returns:
+        Namespace with the paths, ``shift`` (comma separated ids), ``frames`` and ``size``
+        (pixels).
+    """
     ap = argparse.ArgumentParser(prog="pipeline.replay", description=__doc__)
     ap.add_argument("--data", type=Path, default=DEFAULT_DATA, help="game_data.json")
     ap.add_argument("--roads", type=Path, default=DEFAULT_ROADS, help="roads.json (fallback)")
@@ -794,6 +998,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     """Write ``replay-<shift>.gif`` and ``replay-<shift>.png`` for each requested shift.
+
+    Args:
+        argv: Arguments (default ``sys.argv[1:]``).
 
     Returns:
         0 on success, 1 for a missing data file, an unknown shift, a ghost without orders,
