@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Audio demo</title>
+<style>
+  body { background: #070b14; color: #e8eefc; font: 14px system-ui, sans-serif; margin: 16px; }
+  button { margin: 3px; padding: 8px 12px; background: #0e1424; color: #e8eefc; border: 1px solid #335; border-radius: 8px; cursor: pointer; }
+  button:hover { border-color: #5aa9ff; }
+  h3 { color: #8a96b3; margin: 16px 0 4px; }
+  pre { background: #0e1424; padding: 8px; max-height: 320px; overflow: auto; }
+  label { display: inline-block; margin-right: 16px; }
+</style></head><body>
+<h2>7 ланосів: audio demo</h2>
+<h3>Sounds</h3><div id="sfx"></div>
+<h3>Special</h3><div id="sp"></div>
+<h3>Music</h3><div id="mus"></div>
+<label>intensity <input id="int" type="range" min="0" max="1" step="0.05" value="0.2"></label>
+<label>engine <input id="eng" type="range" min="0" max="1" step="0.05" value="0"></label>
+<h3>Volume</h3>
+<label>master <input data-v="master" type="range" min="0" max="1" step="0.05" value="0.8"></label>
+<label>music <input data-v="music" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+<label>sfx <input data-v="sfx" type="range" min="0" max="1" step="0.05" value="0.9"></label>
+<button id="mute">mute</button>
+<h3>Levels (offline render; reload the page after measuring)</h3>
+<button id="lv">measure all sounds</button><pre id="out"></pre>
+<div id="hud-extra"></div>
+<script src="../game/src/js/00_core.js" onerror="void 0"></script>
+<script src="../game/src/js/30_audio.js"></script>
+<script>
+(function () {
+  const A = window.PG.audio, $ = (id) => document.getElementById(id);
+  function btn(parent, text, fn) {
+    const b = document.createElement('button'); b.textContent = text;
+    b.onclick = () => { A.unlock(); fn(); }; $(parent).appendChild(b);
+  }
+  A.names.forEach((n) => { if (n !== 'combo' && n !== 'medal') btn('sfx', n, () => A.play(n)); });
+  [1, 2, 4, 8].forEach((n) => btn('sp', 'combo n=' + n, () => A.play('combo', { n })));
+  [0, 1, 2, 3, 4].forEach((level) => btn('sp', 'medal ' + level, () => A.play('medal', { level })));
+  btn('sp', 'spam 12 clicks (voice limit)', () => { for (let i = 0; i < 12; i++) A.play('pickup', { delay: i * 0.02 }); });
+  ['menu', 'day', 'night'].forEach((m) => btn('mus', m, () => A.music.start(m)));
+  btn('mus', 'stop', () => A.music.stop());
+  btn('mus', 'duck on', () => A.music.duck(true));
+  btn('mus', 'duck off', () => A.music.duck(false));
+  $('int').oninput = (e) => A.music.setIntensity(+e.target.value);
+  $('eng').oninput = (e) => { A.unlock(); A.engine.set(+e.target.value); };
+  document.querySelectorAll('[data-v]').forEach((el) => {
+    el.oninput = () => A.setVolume({ [el.dataset.v]: +el.value });
+  });
+  $('mute').onclick = () => { A.unlock(); A.setMuted(!A.getSettings().muted); };
+
+  $('lv').onclick = async () => {
+    const out = [], db = (x) => (20 * Math.log10(x || 1e-9)).toFixed(1);
+    const live = A.getSettings();
+    for (const n of A.names) {
+      const oc = new OfflineAudioContext(1, 44100 * 3, 44100);
+      A._attach(oc);
+      A.setMuted(false);
+      A.play(n, { n: 3, level: 3 });
+      const buf = await oc.startRendering();
+      const d = buf.getChannelData(0); let pk = 0, ss = 0;
+      for (let i = 0; i < d.length; i++) { pk = Math.max(pk, Math.abs(d[i])); ss += d[i] * d[i]; }
+      out.push(n.padEnd(14) + 'peak ' + db(pk).padStart(6) + '   rms(active) ' + db(Math.sqrt(ss / d.length)));
+    }
+    $('out').textContent = out.join('\n');
+    A.setMuted(live.muted);
+  };
+  A.init();
+})();
+</script></body></html>
