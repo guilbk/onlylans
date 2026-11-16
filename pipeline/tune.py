@@ -217,6 +217,8 @@ def evaluate(
 def _rival_eur(c: Candidate) -> float:
     """Mean rival euros over the played difficulties (stronger rivals make a better race)."""
     sums = list(c.summaries.values())
+    if not sums:
+        return 0.0
     return sum(sum(sm.rival_eur) / len(sm.rival_eur) for sm in sums) / len(sums)
 
 

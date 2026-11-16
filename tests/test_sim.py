@@ -9,6 +9,8 @@ import pytest
 
 from pipeline import sim
 
+LONG = sim.Settings(lead=(720.0, 540.0, 420.0))  # pins show early: the tests set up long waits
+
 
 def make_order(
     i: int, t: float, x0: float = 9110.0, y0: float = 12443.0, **kw: object
@@ -337,7 +339,7 @@ def test_ride_pos_interpolates_and_clamps() -> None:
 
 def test_eta_visible_and_feasibility() -> None:
     o = make_order(0, 600.0, x0=9110.0 + 1000.0, c=2)
-    g = sim.new_game(make_shift([o]), "normal", sim.Settings())
+    g = sim.new_game(make_shift([o]), "normal", LONG)
     assert sim.eta_from(g, g.x, g.y, 0.0, o) == pytest.approx(1.0 / 30 * 3600 + 30)
     assert not sim.visible(g, o)  # lead 420: the pin appears at t = 180
     g.t = 200.0
@@ -351,7 +353,7 @@ def test_eta_visible_and_feasibility() -> None:
 
 def test_start_pickup_ride_and_tip() -> None:
     o = make_order(0, 600.0)
-    g = sim.new_game(make_shift([o]), "easy", sim.Settings())
+    g = sim.new_game(make_shift([o]), "easy", LONG)
     g.t = 100.0
     assert sim.start_pickup(g, o) and g.mode == "pickup" and g.claim[0].by == "player"
     for _ in range(200):
@@ -362,15 +364,15 @@ def test_start_pickup_ride_and_tip() -> None:
 
 
 def test_book_next_and_cruise_to() -> None:
-    a, b = make_order(0, 300.0), make_order(1, 900.0)
-    g = sim.new_game(make_shift([a, b]), "easy", sim.Settings())
+    a, b = make_order(0, 300.0), make_order(1, 800.0)
+    g = sim.new_game(make_shift([a, b]), "easy", LONG)
     g.t = 100.0
     assert not sim.book_next(g, b)
     assert sim.start_pickup(g, a)
     g.t = g.lt1
     sim.process_due(g)
     assert g.mode == "ride" and sim.book_next(g, b) and g.nxt is b
-    g2 = sim.new_game(make_shift([a]), "easy", sim.Settings())
+    g2 = sim.new_game(make_shift([a]), "easy", LONG)
     assert sim.cruise_to(g2, 20000.0, -5.0) and (g2.lx1, g2.ly1) == (sim.MAP_W_M, 0.0)
     assert not sim.cruise_to(g2, g2.x, g2.y) or g2.mode == "idle"
 
