@@ -1,0 +1,183 @@
+"""Browser smoke test of the built game (CONTRACT section 6): menu, one shift, one order, result."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+from typing import Any
+
+EXIT_OK = 0
+EXIT_FAIL = 1
+EXIT_USAGE = 2
+INSTALL_HINT = "run: python -m playwright install chromium"
+SHOT_DIR = Path("test-screenshots")
+TIMEOUT_MS = 5000
+PIN_STEPS = 40
+MONEY_STEPS = 30
+OVER_STEPS = 40
+
+
+class SmokeError(Exception):
+    """A smoke assertion failed."""
+
+
+def check(cond: object, msg: str) -> None:
+    """Hard assert.
+
+    Args:
+        cond: Condition that must be truthy.
+        msg: Message used when it is not.
+
+    Raises:
+        SmokeError: If ``cond`` is falsy.
+    """
+    if not cond:
+        raise SmokeError(msg)
+
+
+def find_pin(page: Any) -> dict[str, float] | None:
+    """Return the first reachable pin (CSS px relative to ``#map``), stepping time if needed.
+
+    Args:
+        page: Playwright page.
+
+    Returns:
+        ``{px, py}`` or None if no reachable pin appeared.
+    """
+    js = (
+        "() => { const p = window.__porto.PG.render.pins || [];"
+        " for (const q of p) if (q.reach) return {px: q.px, py: q.py}; return null; }"
+    )
+    for i in range(PIN_STEPS + 1):
+        page.wait_for_timeout(100)
+        pin = page.evaluate(js)
+        if pin:
+            return pin
+        if i < PIN_STEPS:
+            page.evaluate("() => window.__porto.PG.engine.step(60)")
+    return None
+
+
+def run_steps(page: Any, tag: str, errors: list[str]) -> None:
+    """Run the smoke steps 2-7 on an opened page.
+
+    Args:
+        page: Playwright page with the game loaded.
+        tag: Screenshot name tag.
+        errors: Live list of collected console errors.
+
+    Raises:
+        SmokeError: On any failed step.
+    """
+    SHOT_DIR.mkdir(parents=True, exist_ok=True)
+    page.wait_for_function("() => !!window.__porto", timeout=TIMEOUT_MS)
+    page.wait_for_selector("#menu", state="visible", timeout=TIMEOUT_MS)
+    n_cards = page.locator('#shiftList [id^="shift-"]').count()
+    check(n_cards >= 1, "no shift cards in #shiftList")
+    page.screenshot(path=str(SHOT_DIR / f"smoke-{tag}-menu.png"))
+    check(not errors, "console errors on load: " + "; ".join(errors))
+
+    page.locator('[id^="shift-"]').first.click()
+    page.wait_for_function(
+        "() => { const P = window.__porto.PG; const G = P.engine && P.engine.G;"
+        " return P.screen === 'play' && !!G && !G.over; }",
+        timeout=TIMEOUT_MS,
+    )  # start shift
+
+    pin = find_pin(page)
+    check(pin, "no reachable pin appeared")
+    before = page.evaluate("() => window.__porto.PG.engine.G.tot")
+    box = page.locator("#map").bounding_box()
+    check(box, "#map has no box")
+    page.mouse.click(box["x"] + pin["px"], box["y"] + pin["py"])
+    mode = page.evaluate("() => window.__porto.PG.engine.G.mode")
+    check(mode in ("pickup", "ride"), f"mode after click is {mode!r}")
+
+    rose = False
+    for _ in range(MONEY_STEPS):
+        page.evaluate("() => window.__porto.PG.engine.step(10)")
+        if page.evaluate("() => window.__porto.PG.engine.G.tot") > before:
+            rose = True
+            break
+    check(rose, "money did not rise")
+    page.screenshot(path=str(SHOT_DIR / f"smoke-{tag}-play.png"))
+
+    for _ in range(OVER_STEPS):
+        if page.evaluate("() => window.__porto.PG.engine.G.over"):
+            break
+        page.evaluate("() => window.__porto.PG.engine.step(600)")
+    check(page.evaluate("() => window.__porto.PG.engine.G.over"), "shift did not end")
+    page.wait_for_selector("#result", state="visible", timeout=TIMEOUT_MS)
+    page.screenshot(path=str(SHOT_DIR / f"smoke-{tag}-result.png"))
+    check(not errors, "console errors: " + "; ".join(errors))
+
+
+def smoke(html: Path, tag: str, width: int, height: int, browser: str | None) -> int:
+    """Open the game in headless Chromium and run all steps.
+
+    Args:
+        html: Built game file.
+        tag: Screenshot name tag.
+        width: Viewport width in CSS px.
+        height: Viewport height in CSS px.
+        browser: Optional path of a Chromium executable.
+
+    Returns:
+        Process exit code.
+    """
+    try:
+        from playwright.sync_api import Error as PwError
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print(INSTALL_HINT, file=sys.stderr)
+        return EXIT_USAGE
+    errors: list[str] = []
+    with sync_playwright() as pw:
+        try:
+            kw = {"executable_path": browser} if browser else {}
+            br = pw.chromium.launch(headless=True, **kw)
+        except PwError as err:
+            print(f"{INSTALL_HINT}\n({str(err).splitlines()[0]})", file=sys.stderr)
+            return EXIT_USAGE
+        try:
+            page = br.new_page(viewport={"width": width, "height": height})
+            page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+            page.goto(html.resolve().as_uri())
+            run_steps(page, tag, errors)
+        except (SmokeError, PwError) as err:
+            print(f"SMOKE FAIL: {err}", file=sys.stderr)
+            if errors:
+                print("console errors: " + "; ".join(errors), file=sys.stderr)
+            return EXIT_FAIL
+        finally:
+            br.close()
+    print(f"SMOKE OK ({tag})")
+    return EXIT_OK
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Command line entry point.
+
+    Args:
+        argv: Arguments (default ``sys.argv[1:]``).
+
+    Returns:
+        0 pass, 1 failed assert, 2 usage or missing file/Playwright.
+    """
+    ap = argparse.ArgumentParser(description="Smoke test of the built game")
+    ap.add_argument("html", type=Path)
+    ap.add_argument("--tag", default="x")
+    ap.add_argument("--width", type=int, default=390)
+    ap.add_argument("--height", type=int, default=844)
+    ap.add_argument("--browser", default=None)
+    args = ap.parse_args(argv)
+    if not args.html.is_file():
+        print(f"file not found: {args.html}", file=sys.stderr)
+        return EXIT_USAGE
+    return smoke(args.html, args.tag, args.width, args.height, args.browser)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
