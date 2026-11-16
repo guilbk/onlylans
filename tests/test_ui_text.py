@@ -160,6 +160,12 @@ def test_latin_place_name_does_not_hide_neighbours() -> None:
     assert rules_of(ut.rule_latin(ui("Boavista trips"))) == ["latin"]
 
 
+def test_latin_allows_radio_station_names() -> None:
+    assert ut.rule_latin(ui("Smooth FM")) == []
+    assert ut.rule_latin(ui("Rádio Bossa")) == []
+    assert rules_of(ut.rule_latin(ui("Smooth radio"))) == ["latin", "latin"]
+
+
 def test_mixed_script_catches_lookalikes() -> None:
     assert rules_of(ut.rule_mixed_script(ui("Рiїн"))) == ["mixed-script"]  # Latin i
     assert ut.rule_mixed_script(ui("Зé Нуну")) == []

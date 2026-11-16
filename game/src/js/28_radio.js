@@ -114,7 +114,7 @@
         ctx.font = '11px system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = 'rgba(255,205,150,0.75)';
-        ctx.fillText(h.name, x, y + 4);
+        ctx.fillText(place(h), x, y + 4);
       }
     }
   }
