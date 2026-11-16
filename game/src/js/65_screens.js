@@ -2,7 +2,7 @@
   const PG = root.PG = root.PG || {};
 
   const NAMES = ['menu', 'about', 'play', 'result'];
-  const MEDAL_NAMES = ['без медалі', 'Бронза', 'Срібло', 'Золото', 'Легенда'];
+  const MEDAL_NAMES = ['Без медалі', 'Бронза', 'Срібло', 'Золото', 'Легенда'];
   const MEDAL_COLORS = ['#8a96b3', '#cd7f32', '#c0c8d8', '#ffd700', '#b48cff'];
   const RESULT_DELAY_MS = 700;
   const MEDAL_DELAY_MS = 700;
@@ -151,6 +151,8 @@
     about.addEventListener('click', function () { setScreen('about'); });
     m.appendChild(about);
 
+    m.appendChild(el('p', 'menu-note',
+      'Крапки на картці — складність самої зміни (1–5). Рівень суперників обирай вище.'));
     const list = el('div', 'shift-list');
     list.id = 'shiftList';
     const shifts = PG.data.shifts;
@@ -220,10 +222,10 @@
     a.textContent = '';
     a.appendChild(el('h1', 'about-title', 'Про дані'));
     a.appendChild(el('p', 'about-src',
-      'Джерело: UCI Machine Learning Repository, набір 339 «Taxi Service Trajectory» (ECML PKDD 2015), ' +
+      'Джерело: UCI, набір 339 «Taxi Service Trajectory» (ECML PKDD 2015), ' +
       'ліцензія CC BY 4.0. Один тиждень травня 2014 року, Порту.'));
     a.appendChild(listBlock('Це дані (з архіву, обчислено нашим кодом)', [
-      'поїздки: де й коли їх викликали', 'водії: скільки кожен заробив за зміну',
+      'поїздки: де й коли їх викликали', 'водії: скільки поїздок; € — за нашим тарифом',
       'маршрути: реальні треки поїздок', 'привид: найкращий водій зміни та його маршрут',
       'рейтинг, медіана та верхні 10 %', 'гарячі точки та хвилі попиту', 'граф доріг',
     ], 'about-data'));
@@ -248,8 +250,14 @@
   function raceTable(rows) {
     const box = el('div', 'res-race');
     box.appendChild(el('h2', null, 'Перегони 7 ланосів'));
+    const head = el('div', 'race-row race-head');
+    head.appendChild(el('i', 'race-dot'));
+    head.appendChild(el('span', 'race-name', 'Водій'));
+    head.appendChild(el('span', 'race-rides', 'поїздки'));
+    head.appendChild(el('span', 'race-total', '€ за зміну'));
+    box.appendChild(head);
     for (let i = 0; i < rows.length; i++) {
-      const row = el('div', 'race-row' + (rows[i].me ? ' me' : ''));
+      const row = el('div', 'race-row' + (rows[i].player ? ' me' : ''));
       const dot = el('i', 'race-dot');
       dot.style.background = rows[i].color;
       row.appendChild(dot);
@@ -274,11 +282,12 @@
     const title = el('h1', 'res-title', 'Ріїн Гіслінг заробив ' + U.eur(r.earned));
     title.id = 'res-earned';
     res.appendChild(title);
-    res.appendChild(el('div', 'res-rank', '#' + r.rank + ' з ' + r.nDrivers + ' справжніх водіїв'));
+    res.appendChild(el('div', 'res-rank', '#' + Math.min(r.rank, r.nDrivers) + ' з ' + r.nDrivers + ' ' +
+      U.plural(r.nDrivers, 'справжнього водія', 'справжніх водіїв', 'справжніх водіїв')));
     const medal = el('div', 'res-medal');
     medal.id = 'res-medal';
     res.appendChild(medal);
-    if (view.record) res.appendChild(el('div', 'res-record', 'Новий рекорд!'));
+    if (view.record && r.earned > 0) res.appendChild(el('div', 'res-record', 'Новий рекорд!'));
     else if (view.bestEarned > 0) res.appendChild(el('div', 'res-best', 'Найкраще: ' + U.eur(view.bestEarned)));
     if (view.unlockedNext && r.medal >= 1) res.appendChild(el('div', 'res-unlock', 'Відкрито наступну зміну'));
 

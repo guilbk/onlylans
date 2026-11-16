@@ -66,15 +66,18 @@ body:not([data-screen="play"]) #hud, body:not([data-screen="play"]) #dispatch { 
 .race-row.me { color: #3df5b0; font-weight: 700; }
 .race-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .race-name { flex: 1; min-width: 0; }
-.race-rides { color: #8a96b3; width: 28px; text-align: right; }
-.race-total { width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
-.res-buttons { display: flex; gap: 8px; }
+.race-rides { color: #8a96b3; width: 56px; text-align: right; }
+.race-head { color: #8a96b3; font-size: 11px; }
+.race-head .race-dot { background: none; }
+.menu-note { margin: 0; color: #8a96b3; font-size: 12px; }
+.race-total { width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
+.res-buttons { display: flex; gap: 8px; position: sticky; bottom: 0; padding: 8px 0; background: #070b14; }
 .res-buttons .btn-big { flex: 1; padding: 0 8px; font-size: 16px; }
 
 /* Difficulty, how to play, result extras, hints */
-.diff-choice { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.diff-label { color: #8a96b3; font-size: 14px; margin-right: 4px; }
-.diff-btn { min-height: 44px; padding: 0 14px; border: 1px solid #2a3350; border-radius: 10px; background: rgba(14, 20, 36, .85);
+.diff-choice { display: flex; align-items: center; gap: 6px; }
+.diff-label { color: #8a96b3; font-size: 14px; margin-right: 2px; }
+.diff-btn { flex: 1 1 auto; min-height: 44px; padding: 0 8px; border: 1px solid #2a3350; border-radius: 10px; background: rgba(14, 20, 36, .85);
   color: #e8eefc; font: 600 14px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; }
 .diff-btn.on { border-color: #3df5b0; color: #3df5b0; }
 .howto { padding: 10px 12px; border-radius: 10px; background: rgba(14, 20, 36, .85); border-left: 3px solid #3df5b0; }
@@ -89,3 +92,5 @@ body:not([data-screen="play"]) #hud, body:not([data-screen="play"]) #dispatch { 
   border: 1px solid #3df5b0; color: #e8eefc; font: 600 14px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   text-align: center; pointer-events: none; opacity: 0; transition: opacity .25s; z-index: 6; }
 .hint-card.on { opacity: 1; }
+#stage:has(.order-card.sel:not(.hidden)) .hint-card { opacity: 0; }
+@media (max-width: 640px) { .hint-card { left: 8px; transform: none; width: calc(100% - 124px); } }

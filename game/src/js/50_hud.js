@@ -101,6 +101,13 @@
     });
   }
 
+  function hideToast() {
+    const t = document.getElementById('toast');
+    if (t) t.classList.remove('on');
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = 0; }
+    last.toast = '';
+  }
+
   function showToast(text, ms) {
     const t = document.getElementById('toast');
     if (!t) return;
@@ -159,18 +166,18 @@
     }
     set(dom.clock, 'clock', U.clock(G.sh.startHour, G.t));
     set(dom.money, 'money', U.eur(G.tot));
-    set(dom.rankNum, 'rank', '#' + G.rank);
+    set(dom.rankNum, 'rank', '#' + Math.min(G.rank, G.sh.nDrivers));
     const gm = G.ghostMoney || 0;
     set(dom.ghost, 'ghost', U.eur(gm));
     const diff = Math.round((G.tot - gm) * 100) / 100;
-    const ahead = diff > 0;
-    set(dom.delta, 'delta', ' (' + (diff >= 0 ? '+' : '−') + U.eur(Math.abs(diff)) + ')');
-    if (last.ahead !== ahead) {
-      last.ahead = ahead;
-      dom.ghostWrap.classList.toggle('ahead', ahead);
-      dom.ghostWrap.classList.toggle('behind', !ahead);
-      dom.money.classList.toggle('ahead', ahead);
-      dom.money.classList.toggle('behind', !ahead);
+    const side = diff > 0 ? 1 : diff < 0 ? -1 : 0;
+    set(dom.delta, 'delta', ' (' + (side > 0 ? '+' : side < 0 ? '−' : '') + U.eur(Math.abs(diff)) + ')');
+    if (last.ahead !== side) {
+      last.ahead = side;
+      dom.ghostWrap.classList.toggle('ahead', side > 0);
+      dom.ghostWrap.classList.toggle('behind', side < 0);
+      dom.money.classList.toggle('ahead', side > 0);
+      dom.money.classList.toggle('behind', side < 0);
     }
     const p = Math.round(Math.min(1, G.t / PG.C.SHIFT) * 1000) / 10;
     if (p !== last.prog) { last.prog = p; dom.progFill.style.width = p + '%'; }
@@ -202,10 +209,9 @@
     if (hud && !dom.clock) buildHud(hud);
     if (dsp && !dom.pause) buildDispatch(dsp);
     PG.bus.on('note', function (e) { if (e && e.text) showToast(e.text, e.ms); });
-    PG.bus.on('shift:start', function () {
-      const t = document.getElementById('toast');
-      if (t) t.classList.remove('on');
-    });
+    PG.bus.on('shift:start', hideToast);
+    PG.bus.on('shift:end', hideToast);
+    PG.bus.on('ui:screen', function (e) { if (e && e.name !== 'play') hideToast(); });
   }
 
   PG.hud = { init: init, update: update };
