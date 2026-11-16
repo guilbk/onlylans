@@ -88,6 +88,20 @@ HUD_MARGIN = 8.0
 HUD_PAD = 5.0
 GLYPH_PX = 3  # glyph cell size at BASE_SIZE, pixels
 GLYPH_GAP = 1  # blank columns between glyphs, in glyph cells
+GLYPH_ROWS = 7  # height of a glyph, in glyph cells
+PIN_HALF_W = 0.75  # half width of the pin's tail, in pin radii
+PIN_TAIL_H = 0.8  # height of the pin's tail above the tip, in pin radii
+PIN_HEAD_LIFT = 1.6  # distance of the pin's head centre above the tip, in pin radii
+PIN_HOLE = 0.35  # radius of the pin's hole, in pin radii
+FLAG_POLE_W = 1.5  # flag pole width at BASE_SIZE, pixels
+FLAG_CLOTH_W = 0.6  # flag cloth width, in flag heights
+FLAG_CLOTH_TOP = 0.75  # height of the cloth's upper corner, in flag heights
+FLAG_CLOTH_MID = 0.5  # height of the cloth's inner corner, in flag heights
+HALO_MIX = 0.7  # share of the background mixed into the halo of the ghost's head
+MINUTES_PER_HOUR = 60
+HOURS_PER_DAY = 24
+ALPHA_MAX = 255  # largest 8-bit value
+ALPHA_LEVELS = 256  # number of 8-bit alpha values
 
 Point = tuple[float, float]
 Order = Sequence[Any]
@@ -168,8 +182,10 @@ def clock_text(start_local: str, t_s: float) -> str:
         Hours and minutes; the clock wraps at midnight.
     """
     hh, mm = (int(p) for p in start_local.split(" ")[1].split(":"))
-    total = (hh * 60 + mm + int(t_s // 60)) % (24 * 60)
-    return f"{total // 60:02d}:{total % 60:02d}"
+    total = (hh * MINUTES_PER_HOUR + mm + int(t_s // MINUTES_PER_HOUR)) % (
+        HOURS_PER_DAY * MINUTES_PER_HOUR
+    )
+    return f"{total // MINUTES_PER_HOUR:02d}:{total % MINUTES_PER_HOUR:02d}"
 
 
 def replay_end_s(orders: Sequence[Order]) -> float:
@@ -483,7 +499,10 @@ def draw_text(
 
 def alpha_mask(alpha: Image.Image) -> Image.Image:
     """Turn the alpha of ``streets.png`` into the glow mask (0..255 weight of ``STREET``)."""
-    table = [min(255, round(a / GLOW_ALPHA_REF * GLOW_PEAK * 255)) for a in range(256)]
+    table = [
+        min(ALPHA_MAX, round(a / GLOW_ALPHA_REF * GLOW_PEAK * ALPHA_MAX))
+        for a in range(ALPHA_LEVELS)
+    ]
     return alpha.point(table)
 
 
@@ -523,20 +542,23 @@ def _pin(draw: ImageDraw.ImageDraw, p: Point, u: float, rgb: tuple[int, int, int
     """Draw a pickup pin whose tip is at ``p``; ``u`` is the pixel scale."""
     x, y = p
     r = PIN_R * u
-    draw.polygon([(x - 0.75 * r, y - 0.8 * r), (x + 0.75 * r, y - 0.8 * r), (x, y)], fill=rgb)
-    draw.ellipse((x - r, y - 1.6 * r - r, x + r, y - 1.6 * r + r), fill=rgb)
-    draw.ellipse(
-        (x - 0.35 * r, y - 1.6 * r - 0.35 * r, x + 0.35 * r, y - 1.6 * r + 0.35 * r),
-        fill=BACKGROUND,
-    )
+    tail_w, tail_h, lift, hole = PIN_HALF_W * r, PIN_TAIL_H * r, PIN_HEAD_LIFT * r, PIN_HOLE * r
+    draw.polygon([(x - tail_w, y - tail_h), (x + tail_w, y - tail_h), (x, y)], fill=rgb)
+    draw.ellipse((x - r, y - lift - r, x + r, y - lift + r), fill=rgb)
+    draw.ellipse((x - hole, y - lift - hole, x + hole, y - lift + hole), fill=BACKGROUND)
 
 
 def _flag(draw: ImageDraw.ImageDraw, p: Point, u: float, rgb: tuple[int, int, int]) -> None:
     """Draw a drop-off flag whose pole foot is at ``p``; ``u`` is the pixel scale."""
     x, y = p
     h = FLAG_H * u
-    draw.line([(x, y), (x, y - h)], fill=TEXT, width=max(1, round(1.5 * u)))
-    draw.polygon([(x, y - h), (x + 0.6 * h, y - 0.75 * h), (x, y - 0.5 * h)], fill=rgb)
+    draw.line([(x, y), (x, y - h)], fill=TEXT, width=max(1, round(FLAG_POLE_W * u)))
+    cloth = [
+        (x, y - h),
+        (x + FLAG_CLOTH_W * h, y - FLAG_CLOTH_TOP * h),
+        (x, y - FLAG_CLOTH_MID * h),
+    ]
+    draw.polygon(cloth, fill=rgb)
 
 
 def draw_scene(scene: Scene, base: Image.Image, side: int, t_s: float) -> Image.Image:
@@ -574,7 +596,7 @@ def draw_scene(scene: Scene, base: Image.Image, side: int, t_s: float) -> Image.
         _flag(draw, px(pts[-1]), u, rgb if taken else mix(rgb, BACKGROUND, DIM))
         _pin(draw, px(pts[0]), u, mix(rgb, BACKGROUND, DIM) if taken else rgb)
     hx, hy = px(position_at(scene.legs, t_s))
-    for r, rgb in ((HALO_R, mix(GHOST, BACKGROUND, 0.7)), (HEAD_R, GHOST)):
+    for r, rgb in ((HALO_R, mix(GHOST, BACKGROUND, HALO_MIX)), (HEAD_R, GHOST)):
         draw.ellipse((hx - r * u, hy - r * u, hx + r * u, hy + r * u), fill=rgb)
     return img
 
@@ -591,7 +613,7 @@ def draw_hud(img: Image.Image, scene: Scene, t_s: float) -> None:
     cell = max(1, round(GLYPH_PX * side / BASE_SIZE))
     pad, margin = round(HUD_PAD * cell), round(HUD_MARGIN * cell)
     draw = ImageDraw.Draw(img)
-    height = 7 * cell
+    height = GLYPH_ROWS * cell
     for text, rgb, right in (
         (clock_text(scene.start_local, t_s), TEXT, False),
         (money_text(money_at(scene.orders, t_s)), GHOST, True),
