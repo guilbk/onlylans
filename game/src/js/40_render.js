@@ -521,7 +521,7 @@
         if (cl && cl.by !== 'player' && cl.t1 <= G.t) {
           let nick = '', fem = false;
           for (let i = 0; i < G.rivals.length; i++) {
-            if (G.rivals[i].id === cl.by) { nick = G.rivals[i].nick || G.rivals[i].name; fem = !!G.rivals[i].f; }
+            if (G.rivals[i].id === cl.by) { nick = G.rivals[i].name; fem = !!G.rivals[i].f; }
           }
           rival = true;
           label = (fem ? 'Забрала ' : 'Забрав ') + (nick || 'суперник');

@@ -296,7 +296,7 @@
       const dot = el('i', 'race-dot');
       dot.style.background = rows[i].color;
       row.appendChild(dot);
-      row.appendChild(el('span', 'race-name', (rows[i].player ? PG.util.playerName() : rows[i].name) + ' «' + rows[i].nick + '»'));
+      row.appendChild(el('span', 'race-name', (rows[i].player ? PG.util.playerName() + ' «Ти»' : rows[i].name)));
       row.appendChild(el('span', 'race-rides', String(rows[i].rides)));
       row.appendChild(el('span', 'race-total', PG.util.eur(rows[i].total)));
       box.appendChild(row);

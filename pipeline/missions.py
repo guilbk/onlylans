@@ -227,10 +227,10 @@ def rival_mission(
     ids = sorted(rival_eur, key=lambda r: (rival_eur[r], rank_key(shift_id, r)))
     below = [r for r in ids if rival_eur[r] <= player_eur]
     rid = below[-1] if below else ids[0]
-    name, nick, short = RIVALS[rid]
+    _name, _nick, short = RIVALS[rid]
     return {
         "kind": "rival",
-        "title": f"Обжени {name} «{nick}» за гроші",
+        "title": f"Обжени {short} за гроші",
         "short": f"Обжени {short}",
         "n": 1,
         "rival": rid,
