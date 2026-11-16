@@ -1,0 +1,23 @@
+/* 64_hints.js: first-encounter hints and the «Як грати» sheet */
+.hint-card { position: absolute; left: 0; top: 0; z-index: 12; box-sizing: border-box; max-width: min(280px, calc(100% - 16px));
+  padding: 8px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--amber); color: var(--text);
+  font: 600 14px/1.35 var(--font); opacity: 0; transition: opacity .25s; pointer-events: none; touch-action: manipulation; }
+.hint-card.on { opacity: 1; pointer-events: auto; cursor: pointer; }
+.help-btn { min-width: 44px; min-height: 44px; border: 0; border-radius: 22px; background: var(--btn); color: var(--text);
+  font: 800 18px var(--font); cursor: pointer; touch-action: manipulation; }
+.help-btn.menu { position: absolute; top: 10px; right: 10px; z-index: 5; }
+.help-sheet { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center;
+  background: var(--veil); font-family: var(--font); color: var(--text); }
+.help-sheet[hidden] { display: none; }
+.help-box { position: relative; box-sizing: border-box; width: min(520px, calc(100% - 16px)); max-height: calc(100% - 24px);
+  overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 16px 14px; border-radius: 16px; background: var(--card);
+  box-shadow: 0 8px 30px var(--shadow); font-size: 14px; line-height: 1.4; }
+.help-box h2 { margin: 0 44px 8px 0; font-size: 20px; }
+.help-box h3 { margin: 12px 0 4px; font-size: 15px; color: var(--blue); }
+.help-box ul { margin: 0; padding-left: 18px; }
+.help-box li { margin: 2px 0; }
+.help-x { position: absolute; top: 6px; right: 6px; width: 44px; height: 44px; border: 0; border-radius: 22px;
+  background: var(--btn); color: var(--text); font: 700 18px var(--font); cursor: pointer; }
+.help-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
+.help-reset { display: inline-block; margin-top: 12px; padding: 12px 0; border: 0; background: none; color: var(--blue);
+  font: 600 14px var(--font); text-decoration: underline; cursor: pointer; }
