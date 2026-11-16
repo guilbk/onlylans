@@ -11,7 +11,7 @@
   const NIGHT = {
     ground: '#0d1631',
     casing: ['#4d3612', '#101a3b', '#0a1230'],
-    fill: ['#e7a93d', '#35487f', '#222f5f'],
+    fill: ['#e7a93d', '#4a5f9e', '#2f3f78'],
   };
   const WIDTH_M = [18, 11, 6];          // street width in metres per class: main, avenue, street
   const MIN_PX = [3, 2, 1], MAX_PX = [10, 6, 3.5];
@@ -41,10 +41,10 @@
     const p = night() ? NIGHT : DAY;
     ctx.fillStyle = p.ground;
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const a = R.P(0, 0);
-    const k = Math.abs(R.P(100, 0).x - a.x) / 100;      // px per metre
+    const a = R.P(0, 0), x0 = a.x, y0 = a.y;           // P returns one shared object
+    const k = Math.abs(R.P(100, 0).x - x0) / 100;      // px per metre
     ctx.save();
-    ctx.translate(a.x, a.y);
+    ctx.translate(x0, y0);
     ctx.scale(k, k);
     ctx.lineCap = ctx.lineJoin = 'round';
     for (let c = 2; c >= 0; c--) {                      // streets first, main roads on top
