@@ -70,3 +70,10 @@ def test_filter_week_counts_and_writes(tmp_path: Path) -> None:
     assert train_rows[0] == HEADER
     assert [row[TS_COL] for row in train_rows[1:]] == [str(w0), str(w1 - 1)]
 
+
+
+def test_build_parser_defaults_and_overrides() -> None:
+    args = week.build_parser().parse_args([])
+    assert args.root == Path(".") and args.out is None
+    args = week.build_parser().parse_args(["--root", "r", "--out", "o.csv"])
+    assert args.root == Path("r") and args.out == Path("o.csv")
