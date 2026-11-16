@@ -4,6 +4,7 @@
   const NAMES = ['menu', 'about', 'play', 'result'];
   const MEDAL_NAMES = ['Без медалі', 'Бронза', 'Срібло', 'Золото', 'Легенда'];
   const MEDAL_COLORS = ['#8a96b3', '#cd7f32', '#c0c8d8', '#ffd700', '#b48cff'];
+  const PARTY_NOTE = 'Гра разом працює, коли гру відкрито з сервера: «python tools/party.py»';
   const RESULT_DELAY_MS = 700;
   const MEDAL_DELAY_MS = 700;
 
@@ -126,6 +127,13 @@
     return b;
   }
 
+  // The party module (80_party.js) answers 'party:open'; without it, or from a file, say how to start it.
+  function openParty() {
+    const ok = !!PG.party && root.location.protocol !== 'file:';
+    dom.partyNote.hidden = ok;
+    if (ok) PG.bus.emit('party:open');
+  }
+
   function buildMenu() {
     const m = dom.menu;
     m.textContent = '';
@@ -144,6 +152,14 @@
     play.id = 'btn-play';
     play.addEventListener('click', function () { start(playIdx()); });
     m.appendChild(play);
+    const together = btn('btn-big alt', 'Гра разом');
+    together.id = 'btn-party';
+    together.addEventListener('click', openParty);
+    m.appendChild(together);
+    dom.partyNote = el('p', 'party-note', PARTY_NOTE);
+    dom.partyNote.id = 'party-note';
+    dom.partyNote.hidden = true;
+    m.appendChild(dom.partyNote);
     buildDifficulty(m);
     buildHowTo(m);
     const about = btn('btn-link', 'Про дані');
@@ -205,6 +221,12 @@
     box.id = 'howto';
     box.appendChild(el('h2', null, 'Як грати'));
     for (let i = 0; i < P.HOWTO.length; i++) box.appendChild(el('p', null, P.HOWTO[i]));
+    if (PG.coach) {
+      const again = btn('btn-link', 'Пройти підказки на мапі');
+      again.id = 'btn-coach';
+      again.addEventListener('click', function () { PG.coach.rearm(); start(playIdx()); });
+      box.appendChild(again);
+    }
     m.appendChild(box);
   }
 
@@ -333,49 +355,6 @@
     }, MEDAL_DELAY_MS);
   }
 
-  // ---- onboarding hints (first shift): wait for the subject to be on screen ----
-  const hintOut = { x: 0, y: 0, hx: 0, hy: 0 };
-  const hintCtx = { pin: false, ghost: false, bar: false };
-  let hintEl = null;
-  let hintUntil = 0;
-  let hintNext = 0;
-  let hintShown = 0;
-
-  function onScreen(p, W, H) { return p.x > 20 && p.x < W - 20 && p.y > 90 && p.y < H - 70; }
-
-  function hintTick(e) {
-    if (!PG.progress || !PG.progress.hintDue || PG.screen !== 'play' || !hintEl) return;
-    const now = e.now;
-    if (hintShown && now >= hintUntil) { hintEl.classList.remove('on'); hintShown = 0; }
-    if (hintShown || now < hintNext) return;
-    hintNext = now + 0.4;
-    const G = PG.engine && PG.engine.G;
-    const R = PG.render;
-    if (!G || G.over || G.paused || !R || !R.P) return;
-    const stage = document.getElementById('stage');
-    const W = stage ? stage.clientWidth : 0, H = stage ? stage.clientHeight : 0;
-    hintCtx.pin = hintCtx.ghost = false;
-    hintCtx.bar = G.t > 20;
-    const os = G.sh.orders;
-    for (let i = 0; i < os.length; i++) {
-      const o = os[i];
-      if (o.t < G.t || o.t - G.t > 800) continue;
-      if (PG.engine.reachable(o) && onScreen(R.P(o.x0, o.y0), W, H)) { hintCtx.pin = true; break; }
-    }
-    if (PG.data.ghostAt) {
-      PG.data.ghostAt(G.sh, G.t, hintOut);
-      hintCtx.ghost = onScreen(R.P(hintOut.x, hintOut.y), W, H);
-    }
-    const h = PG.progress.hintDue(hintCtx);
-    if (!h) return;
-    hintEl.textContent = h.text;
-    hintEl.classList.add('on');
-    PG.progress.markHint(h.n);
-    hintShown = h.n;
-    hintUntil = now + 6;
-    hintNext = now + 7;
-  }
-
   function showMenu() {
     if (dom.menu) { refreshMenu(); refreshDifficulty(); }
     setScreen('menu');
@@ -388,15 +367,6 @@
     if (!dom.menu || !PG.data) return;
     buildMenu();
     if (dom.about) buildAbout();
-    const stage = document.getElementById('stage');
-    if (stage && PG.progress && PG.progress.hintDue) {
-      hintEl = el('div', 'hint-card');
-      hintEl.id = 'hint-card';
-      stage.appendChild(hintEl);
-      PG.bus.on('frame', hintTick);
-      PG.bus.on('shift:start', function () { hintShown = 0; hintEl.classList.remove('on'); hintNext = 0; });
-      PG.bus.on('ui:screen', function (e) { if (e.name !== 'play') { hintEl.classList.remove('on'); hintShown = 0; } });
-    }
     PG.bus.on('shift:end', function (e) {
       const r = e && e.result;
       if (!r) return;
@@ -405,6 +375,7 @@
         if (token === resultToken && PG.screen === 'play') showResult(r);
       }, RESULT_DELAY_MS);
     });
+    if (PG.coach) PG.coach.init();
     setScreen('menu');
   }
 

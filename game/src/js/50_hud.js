@@ -2,6 +2,7 @@
   const PG = root.PG = root.PG || {};
 
   const MEDAL_COLORS = ['#8a96b3', '#cd7f32', '#c0c8d8', '#ffd700', '#b48cff'];
+  const MEDAL_NAMES = ['', 'Бронза', 'Срібло', 'Золото', 'Легенда'];
   const TOAST_MS = 2400;
 
   const dom = {};
@@ -26,6 +27,13 @@
     return b;
   }
 
+  function cell(caption, value) {
+    const c = el('div', 'hud-cell');
+    c.appendChild(el('div', 'hud-cap', caption));
+    c.appendChild(value);
+    return c;
+  }
+
   function buildHud(hud) {
     const top = el('div', 'hud-top');
     dom.clock = el('div', 'hud-clock', '--:--');
@@ -36,12 +44,12 @@
     dom.rank.appendChild(dom.rankNum);
     dom.rank.appendChild(el('span', 'hud-label', ' з … водіїв'));
     dom.rankTail = dom.rank.lastChild;
-    top.appendChild(dom.clock);
-    top.appendChild(dom.money);
-    top.appendChild(dom.rank);
+    top.appendChild(cell('час зміни', dom.clock));
+    top.appendChild(cell('твої гроші', dom.money));
+    top.appendChild(cell('місце серед водіїв', dom.rank));
 
     const ghost = el('div', 'hud-ghost');
-    ghost.appendChild(el('span', 'hud-label', 'Привид '));
+    ghost.appendChild(el('span', 'hud-label', 'Привид (найкращий водій) '));
     dom.ghost = el('span', 'hud-ghost-val', '€0,00');
     dom.delta = el('span', 'hud-delta', '');
     ghost.appendChild(dom.ghost);
@@ -66,6 +74,15 @@
     dom.mark = el('div', 'hud-mark');
     track.appendChild(dom.mark);
     lad.appendChild(track);
+    const names = el('div', 'hud-medals');
+    dom.names = [];
+    for (let i = 1; i <= 4; i++) {
+      const n = el('span', 'hud-medal' + (i === 4 ? ' last' : ''), MEDAL_NAMES[i]);
+      n.style.setProperty('--c', MEDAL_COLORS[i]);
+      names.appendChild(n);
+      dom.names.push(n);
+    }
+    lad.appendChild(names);
     dom.ladder = lad;
 
     dom.extra = el('div', null);
@@ -131,7 +148,10 @@
     const thr = sh.thr || { median: sh.median, top10: sh.top10, ghost: sh.ranking[0], legend: 1.25 * sh.ranking[0] };
     last.thr = thr;
     const vals = [thr.median, thr.top10, thr.ghost, thr.legend];
-    for (let i = 0; i < 4; i++) dom.ticks[i].style.left = pct(vals[i], thr.legend) + '%';
+    for (let i = 0; i < 4; i++) {
+      dom.ticks[i].style.left = pct(vals[i], thr.legend) + '%';
+      dom.names[i].style.left = pct(vals[i], thr.legend) + '%';
+    }
     last.mark = -1;
     last.level = -1;
   }
@@ -191,6 +211,7 @@
     if (lv !== last.level) {
       last.level = lv;
       dom.mark.style.setProperty('--c', MEDAL_COLORS[lv]);
+      for (let i = 0; i < 4; i++) dom.names[i].classList.toggle('got', i < lv);
     }
     if (last.paused !== !!G.paused) {
       last.paused = !!G.paused;
