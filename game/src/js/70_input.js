@@ -73,8 +73,16 @@
     if (!localXY(ev, tapPt).inside) return;
     const touch = ev.pointerType !== 'mouse';
     if (PG.orders && PG.orders.blocks && PG.orders.blocks(ev.clientX, ev.clientY)) return;  // next to the open card
-    const pin = PG.render.nearestPin(tapPt.x, tapPt.y, touch ? PICK_TOUCH : PICK_MOUSE);
+    let pin = PG.render.nearestPin(tapPt.x, tapPt.y, touch ? PICK_TOUCH : PICK_MOUSE);
+    const sel = PG.orders && PG.orders.selected;
+    if (sel && touch && (!pin || pin.o !== sel)) {        // the second tap on the selected pin is forgiving
+      const ps = PG.render.pins;
+      for (let i = 0; i < ps.length; i++) {
+        if (ps[i].o === sel && Math.hypot(tapPt.x - ps[i].px, tapPt.y - ps[i].py) <= PICK_TOUCH * 1.6) pin = ps[i];
+      }
+    }
     if (PG.bus) PG.bus.emit('tap:fx', { x: tapPt.x, y: tapPt.y, pin: !!pin });
+    PG.render.peek(tapPt.x, tapPt.y);      // a rival under the finger shows its name
     if (pin) { tapPin(pin); return; }
     const e = liveGame();
     if (!e) return;
@@ -160,7 +168,10 @@
     const t = ev.target;
     const blocked = t && t.closest && t.closest(INTERACTIVE);
     let pin = null;
-    if (!blocked && localXY(ev, movePt).inside) pin = PG.render.nearestPin(movePt.x, movePt.y, PICK_MOUSE);
+    if (!blocked && localXY(ev, movePt).inside) {
+      pin = PG.render.nearestPin(movePt.x, movePt.y, PICK_MOUSE);
+      PG.render.peek(movePt.x, movePt.y);
+    }
     mapEl.classList.toggle('over-pin', !!pin);
     const o = pin ? pin.o : null;
     if (o === hoverO) return;
@@ -197,6 +208,8 @@
       return;
     }
     if (PG.screen !== 'play' || !e || !e.G || e.G.over) return;
+    if (k === '+' || k === '=') { PG.render.zoomStep(1.45); return; }
+    if (k === '-' || k === '_') { PG.render.zoomStep(1 / 1.45); return; }
     if (k === ' ' || k === 'Spacebar') {
       ev.preventDefault();
       pressHud(PG.hud && PG.hud.togglePause, 'btn-pause', function () {

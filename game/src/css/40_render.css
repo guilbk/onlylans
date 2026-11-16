@@ -40,3 +40,41 @@
 #map-center[hidden] {
   display: none;
 }
+
+/* zoom buttons: above the centre button, at the right edge */
+#map-zoom {
+  position: absolute;
+  right: 10px;
+  bottom: calc(130px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#map-zoom[hidden] {
+  display: none;
+}
+
+#map-zoom button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(90, 169, 255, 0.35);
+  border-radius: 22px;
+  background: rgba(14, 20, 36, 0.85);
+  color: #e8eefc;
+  font: 600 22px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.08s ease-out, border-color 0.12s;
+}
+
+#map-zoom button:hover {
+  border-color: #3df5b0;
+  color: #3df5b0;
+}
+
+#map-zoom button:active {
+  transform: scale(0.93);
+}

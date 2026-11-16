@@ -356,9 +356,9 @@ skipping the missing ones. `10_data` uses `PG.DATA` if set, `12_roads` uses `PG.
 | `SLOTS` | `{am:{h:8,label:"08–10"}, lunch:{h:12,label:"12–14"}, pm:{h:17,label:"17–19"}, night:{h:22,label:"22–24"}}`; `sat-night` starts at hour 0 |
 | `DAYS` | `mon tue wed thu fri sat sun` = понеділок, вівторок, середа, четвер, п'ятниця, субота, неділя |
 | `CALL` | `0 = A` dispatch call, `1 = B` taxi stand, `2 = C` street hail (`CALL_NAMES = ["Виклик","Стоянка","З вулиці"]`) |
-| `LEAD` (game s) | `[310, 310, 310]` for A, B, C — pin visible from `t − LEAD[c]·DIFF_K·leadK` (tuned by `python -m pipeline.tune`: the shortest windows the 200-s measuring bot can still use; below `delay + BOARD_S + 30` s over `DIFF_K` a call type is invisible to it) |
-| `RADIUS` (m) | `[5000, 3500, 2500]` — pin visible only within `RADIUS[c]·DIFF_K` of the car |
-| `DIFF_K` | `{easy:1.0, normal:1, hard:0.9}` |
+| `LEAD` (game s) | `[1200, 1200, 900]` for A, B, C — pin visible from `t − LEAD[c]·DIFF_K·leadK`. Chosen for playability, not for the 200-s measuring bot: on normal a pin lives 30 / 30 / 22 real s (LEAD / `BASE_SCALE`), never under 13 (rush calls, `leadK` 0.6, are shorter). A greedy scripted player over the 28 shifts sees on average 4.8 bright (takeable) pins on a 2.8 km phone view on normal (median 2, p90 15: demand comes in bursts), easy 4.9, hard 3.0. `RADIUS` hardly moves this (9000/6500/4500 gives 4.9). Wave-3 values were `[310, 310, 310]`; `[1000, 720, 600]` gave median 0 and was dropped |
+| `RADIUS` (m) | `[6000, 4500, 3000]` — pin visible only within `RADIUS[c]·DIFF_K` of the car (was `[5000, 3500, 2500]`) |
+| `DIFF_K` | `{easy:1.3, normal:1, hard:0.8}` — easy shows more pins for longer, hard fewer (was `1.0 / 1 / 0.9`) |
 | `BOARD_S` | 30 (boarding seconds added to eta) |
 | `HOME` | `{x: 9110, y: 12443}` metres |
 | `MAP` | `{w: 15000, h: 19000}` metres |
@@ -551,10 +551,13 @@ near 5000 m at ×0.35`. `duty` is the share of a 1500 s cycle a rival works, the
 hard 8 %, easy 40 % of the shift on break; it was 34–60 %). Rivals hardly take orders away from the measuring bot (0 to 0.1
 per shift; the bot's income barely moves even if the rivals drive twice as fast, see the report of the balance
 sweep), so the medal shares are set by `LEAD` and `DIFF_K`; the rivals make the race table and the place.
-Shipped medal shares of the 200-s bot on the 28 shifts (`node tools/engine_test.mjs`, equal to `pipeline.sim`):
-easy bronze+ 100 %, gold+ 64 %, legend 25 %; normal bronze+ 100 %, gold+ 50 %, legend 18 % (target ≤ 15 %: one
-shift over); hard bronze+ 86 %, gold+ 21 %, legend 7 %. `RADIUS` does not move the bot (a sweep down to 40 % of the
-values changes nothing), and below `LEAD` 310 s the 200-s bot cannot take a pin at all.
+Medal shares of the 200-s bot on the 28 shifts (`node tools/engine_test.mjs`, equal to `pipeline.sim`) with the
+wave-4 `LEAD` / `RADIUS` / `DIFF_K` (§9): easy gold+ 96 %, legend 96 %; normal gold+ 100 %, legend 100 %; hard gold+ 100 %,
+legend 93 % (bot € 55 / 52 / 51). The wave-3 shares (normal legend 18 %, hard legend 7 %) are gone on purpose: any
+`LEAD` of 540 s or more lets the perfect scripted bot see nearly everything, so its medals say little; the targets are
+now about the player (enough pins, enough time to reach one) and the bot is mostly the equality check between
+`pipeline.sim` and the engine. `RADIUS` hardly moves the bot. Rivals: on hard the weakest of the 7 can be Руй
+instead of Нуну (his long trips pay less when pins are plentiful), `engine_test` accepts both.
 
 Arrival-first claims, toasts: brief K6. Race table «Перегони 7 ланосів» on the
 result: Ріїн + 7, by €, colour dot, nickname, rides.
@@ -596,51 +599,115 @@ never a photo or likeness of a real person, no film stills, quotes, music or log
 
 ## §15 Гра разом (party mode)
 
-Everyone at the presentation plays one shift on one map, from their phones. Single player is unchanged:
-without `?party=1` (and in the offline single file) `80_party.js` returns at once and `PG.engine.party` stays `null`.
+Friends play one shift together on one map, each on their own phone, in a **room**. Single player is unchanged:
+`80_party.js` starts only on `?party=1`, `?room=CODE`, `&screen=1` or the bus event `party:open` (emitted by the
+menu button «Гра разом»); otherwise `PG.engine.party` stays `null` and nothing is added to the page.
 
-**Run**: `python tools/party.py [--port 8090] [--build] [--dir game] [--host IP] [--open-host]` (stdlib only; reuses
-`tools/serve.py` and `tools/qr.py`). It prints the QR of `http://<LAN-IP>:<port>/?party=1` and the host URL
-`http://127.0.0.1:<port>/?party=1&host=1`. `/api/start` and `/api/reset` are accepted only from the server's own machine
-(`127.0.0.1`, `::1`, the LAN IP) unless `--open-host`.
+**Run**: `python tools/party.py [--port 8090] [--build] [--dir game] [--host IP]` (stdlib only; reuses `tools/serve.py`
+and `tools/qr.py`). It prints the QR of `http://<LAN-IP>:<port>/`. Anyone opens the game, taps «Гра разом» and
+creates a room; there is no host machine and no `--open-host`.
 
-**State** (`tools/party.py`, class `Party`, pure, injected clock, one lock): phase `lobby` → `running` → `done`
-(`done` at `start_at + duration + 2 s`; `running` includes the countdown before `start_at`); players
-`{id, key (secret), name ≤ 20, colour, x, y (null until the first sync), hx, hy, money, trips, seen}`; `claims`
-(order index → player id); `shift`, `difficulty`, `duration` (real s, the client sends `SHIFT / BASE_SCALE` = 180),
-`start_at` (server time). At most 60 players. A name is cleaned to one printable line; an empty name becomes
-«Таксист N», a taken one gets a number. Server time is `time.time()`.
+**Rooms** (`tools/party.py`, `Rooms` → one pure `Party` per room, injected clock, one lock each): code of 4 letters
+from `BCDFGHJKLMNPRSTVWXZ` (typed codes are upper-cased, spaces dropped, Cyrillic lookalikes turned Latin); at most
+200 rooms, an untouched room is forgotten after 4 h. The creator is the **host** and plays like everybody; `create`
+returns the **host token**, which `start` and `reset` require (403 `host_only`). Phase `lobby` → `running` → `done`
+(`done` at `start_at + duration + 2 s`; `running` includes the countdown). Players
+`{id, key (secret), name ≤ 20, colour, x, y (null until the first sync), hx, hy, money, trips, at, seen}`; at most 60
+per room; guests silent for 25 s leave the lobby (the host stays). `claims`: order index → player id. Server time is
+`time.time()`.
 
-**API** (JSON; replies carry the public state, never the keys):
+**API** (JSON; every POST must be `Content-Type: application/json`, else 415; body ≤ 4 KB; replies carry the public
+state, never keys or the token; unknown room → 404 `no_room`):
 
 | Call | Body | Reply |
 |---|---|---|
-| `GET /api/party` | | `{phase, now, start_at, duration, shift, difficulty, players[{id, name, color, x, y, hx, hy, money, trips, online}], claims{order: id}}` |
-| `GET /api/qr` | | `{url, rows[]}`: the QR of the players' URL as strings of `1`/`0` (host draws it on a canvas) |
-| `POST /api/join` | `{name, key?}` | `{id, key, state}`; a known `key` rejoins (409 `phase` when `done`, 409 `full`) |
-| `POST /api/sync` | `{key, x, y, hx, hy, money, trips}` | state; polled every 500 ms (403 `unknown_player`) |
-| `POST /api/claim` | `{key, order}` | `{ok: true}` or `{ok: false, by: name}`; the first claim wins, the owner may repeat; 409 unless `running` |
-| `POST /api/release` | `{key, order}` | `{ok}`; only the owner can give an order back |
-| `POST /api/start` | `{shift, difficulty, duration?, countdown?}` | state; host only; `start_at = now + countdown` (5 s) |
-| `POST /api/reset` | | state; host only; back to `lobby`, claims and money cleared, offline phones dropped |
+| `POST /api/create` | `{name}` | `{room, token, id, key, state}` |
+| `POST /api/join` | `{room, name, key?}` | `{id, key, state}`; a known `key` rejoins (409 `phase` when `done`, 409 `full`) |
+| `GET /api/party?room=` | | `{room, host, phase, now, start_at, duration, shift, difficulty, players[{id, name, color, x, y, hx, hy, money, trips, at, online}], claims{order: id}}` |
+| `GET /api/qr?room=` | | `{url, rows[]}`: QR of `http://<address>/?room=CODE` (the LAN address when the caller is on loopback) as strings of `1`/`0` |
+| `POST /api/sync` | `{room, key, x, y, hx, hy, money, trips}` | state; polled every 200 ms (403 `unknown_player`); ignored after `done` |
+| `POST /api/claim` | `{room, key, order}` | `{ok: true}` or `{ok: false, by: name}`; first claim wins, the owner may repeat; `order` must be an integer below the shift's order count (400 `bad_value`); only while `start_at ≤ now < start_at + duration` (else 409 `phase`); at most 3 booked-not-picked-up orders per player (409 `too_many`) |
+| `POST /api/release` | `{room, key, order}` | `{ok}`; only the owner can give an order back |
+| `POST /api/start` | `{room, token, shift, difficulty, duration?, countdown?}` | state; `shift` must exist; `start_at = now + countdown` (3 s) |
+| `POST /api/reset` | `{room, token}` | state; back to `lobby`, claims and money cleared, offline phones dropped |
 
-**Clock**: each reply has `now`; the client keeps the offset of the lowest-latency sample, so the phones agree to
-a few tens of ms. Game time `t = (server now − start_at) × BASE_SCALE`; every phone builds the same shift
-(`snap.shift`, `snap.difficulty`) at `start_at`.
+The server reads the order count of each shift from `game_data.json` in the served folder. Replies are HTTP/1.1
+keep-alive with `TCP_NODELAY`.
 
-**Engine hooks** (`20_engine.js`, all inert when `PG.engine.party` is `null`): `party = {clock()}` makes `step()` go to
-`clock()` instead of adding `dt`; `G.paused` and `G.fast` become read-only `false` (pause and ×3 off); `PG.ai.init`
-is skipped, so `G.rivals` is empty and the 7 rivals are off (the ghost stays). Orders claimed by others are put into
-`G.taken` (the pin disappears, feasibility says taken); a claim someone gave back is removed again.
+**Clock**: each reply has `now`; the client keeps the offset of the lowest-latency sample. Game time
+`t = (server now − start_at) × SHIFT / duration` (×40 for the default 180 s); every phone builds the same shift at
+`start_at`.
 
-**Claims** (`80_party.js`): `startPickup`, `bookNext` and `cruiseTo` are wrapped. A pickup or booking that passes the
-engine's own check sends `/api/claim` first and calls the engine only on `ok` (the tap card closes at once); a refusal
-shows «Вже забрав <ім'я>» and removes the pin. Giving up a pickup or a booked order sends `/api/release`.
+**Engine hooks** (`20_engine.js`, inert when `PG.engine.party` is `null`): `party = {clock()}` makes `step()` go to
+`clock()` instead of adding `dt`; `G.paused` and `G.fast` become read-only `false`; `PG.ai.init` is skipped (no AI
+rivals, the ghost stays); `unbook(o)` takes back a booking (the car stops where it is, a booked next order is dropped).
+Orders claimed by others are put into `G.taken`; a claim someone gave back is removed again.
 
-**Screens** (`?party=1`): name entry (default «Таксист N») → lobby with the names and «Чекаємо на старт» → countdown →
-the game (HUD without pause, ×3 and menu; a chip «#N з M» with the leader) → the result with the extra block
-«Перегони гравців». Other players are cars with name labels drawn through `PG.render.onDraw` (positions smoothed
-between polls). The host (`&host=1`) sees the QR, the players, a shift and difficulty choice and «Старт»; then the
-whole map with every car and name, a live leaderboard with the time left, and at the end «Фінал» and «Нова гра».
-A phone that reloads keeps its player (key in `sessionStorage`) but restarts its shift at the server time with its
-money at 0.
+**Booking is optimistic** (`80_party.js`): `startPickup` and `bookNext` run on the phone at once and `/api/claim`
+confirms in the background. On `{ok: false, by}` the booking is rolled back with `unbook`, the order is marked taken and
+the toast says «Вже забрав <ім'я>»; the same rollback happens when a later state shows the order owned by someone else.
+If the pickup already happened, the ride stays. Giving up a pickup or a booked order sends `/api/release`.
+
+**Screens**: menu «Гра разом» → «Створити лобі» (name) or «Приєднатися» (code, name) → lobby: big code, QR, the link,
+«Поділитися» (`navigator.share`, else the link field is selected and copied), the players, and for the host the shift and
+difficulty with «Старт» (others see «Чекаємо на ведучого») → 3-2-1 → the normal game screen (no pause or ×3; a mini board
+with the top 3 and you) → the result with the extra block «Перегони гравців», «Ще раз» (host, back to the lobby for
+everybody) and «Вийти». `?room=CODE` opens the name entry for that room, the address bar keeps `?room=CODE`, and a reload
+resumes the player (`sessionStorage`, money restarts at the server time). `?party=1` opens the same entry screen.
+`?room=CODE&screen=1` is a clean spectator view for a projector: lobby with the QR, then the whole map with every car and
+name, a leaderboard, the time left and a small QR. Other cars are drawn 0.35 s behind the server time, interpolated between
+the last samples (`at`), so they glide at the 200 ms poll.
+
+## §16 Завдання зміни (missions)
+
+Each shift has 3 short missions computed by `pipeline/missions.py` from that shift's real data. They give
+stars (★ 0–3 per shift), never money, so the medals stay a fair race against the real drivers. Python
+picks and tunes them; JS (`62_missions.js`) only tracks them.
+
+**`game/missions.json`** (`python -m pipeline.missions`, deterministic, sorted keys, one line;
+`--no-rivals` skips the rival mission and the slower Python twin run):
+`{"version":1,"shifts":{"<shift id>":[mission, mission, mission]}}`. The build (§6) inlines it as
+`<script type="application/json" id="missions-data">` when the file exists; without it the game has no
+missions. A mission: `id` (`m1`..`m3`), `kind`, `title` (Ukrainian, shown on the card and the result),
+`short` (the chip), `n` (steps to complete) and the fields of its kind:
+
+| kind | Done when | Fields (data source) |
+|---|---|---|
+| `airport` | a trip starts or ends within `r` of the airport; only if ≥ 3 trips of the shift touch it | `x, y, r` metres (1500) |
+| `district` | `n` drop-offs of passengers picked up within `r` of the hotspot with the most pickups (≥ 10) | `x, y` metres, `r` 600, `n` 3 |
+| `long` | one trip with `km ≥ km`; `km` = 85th percentile of the shift's trip lengths, rounded to 0.5, at least 4 | `km` |
+| `combo` | `combo` event with `n ≥ 3` (×1.2) | `n` 3 |
+| `rival` | at `shift:end` `result.earned` > the named rival's total; the rival is the strongest one whose total (Python twin, normal) does not exceed the measuring bot's total | `rival` id (§13) |
+| `median` | `G.tot ≥ eur` at a pickup/tick at game time ≤ `by` | `eur` = shift median rounded up to cents, `by` 3600 |
+
+Selection: the airport mission first if supported, then the other supported kinds ordered by `crc32(shift id
++ "/" + kind)`; 3 distinct kinds per shift (28 shifts: airport 7, district 20, long 11, combo 17, rival 12,
+median 17).
+
+**JS**: reads `#missions-data` (or `PG.MISSIONS`) on the first `shift:start`; listens to `shift:start`,
+`dropoff`, `pickup`, `combo`, `frame`, `shift:end`, `ui:screen` and reads `G` (`t`, `tot`, `rivals`, `leg.t0`)
+read-only. No missions in party mode (`PG.engine.party`). UI: a card at shift start (hides after 8 s, never takes
+taps: `pointer-events: none`), a chip with the stars and the next open mission in `#hud-extra` (tap shows the card),
+the toast «★ Завдання виконано» (the `note` event), the block «Завдання зміни ★★☆» on the result screen
+(between the stats and the race table) and the best stars on the campaign cards (a span in `#shift-<id>`).
+Stars: localStorage `porto-lanosiv-missions-v1` = `{v:1, best:{<shift id>: 0..3}}` (best of all tries;
+memory only if storage is blocked). Test: `node tools/missions_test.mjs`.
+
+## §17 Історія зміни (result story)
+
+After a shift the result screen shows a small map that replays the player's path against the ghost's, and 3–4
+real facts about the shift.
+
+**`game/facts.json`** (`python -m pipeline.facts`, deterministic, sorted keys, one line):
+`{"version":1,"shifts":{"<shift id>":[fact, ...]}}`, each fact a short Ukrainian sentence: the trips of the real
+drivers, the longest trip with its starting place (`places.place_name`), the district with the largest pickup
+share (`hot`), the ghost's trips and money. A fact the data cannot support is left out. `pipeline/facts.py`
+holds the plural helper (1 / 2–4 / 5–20 rules) and the number formats (no-break space in «1 234», comma in
+«23,4 км»). The build (§6) inlines the file as `<script type="application/json" id="facts-data">` when it exists
+(`--facts PATH`, default `game/facts.json`); without it the result screen has the map but no facts.
+
+**JS** (`67_story.js`, `67_story.css`): records `G.x/G.y` on `frame` every 10 game s from `shift:start`, and the
+pickup points on `pickup`; on `ui:screen` `result` inserts `#story` just above the race table (`.res-race`, else `.res-buttons`) (nothing of
+`65_screens.js` is edited). One canvas, both paths over the same bounds: the player's trail mint, the ghost's
+(`sh.ghostOrders`, 15 s per point) lilac, pickups as dots, replayed over 6 s of real time; the «Повтор» button
+(≥ 44 px) plays it again. No story in party mode (`PG.engine.party`).

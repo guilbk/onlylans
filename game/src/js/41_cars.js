@@ -33,7 +33,7 @@
     const g = c.createRadialGradient(0, 0, 8, 0, 0, GLOW_R);
     g.addColorStop(0, color);
     g.addColorStop(1, 'rgba(0,0,0,0)');
-    c.globalAlpha = 0.3;
+    c.globalAlpha = hero ? 0.22 : 0.12;
     c.fillStyle = g;
     c.beginPath(); c.arc(0, 0, GLOW_R, 0, TAU); c.fill();
     c.globalAlpha = 1;
