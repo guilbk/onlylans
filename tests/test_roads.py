@@ -144,3 +144,72 @@ def test_ring_without_junction_gets_a_node():
     assert graph.number_of_edges() == 1
     (length,) = edge_lengths(graph)
     assert length == pytest.approx(2 * np.pi * r, rel=0.1)
+
+
+# spur pruning and components
+
+
+def tee_trips(spur_m, x0=80.0, x1=880.0, y=480.0):
+    """A horizontal road with a vertical spur of ``spur_m`` metres up from its middle."""
+    mid = (x0 + x1) / 2
+    road = line((x0, y), (x1, y))
+    spur = line((mid, y), (mid, y - spur_m), step=10.0)
+    return thrice([road, spur])
+
+
+def pruned(trips):
+    """Unpruned graph, pruned in place, and returned."""
+    graph = skeleton_graph(trips)
+    roads.prune_spurs(graph)
+    return graph
+
+
+def test_short_spur_is_pruned():
+    graph = pruned(tee_trips(20.0))
+    assert graph.number_of_nodes() == 2
+    assert graph.number_of_edges() == 1
+    (length,) = edge_lengths(graph)
+    assert length == pytest.approx(800.0, abs=2 * GRID.cell_m)
+
+
+def test_long_spur_is_kept():
+    graph = pruned(tee_trips(80.0))
+    assert graph.number_of_nodes() == 4
+    assert graph.number_of_edges() == 3
+    lengths = edge_lengths(graph)
+    assert lengths[0] == pytest.approx(80.0, abs=2 * GRID.cell_m)
+    assert lengths[1:] == pytest.approx([400.0, 400.0], abs=2 * GRID.cell_m)
+
+
+def test_pruning_repeats_until_no_spur_is_left():
+    # A 30 m spur on a 30 m spur's neighbour: removing the first leaves a new dead end.
+    graph = pruned(tee_trips(30.0) + thrice([line((440, 440), (440, 470), step=10.0)]))
+    assert graph.number_of_nodes() == 2
+    assert all(d > 0 for _, d in graph.degree)
+
+
+def test_contract_chains_merges_a_degree_two_node():
+    graph = skeleton_graph(thrice([line((80, 480), (480, 480)), line((480, 480), (880, 480))]))
+    roads.contract_chains(graph)
+    assert graph.number_of_nodes() == 2
+    assert graph.number_of_edges() == 1
+
+
+def test_largest_component_keeps_the_longer_piece():
+    big = line((80, 200), (880, 200))
+    small = line((80, 700), (330, 700))
+    graph = skeleton_graph(thrice([big, small]))
+    assert graph.number_of_edges() == 2
+    kept = roads.largest_component(graph)
+    assert kept.number_of_edges() == 1
+    (length,) = edge_lengths(kept)
+    assert length == pytest.approx(800.0, abs=2 * GRID.cell_m)
+
+
+def test_build_graph_drops_chords_and_small_pieces():
+    road = line((80, 200), (880, 200))
+    stray = line((80, 700), (330, 700))
+    once = [line((100, 900), (800, 900))]  # a single trip: below MIN_TRIPS
+    graph, kept = roads.build_graph([*thrice([road, stray]), *once], GRID)
+    assert graph.number_of_edges() == 1
+    assert kept == 101 + 32  # pixel columns 10..110 and 10..41
