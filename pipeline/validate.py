@@ -453,9 +453,9 @@ def check_orders(shift: dict[str, Any], bounds: Bounds) -> tuple[list[str], bool
         out += check_order_units(order, bounds, taxi_count, where)
         out += check_order_path(order, bounds, where)
         out += check_order_fare(order, start_hour, where)
-        if order[0] < last_t:
-            out.append(viol("order-sorted", where, f"t={order[0]} comes after t={last_t}"))
-        last_t = order[0]
+        if order[F_T] < last_t:
+            out.append(viol("order-sorted", where, f"t={order[F_T]} comes after t={last_t}"))
+        last_t = order[F_T]
     return out, shapes_ok
 
 
