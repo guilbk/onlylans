@@ -212,7 +212,7 @@
     let n = 0;
     const real = G.real, tot = G.tot;
     for (let i = 0; i < real.length; i++) if (real[i] > tot) n++;
-    const rank = n + 1;
+    const rank = Math.min(n + 1, real.length);
     if (rank !== G.rank) {
       const prev = G.rank;
       G.rank = rank;
@@ -361,7 +361,7 @@
     let rp = 1;
     for (let i = 0; i < G.rivals.length; i++) if (cents(G.rivals[i].total) > ec) rp++;
     return {
-      earned: earned, rank: better + 1, nDrivers: sh.nDrivers, medal: medal, rides: G.rides,
+      earned: earned, rank: Math.min(better + 1, sh.nDrivers), nDrivers: sh.nDrivers, medal: medal, rides: G.rides,
       idlePct: Math.round(100 * G.idleT / C.SHIFT), vsGhost: r2(earned - sh.thr.ghost),
       racePlace: rp, raceSize: 1 + G.rivals.length, tips: G.tips, bestCombo: G.bestCombo,
       shiftId: sh.id, idx: G.idx
