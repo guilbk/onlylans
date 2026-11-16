@@ -312,7 +312,7 @@ def build_data(trips: Sequence[Trip], unit_m: int = UNIT_M) -> dict:
     shifts = [build_shift(sd, trips, speeds, unit_m) for sd in shift_defs()]
     assign_difficulty(shifts)
     for s in shifts:
-        s["hot"], s["surges"] = places.hot_and_surges(s["_trips"], s["orders"], unit_m)
+        s["hot"], s["surges"] = places.hot_and_surges(s["orders"], unit_m)
         del s["_trips"]
     return {
         "version": 1,
