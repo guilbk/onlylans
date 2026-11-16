@@ -4,17 +4,15 @@ SPEED = 36.0  # km/h, flat: 10 m/s
 FLAT = tuple([SPEED] * 24)
 
 
-def order(
-    i: int, t: float, x: float, y: float = 0.0, d: float = 60.0, fare: float = 5.0, c: int = 2
-) -> b.Order:
+def order(i: int, t: float, x: float, y: float = 0.0, d: float = 60.0, fare: float = 5.0,
+          c: int = 2) -> b.Order:
     return b.Order(i, t, x, y, (x, x + 100), (y, y), d, fare, c)
 
 
 def shift(orders: list[b.Order], ranking: tuple[float, ...] = (10.0, 6.0, 2.0)) -> b.Shift:
     orders.sort(key=lambda o: o.t)
-    return b.Shift(
-        "t", 8, ranking, 6.0, 10.0, ranking[0], FLAT, 1.0, tuple(orders), tuple(o.t for o in orders)
-    )
+    return b.Shift("t", 8, ranking, 6.0, 10.0, ranking[0], FLAT, 1.0, tuple(orders),
+                   tuple(o.t for o in orders))
 
 
 def decoy(o: b.Order) -> b.Order:
