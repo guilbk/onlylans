@@ -1,7 +1,8 @@
 """Share of Python in the repository's code, counted by bytes (CONTRACT section 1).
 
 Mirrors GitHub's language bar for the four languages that matter here: Python against
-JavaScript, CSS and HTML. Files are taken from ``git ls-files``; files marked
+JavaScript, CSS and HTML. Files and their sizes come from git (``git ls-files``, blob sizes), so a
+sparse checkout counts the same as a full one; files marked
 ``linguist-generated``, ``linguist-vendored`` or ``linguist-documentation`` in ``.gitattributes``
 are skipped, and so are everything under ``data/``, JSON and Markdown. All sizes are in bytes.
 """
@@ -31,6 +32,7 @@ LANGUAGE_ORDER = (PYTHON, "JavaScript", "CSS", "HTML")
 EXCLUDED_DIRS = frozenset({"data"})
 EXCLUDING_ATTRS = ("linguist-generated", "linguist-vendored", "linguist-documentation")
 ATTR_ON = frozenset({"set", "true"})
+SUBMODULE_MODE = "160000"
 
 
 def run_git(root: Path, args: list[str], stdin: bytes | None = None) -> bytes:
@@ -68,16 +70,65 @@ def parse_nul_list(raw: bytes) -> list[str]:
     return [item.decode("utf-8") for item in raw.split(b"\0") if item]
 
 
-def tracked_files(root: Path) -> list[str]:
-    """List the files tracked by git.
+def parse_ls_files_stage(raw: bytes) -> dict[str, str]:
+    r"""Parse ``git ls-files -s -z`` output into a path to blob id map.
+
+    Args:
+        raw: NUL-separated ``<mode> <blob> <stage>\t<path>`` records.
+
+    Returns:
+        Map of repository-relative POSIX path to blob id (submodule entries are left out).
+    """
+    blobs: dict[str, str] = {}
+    for record in parse_nul_list(raw):
+        meta, _, path = record.partition("\t")
+        mode, blob, _stage = meta.split(" ")
+        if mode != SUBMODULE_MODE:
+            blobs[path] = blob
+    return blobs
+
+
+def tracked_blobs(root: Path) -> dict[str, str]:
+    """List the tracked files with their blob ids, whether or not they are checked out.
 
     Args:
         root: Repository directory.
 
     Returns:
-        Repository-relative POSIX paths, sorted.
+        Map of repository-relative POSIX path to blob id.
     """
-    return sorted(parse_nul_list(run_git(root, ["ls-files", "-z"])))
+    return parse_ls_files_stage(run_git(root, ["ls-files", "-s", "-z"]))
+
+
+def parse_object_sizes(raw: bytes, blobs: list[str]) -> dict[str, int]:
+    """Parse ``git cat-file --batch-check=%(objectsize)`` output.
+
+    Args:
+        raw: One size per line, in the order the blob ids were given.
+        blobs: The blob ids that were asked about.
+
+    Returns:
+        Map of blob id to size in bytes.
+    """
+    sizes = [int(line) for line in raw.decode("ascii").split()]
+    return dict(zip(blobs, sizes, strict=True))
+
+
+def blob_sizes(root: Path, blobs: list[str]) -> dict[str, int]:
+    """Ask git for the size in bytes of blobs.
+
+    Args:
+        root: Repository directory.
+        blobs: Blob ids.
+
+    Returns:
+        Map of blob id to size in bytes.
+    """
+    if not blobs:
+        return {}
+    stdin = "".join(f"{b}\n" for b in blobs).encode("ascii")
+    raw = run_git(root, ["cat-file", "--batch-check=%(objectsize)"], stdin)
+    return parse_object_sizes(raw, blobs)
 
 
 def parse_check_attr(raw: bytes) -> dict[str, set[str]]:
@@ -141,7 +192,7 @@ def count_bytes(
 
     Args:
         files: Repository-relative paths.
-        sizes: Size in bytes of each path (a path missing here counts as absent).
+        sizes: Size in bytes of each path (a path missing here is not counted).
         excluded: Switched-on excluding attributes per path.
 
     Returns:
@@ -188,24 +239,6 @@ def format_table(totals: Mapping[str, int]) -> str:
     return "\n".join(rows)
 
 
-def file_sizes(root: Path, files: Iterable[str]) -> dict[str, int]:
-    """Read the on-disk size in bytes of each existing file.
-
-    Args:
-        root: Repository directory.
-        files: Repository-relative paths; those missing on disk (sparse checkout) are left out.
-
-    Returns:
-        Map of path to size in bytes.
-    """
-    sizes: dict[str, int] = {}
-    for rel in files:
-        path = root / rel
-        if path.is_file():
-            sizes[rel] = path.stat().st_size
-    return sizes
-
-
 def measure(root: Path) -> dict[str, int]:
     """Measure the bytes per language of a git repository.
 
@@ -213,10 +246,13 @@ def measure(root: Path) -> dict[str, int]:
         root: Repository directory.
 
     Returns:
-        Bytes per language, honouring the linguist attributes and the exclusions.
+        Bytes per language, honouring the linguist attributes and the exclusions. Sizes are the
+        committed blob sizes, so files missing from a sparse checkout still count.
     """
-    files = [f for f in tracked_files(root) if language_of(f) is not None]
-    return count_bytes(files, file_sizes(root, files), excluding_attrs(root, files))
+    blobs = {p: b for p, b in tracked_blobs(root).items() if language_of(p) is not None}
+    by_blob = blob_sizes(root, sorted(set(blobs.values())))
+    sizes = {path: by_blob[blob] for path, blob in blobs.items()}
+    return count_bytes(sorted(blobs), sizes, excluding_attrs(root, sorted(blobs)))
 
 
 def main(argv: list[str] | None = None) -> int:

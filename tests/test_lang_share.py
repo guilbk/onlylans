@@ -52,7 +52,7 @@ def test_parse_check_attr_keeps_only_switched_on() -> None:
 
 
 def test_count_bytes_skips_excluded_unknown_and_absent() -> None:
-    files = ["a.py", "b.js", "c.css", "d.html", "gen.js", "data/x.py", "note.md", "gone.py"]
+    files = ["a.py", "b.js", "c.css", "d.html", "gen.js", "data/x.py", "note.md", "nosize.py"]
     sizes = {"a.py": 100, "b.js": 40, "c.css": 5, "d.html": 5, "gen.js": 999, "data/x.py": 7}
     excluded = {"gen.js": {"linguist-generated"}, "a.py": set()}
     totals = ls.count_bytes(files, sizes, excluded)
@@ -74,9 +74,22 @@ def test_format_table_lists_each_language_and_the_share() -> None:
     assert lines[-1] == "Python share: 75.00%"
 
 
-def test_file_sizes_ignores_missing_files(tmp_path: Path) -> None:
-    (tmp_path / "a.py").write_bytes(b"12345")
-    assert ls.file_sizes(tmp_path, ["a.py", "missing.py"]) == {"a.py": 5}
+def test_parse_ls_files_stage_skips_submodules() -> None:
+    raw = (
+        b"100644 aaa 0\tpipeline/a.py\0"
+        b"160000 bbb 0\tvendor/sub\0"
+        b"100755 ccc 0\tdir with space/x.js\0"
+    )
+    assert ls.parse_ls_files_stage(raw) == {"pipeline/a.py": "aaa", "dir with space/x.js": "ccc"}
+
+
+def test_parse_object_sizes_pairs_in_order() -> None:
+    assert ls.parse_object_sizes(b"12\n7\n", ["aaa", "bbb"]) == {"aaa": 12, "bbb": 7}
+    assert ls.parse_object_sizes(b"", []) == {}
+
+
+def test_blob_sizes_of_nothing_needs_no_git(tmp_path: Path) -> None:
+    assert ls.blob_sizes(tmp_path / "not-a-repo", []) == {}
 
 
 def git(root: Path, *args: str) -> None:
@@ -117,6 +130,14 @@ REPO_ATTRS = (
 
 def test_measure_on_temp_git_repo(tmp_path: Path) -> None:
     make_repo(tmp_path, REPO_FILES, REPO_ATTRS)
+    totals = ls.measure(tmp_path)
+    assert totals == {"Python": 600, "JavaScript": 400, "CSS": 0, "HTML": 0}
+
+
+def test_measure_counts_files_missing_from_the_work_tree(tmp_path: Path) -> None:
+    make_repo(tmp_path, REPO_FILES, REPO_ATTRS)
+    (tmp_path / "game/src/js/g.js").unlink()  # like a sparse checkout: tracked, not on disk
+    (tmp_path / "pipeline/a.py").write_bytes(b"#")  # edits on disk do not change the count
     totals = ls.measure(tmp_path)
     assert totals == {"Python": 600, "JavaScript": 400, "CSS": 0, "HTML": 0}
 

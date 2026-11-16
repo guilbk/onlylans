@@ -6,24 +6,31 @@ from typing import Any
 
 import pytest
 
+from pipeline import geo
 from pipeline import validate as v
 
 BOUNDS = (0, 0, 3000, 3800)
 Doc = dict[str, Any]
 
 
-def make_shift(shift_id: str = "mon-am", start_hour: int = 8, fare: float = 4.0) -> Doc:
+def make_shift(
+    shift_id: str = "mon-am", start_hour: int | None = None, fare: float | None = None
+) -> Doc:
     """One valid shift: taxi 0 drives orders 0 and 2, taxi 1 drives order 1."""
 
     def order(t: int, taxi: int) -> list[Any]:
         return [t, 10, 10, 40, 10, [10, 0, 10, 0, 10, 0], 45, 1.5, fare, 0, 0, taxi]
 
+    if start_hour is None:
+        start_hour = v.expected_start_hour(shift_id) or 0
+    if fare is None:  # 3.25 + 0.50 * 1.5 km = 4.00 EUR, x1.2 = 4.80 EUR at night
+        fare = 4.8 if geo.night_hour(start_hour) else 4.0
     return {
         "id": shift_id,
         "name": "Ранок",
         "day": "понеділок",
         "slot": shift_id.split("-")[1],
-        "start_local": "2014-05-12 08:00",
+        "start_local": f"2014-05-12 {start_hour:02d}:00",
         "start_hour": start_hour,
         "difficulty": 3,
         "nDrivers": 2,
@@ -162,6 +169,9 @@ BROKEN: list[tuple[str, Callable[[Doc], None]]] = [
     ("shift-values", set_shift("difficulty", 6)),
     ("shift-values", set_shift("start_hour", 24)),
     ("shift-values", set_shift("start_local", "12.05.2014")),
+    ("shift-hours", set_shift("start_hour", 9)),
+    ("shift-hours", set_shift("start_local", "2014-05-12 09:00")),
+    ("shift-hours", set_shift("slot", "pm")),
     ("shift-values", set_shift("speed_by_hour", [20.0] * 23)),
     ("shift-values", no_orders),
     ("order-arity", pop_order_field),
@@ -251,6 +261,15 @@ def test_expected_shift_ids_order() -> None:
     assert len(ids) == 28
     assert ids[:5] == ["mon-am", "mon-lunch", "mon-pm", "mon-night", "tue-am"]
     assert ids[-1] == "sun-night"
+
+
+@pytest.mark.parametrize(
+    ("shift_id", "hour"),
+    [("mon-am", 8), ("tue-lunch", 12), ("wed-pm", 17), ("thu-night", 22), ("sat-night", 0)],
+)
+def test_expected_start_hour(shift_id: str, hour: int) -> None:
+    assert v.expected_start_hour(shift_id) == hour
+    assert v.expected_start_hour("mon-dawn") is None
 
 
 def test_viol_format() -> None:

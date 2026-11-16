@@ -50,7 +50,8 @@ MAX_PER_RULE = 8  # violations listed per rule in the report
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 SLOTS = ("am", "lunch", "pm", "night")
-SLOT_START_HOUR = {"am": 8, "lunch": 12, "pm": 17, "night": 22}
+SLOT_START_HOUR = {"am": 8, "lunch": 12, "pm": 17, "night": 22}  # local hour
+SAT_NIGHT_ID = "sat-night"  # the real Sunday 00:00-02:00
 START_LOCAL_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$")
 TOP_KEYS = frozenset({"version", "unit_m", "bounds", "generated", "shifts"})
 SHIFT_FIELDS = {
@@ -234,7 +235,7 @@ def check_shift_fields(shift: dict[str, Any]) -> list[str]:
     for name, kind in SHIFT_FIELDS.items():
         if name in shift and not kind_ok(shift[name], kind):
             out.append(viol("shift-types", where, f"{name} must be {kind}"))
-    return out + check_shift_values(shift, where)
+    return out + check_shift_values(shift, where) + check_shift_hours(shift, where)
 
 
 def check_shift_values(shift: dict[str, Any], where: str) -> list[str]:
@@ -261,6 +262,47 @@ def check_shift_values(shift: dict[str, Any], where: str) -> list[str]:
         speeds = shift["speed_by_hour"]
         if len(speeds) != HOURS_PER_DAY or not all(is_num(v) for v in speeds):
             out.append(viol("shift-values", where, "speed_by_hour needs 24 numbers (km/h)"))
+    return out
+
+
+def expected_start_hour(shift_id: str) -> int | None:
+    """Give the local start hour of a shift from its id.
+
+    Args:
+        shift_id: ``<day>-<slot>``.
+
+    Returns:
+        8, 12, 17 or 22 by slot; 0 for ``sat-night`` (the real Sunday 00-02); None if the slot
+        is unknown.
+    """
+    if shift_id == SAT_NIGHT_ID:
+        return 0
+    return SLOT_START_HOUR.get(shift_id.rsplit("-", 1)[-1])
+
+
+def check_shift_hours(shift: dict[str, Any], where: str) -> list[str]:
+    """Check that ``slot``, ``start_hour`` and ``start_local`` agree with the shift id.
+
+    Args:
+        shift: One shift object.
+        where: Location text for the messages.
+
+    Returns:
+        Violations of the slot name, the start hour (local, 0..23) and the hour in ``start_local``.
+    """
+    sid = shift.get("id")
+    if not (isinstance(sid, str) and is_int(shift.get("start_hour"))):
+        return []
+    out: list[str] = []
+    if isinstance(shift.get("slot"), str) and shift["slot"] != sid.rsplit("-", 1)[-1]:
+        out.append(viol("shift-hours", where, f"slot {shift['slot']!r} does not match the id"))
+    want = expected_start_hour(sid)
+    if want is not None and shift["start_hour"] != want:
+        out.append(viol("shift-hours", where, f"start_hour {shift['start_hour']}, expected {want}"))
+    local = shift.get("start_local")
+    local_ok = isinstance(local, str) and START_LOCAL_RE.match(local)
+    if local_ok and int(local[11:13]) != shift["start_hour"]:
+        out.append(viol("shift-hours", where, "start_local hour differs from start_hour"))
     return out
 
 
