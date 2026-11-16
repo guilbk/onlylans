@@ -2,6 +2,7 @@ import math
 import random
 
 import numpy as np
+import pytest
 
 from pipeline import geo, places
 
@@ -137,3 +138,64 @@ def test_deterministic():
     rng = random.Random(6)
     orders = background(rng, 300) + around(rng, 8000, 12000, 100.0, 30, 2000, 2300)
     assert places.hot_and_surges(orders, UNIT) == places.hot_and_surges(orders, UNIT)
+
+
+def test_place_points_projects_every_place():
+    pts = places.place_points()
+    assert len(pts) == len(places.PLACES)
+    name, x, y = pts[0]
+    assert name == "Aliados"
+    assert (x, y) == geo.proj(-8.6112, 41.1481)
+
+
+def test_density_grid_shape_and_mass():
+    xy = np.array([[2750.0, 2750.0, 0.0], [2760.0, 2740.0, 10.0]])
+    grid = places.density_grid(xy)
+    assert grid.shape == (
+        math.ceil(geo.MAP_H_M / places.CELL_M),
+        math.ceil(geo.MAP_W_M / places.CELL_M),
+    )
+    assert grid.sum() == pytest.approx(2.0, rel=0.01)  # the blur keeps the mass
+    assert np.unravel_index(np.argmax(grid), grid.shape) == (5, 5)
+    far = places.density_grid(np.array([[99999.0, -5.0, 20.0]]))  # clipped into a corner cell
+    assert far.shape == grid.shape and far.sum() > 0
+
+
+def test_hotspots_of_one_cluster_and_of_nothing():
+    rng = random.Random(7)
+    cx, cy = geo.proj(-8.6094, 41.1511)
+    xy = places.pickups_m(around(rng, cx, cy, 80.0, 60), UNIT)
+    hot = places.hotspots(xy, UNIT)
+    assert len(hot) >= 1
+    assert hot[0]["w"] > 0.9 and hot[0]["name"] == "Trindade"
+    assert places.hotspots(np.empty((0, 3)), UNIT) == []
+
+
+def test_circle_candidates_need_enough_pickups():
+    xy = np.array([[4000.0, 4000.0, 0.0]] * (places.CIRCLE_MIN_TOTAL - 1))
+    assert places.circle_candidates(xy) == []
+    xy = np.array([[4000.0, 4000.0, 0.0]] * places.CIRCLE_MIN_TOTAL)
+    cands = places.circle_candidates(xy)
+    assert (4250.0, 4250.0) in cands
+    assert all(math.hypot(x - 4000.0, y - 4000.0) <= places.SURGE_R_M for x, y in cands)
+
+
+def test_best_window_finds_a_burst_and_ignores_flat_rates():
+    flat = np.arange(200, 7200, 100, dtype=float)
+    assert places.best_window(flat, 2.0, 5) == []
+    burst = np.concatenate([np.arange(200, 7200, 700, dtype=float), np.full(12, 3010.0)])
+    found = places.best_window(burst, 2.0, 5)
+    assert found and all(w[1] % places.BIN_S == 0 and w[1] >= places.T0_MIN_S for w in found)
+    z, t0, n = max(found)
+    assert t0 <= 3010 < t0 + places.WINDOW_S and n >= 12 and z > 0
+    assert places.best_window(np.array([]), 2.0, 5) == []
+
+
+def test_collect_surges_sorted_best_first():
+    rng = random.Random(8)
+    xy = places.pickups_m(
+        background(rng, 200) + around(rng, 8000, 12000, 100.0, 40, 3000, 3300), UNIT
+    )
+    cands = places.collect_surges(xy, places.SURGE_MIN_RATE, places.SURGE_MIN_N)
+    assert cands == sorted(cands)
+    assert cands and all(len(c) == 5 for c in cands)
