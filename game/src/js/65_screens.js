@@ -20,6 +20,7 @@
 
   const dom = {};
   const cards = {};
+  const diffBtns = [];
   let resultToken = 0;
   let medalTimer = 0;
 
@@ -95,6 +96,7 @@
       const open = isOpen(i);
       c.el.classList.toggle('locked', !open);
       c.el.disabled = !open;
+      c.el.classList.toggle('next', PG.progress && PG.progress.nextIdx ? PG.progress.nextIdx() === i : false);
       const m = bestMedal(i);
       c.medal.textContent = m > 0 ? MEDAL_NAMES[m] : (open ? '' : 'закрито');
       c.medal.style.setProperty('--c', MEDAL_COLORS[m]);
@@ -142,6 +144,8 @@
     play.id = 'btn-play';
     play.addEventListener('click', function () { start(playIdx()); });
     m.appendChild(play);
+    buildDifficulty(m);
+    buildHowTo(m);
     const about = btn('btn-link', 'Про дані');
     about.id = 'btn-about';
     about.addEventListener('click', function () { setScreen('about'); });
@@ -163,6 +167,43 @@
     }
     m.appendChild(list);
     refreshMenu();
+  }
+
+  function refreshDifficulty() {
+    const d = PG.progress && PG.progress.difficulty ? PG.progress.difficulty() : 'normal';
+    for (let i = 0; i < diffBtns.length; i++) {
+      const on = diffBtns[i].getAttribute('data-diff') === d;
+      diffBtns[i].classList.toggle('on', on);
+      diffBtns[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  }
+
+  function buildDifficulty(m) {
+    const P = PG.progress;
+    if (!P || !P.setDifficulty) return;
+    const box = el('div', 'diff-choice');
+    box.id = 'diff-choice';
+    box.appendChild(el('span', 'diff-label', 'Складність'));
+    diffBtns.length = 0;
+    for (let i = 0; i < P.DIFFS.length; i++) {
+      const b = btn('diff-btn', P.DIFF_LABEL[P.DIFFS[i]]);
+      b.setAttribute('data-diff', P.DIFFS[i]);
+      b.addEventListener('click', function () { P.setDifficulty(b.getAttribute('data-diff')); refreshDifficulty(); });
+      diffBtns.push(b);
+      box.appendChild(b);
+    }
+    m.appendChild(box);
+    refreshDifficulty();
+  }
+
+  function buildHowTo(m) {
+    const P = PG.progress;
+    if (!P || !P.HOWTO) return;
+    const box = el('div', 'howto');
+    box.id = 'howto';
+    box.appendChild(el('h2', null, 'Як грати'));
+    for (let i = 0; i < P.HOWTO.length; i++) box.appendChild(el('p', null, P.HOWTO[i]));
+    m.appendChild(box);
   }
 
   function listBlock(title, items, cls) {
@@ -204,13 +245,7 @@
     return s;
   }
 
-  function raceTable(G, r) {
-    const rows = [{ name: 'Ріїн Гіслінг', nick: 'ти', color: '#3df5b0', total: r.earned, rides: r.rides, me: true }];
-    for (let i = 0; i < G.rivals.length; i++) {
-      const v = G.rivals[i];
-      rows.push({ name: v.name, nick: v.nick, color: v.color, total: v.total, rides: v.rides, me: false });
-    }
-    rows.sort(function (a, b) { return b.total - a.total; });
+  function raceTable(rows) {
     const box = el('div', 'res-race');
     box.appendChild(el('h2', null, 'Перегони 7 ланосів'));
     for (let i = 0; i < rows.length; i++) {
@@ -229,6 +264,9 @@
   function showResult(r) {
     const U = PG.util;
     const res = dom.result;
+    const G = PG.engine && PG.engine.G;
+    const view = PG.progress && PG.progress.resultView ? PG.progress.resultView(r, G) : {
+      record: false, bestEarned: 0, placeText: '', race: [], unlockedNext: false };
     res.textContent = '';
     const hero = el('div', 'hero-icon small');
     hero.innerHTML = HERO_SVG;
@@ -240,6 +278,9 @@
     const medal = el('div', 'res-medal');
     medal.id = 'res-medal';
     res.appendChild(medal);
+    if (view.record) res.appendChild(el('div', 'res-record', 'Новий рекорд!'));
+    else if (view.bestEarned > 0) res.appendChild(el('div', 'res-best', 'Найкраще: ' + U.eur(view.bestEarned)));
+    if (view.unlockedNext && r.medal >= 1) res.appendChild(el('div', 'res-unlock', 'Відкрито наступну зміну'));
 
     const stats = el('div', 'res-stats');
     stats.appendChild(stat(U.plural(r.rides, 'поїздка', 'поїздки', 'поїздок'), String(r.rides)));
@@ -250,8 +291,8 @@
     if (r.bestCombo > 1) stats.appendChild(stat('найкраще комбо', '×' + r.bestCombo));
     res.appendChild(stats);
 
-    const G = PG.engine && PG.engine.G;
-    if (G && G.rivals && G.rivals.length) res.appendChild(raceTable(G, r));
+    if (view.placeText) res.appendChild(el('div', 'res-place', view.placeText));
+    if (view.race.length) res.appendChild(raceTable(view.race));
 
     const row = el('div', 'res-buttons');
     const again = btn('btn-big', 'Ще раз');
@@ -283,8 +324,51 @@
     }, MEDAL_DELAY_MS);
   }
 
+  // ---- onboarding hints (first shift): wait for the subject to be on screen ----
+  const hintOut = { x: 0, y: 0, hx: 0, hy: 0 };
+  const hintCtx = { pin: false, ghost: false, bar: false };
+  let hintEl = null;
+  let hintUntil = 0;
+  let hintNext = 0;
+  let hintShown = 0;
+
+  function onScreen(p, W, H) { return p.x > 20 && p.x < W - 20 && p.y > 90 && p.y < H - 70; }
+
+  function hintTick(e) {
+    if (!PG.progress || !PG.progress.hintDue || PG.screen !== 'play' || !hintEl) return;
+    const now = e.now;
+    if (hintShown && now >= hintUntil) { hintEl.classList.remove('on'); hintShown = 0; }
+    if (hintShown || now < hintNext) return;
+    hintNext = now + 0.4;
+    const G = PG.engine && PG.engine.G;
+    const R = PG.render;
+    if (!G || G.over || G.paused || !R || !R.P) return;
+    const stage = document.getElementById('stage');
+    const W = stage ? stage.clientWidth : 0, H = stage ? stage.clientHeight : 0;
+    hintCtx.pin = hintCtx.ghost = false;
+    hintCtx.bar = G.t > 20;
+    const os = G.sh.orders;
+    for (let i = 0; i < os.length; i++) {
+      const o = os[i];
+      if (o.t < G.t || o.t - G.t > 800) continue;
+      if (PG.engine.reachable(o) && onScreen(R.P(o.x0, o.y0), W, H)) { hintCtx.pin = true; break; }
+    }
+    if (PG.data.ghostAt) {
+      PG.data.ghostAt(G.sh, G.t, hintOut);
+      hintCtx.ghost = onScreen(R.P(hintOut.x, hintOut.y), W, H);
+    }
+    const h = PG.progress.hintDue(hintCtx);
+    if (!h) return;
+    hintEl.textContent = h.text;
+    hintEl.classList.add('on');
+    PG.progress.markHint(h.n);
+    hintShown = h.n;
+    hintUntil = now + 6;
+    hintNext = now + 7;
+  }
+
   function showMenu() {
-    if (dom.menu) refreshMenu();
+    if (dom.menu) { refreshMenu(); refreshDifficulty(); }
     setScreen('menu');
   }
 
@@ -295,6 +379,15 @@
     if (!dom.menu || !PG.data) return;
     buildMenu();
     if (dom.about) buildAbout();
+    const stage = document.getElementById('stage');
+    if (stage && PG.progress && PG.progress.hintDue) {
+      hintEl = el('div', 'hint-card');
+      hintEl.id = 'hint-card';
+      stage.appendChild(hintEl);
+      PG.bus.on('frame', hintTick);
+      PG.bus.on('shift:start', function () { hintShown = 0; hintEl.classList.remove('on'); hintNext = 0; });
+      PG.bus.on('ui:screen', function (e) { if (e.name !== 'play') { hintEl.classList.remove('on'); hintShown = 0; } });
+    }
     PG.bus.on('shift:end', function (e) {
       const r = e && e.result;
       if (!r) return;
