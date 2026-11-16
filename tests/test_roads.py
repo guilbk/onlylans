@@ -419,7 +419,7 @@ def test_add_chain_connects_the_two_end_nodes():
     cluster[0, 0], cluster[0, 6] = 1, 2
     roads._add_chain(graph, cluster, [(0, c) for c in range(1, 6)], roads.CELL_M)
     assert graph.number_of_edges() == 1
-    (_, _, data), = graph.edges(data=True)
+    ((_, _, data),) = graph.edges(data=True)
     assert {data["a"], data["b"]} == {1, 2}
     assert data["pts"][0] == graph.nodes[data["a"]]["pos"]
     assert data["pts"][-1] == graph.nodes[data["b"]]["pos"]

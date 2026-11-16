@@ -49,9 +49,9 @@ LEGEND_K = 1.25  # legend medal at 1.25 x the ghost total
 DEFAULT_DELAY_S = 200.0
 
 DIFFICULTIES = ("easy", "normal", "hard")
-DEFAULT_LEAD = (720.0, 540.0, 420.0)  # game s, call types A, B, C
+DEFAULT_LEAD = (310.0, 310.0, 310.0)  # game s, call types A, B, C
 DEFAULT_RADIUS = (5000.0, 3500.0, 2500.0)  # metres, call types A, B, C
-DEFAULT_DIFF_K = {"easy": 1.25, "normal": 1.0, "hard": 0.85}
+DEFAULT_DIFF_K = {"easy": 1.0, "normal": 1.0, "hard": 0.9}
 
 # ---- constants of the rivals (25_ai.js) ------------------------------------------------------
 GRID_S = 5.0  # game s between decision points of a free rival
@@ -98,7 +98,7 @@ class RivalDiff:
 DEFAULT_RIVAL_DIFF = {
     "easy": RivalDiff(2.4, 0.7, 0.14, 0.5, 1.0, 0.0, 1.0),
     "normal": RivalDiff(1.0, 1.0, 0.35, 0.88, 1.15, 2500.0, 0.5),
-    "hard": RivalDiff(0.55, 1.25, 0.5, 0.95, 1.3, 3200.0, 0.35),
+    "hard": RivalDiff(0.55, 1.25, 0.5, 0.9, 1.6, 5000.0, 0.35),
 }
 
 
@@ -518,7 +518,7 @@ PERSONAS = {
     "ines": Persona(8, 120),
     "tiago": Persona(20, 45),
     "lurdes": Persona(30, 240),
-    "nuno": Persona(90, 90, 1.4, 0.5),
+    "nuno": Persona(90, 90, 1.7, 0.5),
 }
 
 # Hunting range of Tiago, short and long trips, game numbers of the tactics (25_ai.js).
@@ -526,7 +526,7 @@ HUNT_M = 1500.0  # Tiago only takes pins this close to the player
 SHORT_KM = 5.0  # Ines takes nothing longer
 NUNO_KM = 4.0  # Nuno takes nothing longer
 LONG_KM = 3.5  # Rui takes nothing shorter (unless it touches the airport)
-STAND_ETA_S = 200.0  # Fatima leaves the stand only for a pin this close in time
+STAND_ETA_S = 120.0  # Fatima leaves the stand only for a pin this close in time
 STAND_WAIT_S = 420.0  # ... and for a stand call at most this far away
 
 
@@ -2056,13 +2056,13 @@ def tactic_table(results: Sequence[ShiftResult]) -> list[str]:
         ticks = max(sum(t.get(m, 0) for m in ("idle", "cruise", "pickup", "ride", "break")), 1)
         worked = max(ticks - t.get("break", 0), 1) * BOT_STEP_S / 3600
         eph = t.get("fare", 0) / worked
-        pct = lambda key: 100 * t.get(key, 0) / rides  # noqa: E731
-        mode = lambda key: 100 * t.get(key, 0) / ticks  # noqa: E731
+        share = [100 * t.get(key, 0) / rides for key in ("air", "stand", "near", "surge")]
+        mode = [100 * t.get(key, 0) / ticks for key in ("break", "idle", "cruise")]
+        row = [rides / len(results), t.get("km", 0) / rides, *share]
+        row += [t.get("react", 0) / rides, t.get("dist", 0) / rides, eph, *mode]
+        widths = (5, 4, 5, 6, 5, 6, 5, 4, 6, 6, 5, 7)
         lines.append(
-            f"{rid:<7} {rides / len(results):5.1f} {t.get('km', 0) / rides:4.1f} {pct('air'):5.0f}"
-            f" {pct('stand'):6.0f} {pct('near'):5.0f} {pct('surge'):6.0f}"
-            f" {t.get('react', 0) / rides:5.0f} {t.get('dist', 0) / rides:4.1f} {eph:6.1f}"
-            f" {mode('break'):6.0f} {mode('idle'):5.0f} {mode('cruise'):7.0f}"
+            f"{rid:<7} " + " ".join(f"{v:{w}.1f}" for v, w in zip(row, widths, strict=True))
         )
     return lines
 

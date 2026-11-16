@@ -166,16 +166,127 @@ def test_near_airport() -> None:
 
 
 def test_attention_boosts() -> None:
-    sh = make_shift([make_order(0, 100.0, c=1)])
+    sh = make_shift([make_order(0, 100.0, c=1), make_order(1, 100.0, c=0, km=7.0)])
     g = sim.new_game(sh, "normal", sim.Settings())
     base = g.D.attn
     by = {rv.id: rv for rv in g.rivals}
-    o = sh.orders[0]
-    assert sim.attention(g, by["fatima"], o, False, False) == pytest.approx(base * 2)
-    assert sim.attention(g, by["rui"], o, True, False) == pytest.approx(base * 1.4)
-    assert sim.attention(g, by["lurdes"], o, False, True) == pytest.approx(base * 2.5)
-    assert sim.attention(g, by["tiago"], o, False, False) == pytest.approx(base * 0.6)
-    assert sim.attention(g, by["nuno"], o, False, False) == pytest.approx(base * 0.7)
+    stand, long_trip = sh.orders
+    quiet = sim.Ctx()
+    assert sim.attention(g, by["ze"], stand, False, quiet) == pytest.approx(base * 2.5)
+    assert sim.attention(g, by["fatima"], stand, False, quiet) == pytest.approx(base * 3)
+    assert sim.attention(g, by["fatima"], long_trip, False, quiet) == pytest.approx(base * 0.5)
+    assert sim.attention(g, by["rui"], stand, True, quiet) == pytest.approx(base * 1.4)
+    assert sim.attention(g, by["rui"], long_trip, False, sim.Ctx(air=True)) == pytest.approx(
+        base * 2 * 1.5
+    )
+    assert sim.attention(g, by["ines"], stand, False, quiet) == pytest.approx(base * 1.4)
+    assert sim.attention(g, by["lurdes"], stand, False, sim.Ctx(surge=True)) == pytest.approx(
+        base * 3
+    )
+    assert sim.attention(g, by["lurdes"], stand, False, quiet) == pytest.approx(base * 0.7)
+    assert sim.attention(g, by["tiago"], stand, False, quiet) == pytest.approx(base)
+    assert sim.attention(g, by["nuno"], stand, False, quiet) == pytest.approx(base * 0.5)
+
+
+def test_scorers_show_each_tactic() -> None:
+    o = make_order(0, 100.0, km=2.0, d=300.0, fare=5.0)
+    long_o = make_order(1, 100.0, km=9.0, d=900.0, fare=8.0)
+    stand = make_order(2, 100.0, c=1)
+    quiet = sim.Ctx()
+    assert sim.SCORERS["ze"](o, 100.0, quiet) == pytest.approx(5.0 / 430.0)
+    # Fatima: stand calls only within STAND_WAIT_S, street pins only when right next to her
+    assert sim.SCORERS["fatima"](stand, 100.0, quiet) > sim.SCORERS["fatima"](o, 100.0, quiet) > 0
+    assert sim.SCORERS["fatima"](stand, sim.STAND_WAIT_S + 1, quiet) == 0
+    assert sim.SCORERS["fatima"](o, sim.STAND_ETA_S + 1, quiet) == 0
+    # Rui: nothing short unless it touches the airport, long and airport trips are boosted
+    assert sim.SCORERS["rui"](o, 100.0, quiet) == 0
+    assert sim.SCORERS["rui"](o, 100.0, sim.Ctx(air=True)) > 0
+    assert sim.SCORERS["rui"](long_o, 100.0, quiet) > 0
+    assert sim.SCORERS["rui"](long_o, 100.0, sim.Ctx(air=True)) > sim.SCORERS["rui"](
+        long_o, 100.0, quiet
+    )
+    # Ines and Nuno refuse long trips (Nuno from 4 km)
+    assert sim.SCORERS["ines"](long_o, 100.0, quiet) == 0 < sim.SCORERS["ines"](o, 100.0, quiet)
+    four_five = make_order(3, 100.0, km=4.5)
+    assert sim.SCORERS["ines"](four_five, 100.0, quiet) > 0
+    assert sim.SCORERS["nuno"](four_five, 100.0, quiet) == 0 < sim.SCORERS["nuno"](o, 100.0, quiet)
+    assert sim.SCORERS["nuno"](o, 50.0, quiet) > sim.SCORERS["nuno"](o, 500.0, quiet)
+    # Tiago hunts near the player, except on easy
+    assert sim.SCORERS["tiago"](o, 100.0, sim.Ctx(pdist=sim.HUNT_M + 1)) == 0
+    assert sim.SCORERS["tiago"](o, 100.0, sim.Ctx(pdist=10.0)) == pytest.approx(
+        2 * sim.SCORERS["ze"](o, 100.0, quiet)
+    )
+    assert sim.SCORERS["tiago"](o, 100.0, sim.Ctx(pdist=1e9, easy=True)) > 0
+    # Lurdes: a running wave pulls her to wave pins
+    wave = sim.Ctx(live=True, surge=True)
+    away = sim.Ctx(live=True)
+    assert sim.SCORERS["lurdes"](o, 100.0, wave) > 3 * sim.SCORERS["lurdes"](o, 100.0, quiet)
+    assert sim.SCORERS["lurdes"](o, sim.STAND_ETA_S + 1, away) == 0
+    assert sim.SCORERS["lurdes"](o, 100.0, quiet) == pytest.approx(
+        sim.SCORERS["ze"](o, 100.0, quiet)
+    )
+
+
+def test_scan_skips_a_zero_score() -> None:
+    far = make_order(0, 900.0, km=9.0, x0=9110.0, y0=12443.0)
+    g = sim.new_game(make_shift([far]), "normal", sim.Settings())
+    nuno = next(rv for rv in g.rivals if rv.id == "nuno")
+    nuno.x, nuno.y, nuno.free_at = far.x0, far.y0, 0.0
+    assert (
+        sim.scan(g, nuno, 800.0) is None
+    )  # Nuno refuses 9 km trips even when nothing else is there
+
+
+def test_note_pickup_measures_the_tactic() -> None:
+    o = make_order(0, 100.0, km=3.0, c=1, x0=3300.0, y0=1300.0)
+    g = sim.new_game(make_shift([o]), "normal", sim.Settings())
+    rv = g.rivals[1]
+    rv.c_pd, rv.c_react, rv.c_dist = 100.0, 12.0, 2500.0
+    sim.note_pickup(g, rv, o)
+    t = rv.tac
+    assert (t["rides"], t["km"], t["air"], t["stand"], t["near"], t["surge"]) == (
+        1,
+        3.0,
+        1,
+        1,
+        1,
+        0,
+    )
+    assert (t["react"], t["dist"], t["fare"]) == (12.0, 2.5, 4.0)
+
+
+def test_tactic_table_has_a_line_per_rival() -> None:
+    orders = [make_order(i, 400.0 + 200.0 * i, x0=9110.0 + 50 * i) for i in range(20)]
+    res = sim.play_shift(make_shift(orders), "normal", sim.Settings())
+    assert (
+        len(res.tactics) == 7
+        and sum(res.tactics[0].get(m, 0) for m in ("idle", "cruise", "pickup", "ride", "break"))
+        == sim.BOT_TICKS
+    )
+    lines = sim.tactic_table([res])
+    assert lines[0] == sim.TACTIC_HEAD and [ln.split()[0] for ln in lines[1:]] == list(
+        sim.RIVAL_IDS
+    )
+
+
+def test_combo_window_is_measured_from_the_pickup() -> None:
+    # a chain of orders 250 s apart at one spot: a window of 300 s keeps the combo, 60 s breaks it
+    orders = [make_order(i, 400.0 + 250.0 * i) for i in range(12)]
+    sh = make_shift(orders)
+    chained = sim.play_shift(sh, "easy", sim.Settings(delay=0.0, combo_window=300.0))
+    broken = sim.play_shift(sh, "easy", sim.Settings(delay=0.0, combo_window=1.0))
+    assert sum(broken.combo[1:]) == 0 < sum(chained.combo[1:])
+    assert sum(chained.combo) == chained.rides and sum(broken.combo) == broken.rides
+    assert sim.COMBO_WINDOW_S == 300.0
+
+
+def test_idle_bot_drives_to_a_hotspot_and_stays() -> None:
+    g = sim.new_game(make_shift([make_order(0, 7000.0)]), "easy", sim.Settings())
+    sim.bot_tick(g)  # nothing visible yet
+    assert g.mode == "cruise" and (g.lx1, g.ly1) in {(h.x, h.y) for h in g.hot}
+    g.x, g.y, g.mode = g.lx1, g.ly1, "idle"
+    sim.bot_tick(g)
+    assert g.mode == "idle"
 
 
 def test_grid_up_and_leg_pos_and_place() -> None:

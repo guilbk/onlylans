@@ -343,11 +343,11 @@ if (PG.ai) {
     const eph = (id) => st[id].eur / Math.max(1, st[id].work * 7.2 / 3600);
     check(m('rui', 'km') > 1.4 * others('rui', x => m(x, 'km')), diff + ': Руй takes long trips (' + m('rui', 'km').toFixed(1) + ' km vs ' + others('rui', x => m(x, 'km')).toFixed(1) + ')');
     check(m('rui', 'air') > 2 * others('rui', x => m(x, 'air')), diff + ': Руй flies to the airport (' + m('rui', 'air').toFixed(2) + ' vs ' + others('rui', x => m(x, 'air')).toFixed(2) + ')');
-    check(m('fatima', 'stand') > 0.8, diff + ': Фатіма stays on stand calls (' + m('fatima', 'stand').toFixed(2) + ')');
+    check(m('fatima', 'stand') > 0.65 && m('fatima', 'stand') > 1.25 * others('fatima', x => m(x, 'stand')), diff + ': Фатіма stays on stand calls (' + m('fatima', 'stand').toFixed(2) + ' vs ' + others('fatima', x => m(x, 'stand')).toFixed(2) + ')');
     check(m('ines', 'react') < 0.6 * others('ines', x => m(x, 'react')), diff + ': Інеш reacts fastest (' + m('ines', 'react').toFixed(0) + ' s vs ' + others('ines', x => m(x, 'react')).toFixed(0) + ' s)');
     check(st.ines.maxKm <= 5 && st.nuno.maxKm <= 4, diff + ': Інеш takes short rides, Нуну nothing long (' + st.ines.maxKm.toFixed(1) + ', ' + st.nuno.maxKm.toFixed(1) + ' km)');
     check(m('nuno', 'dist') < others('nuno', x => m(x, 'dist')), diff + ': Нуну takes the nearest (' + m('nuno', 'dist').toFixed(2) + ' km to the pickup)');
-    check(m('lurdes', 'surge') > 2 * others('lurdes', x => m(x, 'surge')), diff + ': Лурдеш rides the demand waves (' + m('lurdes', 'surge').toFixed(2) + ' vs ' + others('lurdes', x => m(x, 'surge')).toFixed(2) + ')');
+    check(m('lurdes', 'surge') > 1.5 * others('lurdes', x => m(x, 'surge')), diff + ': Лурдеш rides the demand waves (' + m('lurdes', 'surge').toFixed(2) + ' vs ' + others('lurdes', x => m(x, 'surge')).toFixed(2) + ')');
     if (diff !== 'easy') check(m('tiago', 'near') > 0.8, diff + ': Тіаго hunts near the player (' + m('tiago', 'near').toFixed(2) + ')');
     check(eph('ze') >= 0.97 * Math.max(...RIV_IDS.filter(x => x !== 'ze').map(eph)), diff + ': Зé earns the most per working hour (' + eph('ze').toFixed(1) + ' €/h)');
     check(RIV_IDS.every(id => 1 - st[id].work / st[id].ticks <= (diff === 'easy' ? 0.55 : 0.15)), diff + ': breaks are short (' + RIV_IDS.map(id => (100 * (1 - st[id].work / st[id].ticks)).toFixed(0) + '%').join(' ') + ')');

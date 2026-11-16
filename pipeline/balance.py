@@ -125,8 +125,17 @@ def parse_order(i: int, raw: list[Any], unit_m: float) -> Order:
         y += pts[k + 1] * unit_m
         xs.append(x)
         ys.append(y)
-    return Order(i, float(raw[0]), xs[0], ys[0], tuple(xs), tuple(ys), float(raw[6]),
-                 float(raw[8]), int(raw[9]))
+    return Order(
+        i,
+        float(raw[0]),
+        xs[0],
+        ys[0],
+        tuple(xs),
+        tuple(ys),
+        float(raw[6]),
+        float(raw[8]),
+        int(raw[9]),
+    )
 
 
 def parse_shift(raw: dict[str, Any], unit_m: float) -> Shift:
@@ -141,9 +150,18 @@ def parse_shift(raw: dict[str, Any], unit_m: float) -> Shift:
     """
     orders = tuple(parse_order(i, o, unit_m) for i, o in enumerate(raw["orders"]))
     ranking = tuple(float(v) for v in raw["ranking"])
-    return Shift(raw["id"], int(raw["start_hour"]), ranking, float(raw["median"]),
-                 float(raw["top10"]), ranking[0], tuple(float(v) for v in raw["speed_by_hour"]),
-                 float(raw["detour"]), orders, tuple(o.t for o in orders))
+    return Shift(
+        raw["id"],
+        int(raw["start_hour"]),
+        ranking,
+        float(raw["median"]),
+        float(raw["top10"]),
+        ranking[0],
+        tuple(float(v) for v in raw["speed_by_hour"]),
+        float(raw["detour"]),
+        orders,
+        tuple(o.t for o in orders),
+    )
 
 
 def load_shifts(path: Path) -> list[Shift]:
@@ -206,8 +224,9 @@ def ride_position(o: Order, rel: float) -> tuple[float, float]:
     return o.xs[i] + (o.xs[j] - o.xs[i]) * f, o.ys[i] + (o.ys[j] - o.ys[i]) * f
 
 
-def cruise_position(shift: Shift, st: BotState, goal: tuple[float, float], t: float
-                    ) -> tuple[float, float]:
+def cruise_position(
+    shift: Shift, st: BotState, goal: tuple[float, float], t: float
+) -> tuple[float, float]:
     """Position at time ``t`` when cruising from the state's anchor toward ``goal``.
 
     Args:
@@ -227,8 +246,9 @@ def cruise_position(shift: Shift, st: BotState, goal: tuple[float, float], t: fl
     return st.x + (goal[0] - st.x) * f, st.y + (goal[1] - st.y) * f
 
 
-def origin_at(shift: Shift, st: BotState, goal: tuple[float, float], tau: float
-              ) -> tuple[float, float, float]:
+def origin_at(
+    shift: Shift, st: BotState, goal: tuple[float, float], tau: float
+) -> tuple[float, float, float]:
     """Where and when a booking made at ``tau`` starts driving.
 
     While riding the origin is the drop-off at ride end (CONTRACT §11); otherwise the cruising car.
@@ -252,8 +272,9 @@ def origin_at(shift: Shift, st: BotState, goal: tuple[float, float], tau: float
     return x, y, tau
 
 
-def car_position(shift: Shift, st: BotState, goal: tuple[float, float], tau: float
-                 ) -> tuple[float, float]:
+def car_position(
+    shift: Shift, st: BotState, goal: tuple[float, float], tau: float
+) -> tuple[float, float]:
     """Actual car position at ``tau`` (on the ride polyline while riding).
 
     Args:
@@ -271,8 +292,9 @@ def car_position(shift: Shift, st: BotState, goal: tuple[float, float], tau: flo
     return x, y
 
 
-def scan_pins(shift: Shift, st: BotState, goal: tuple[float, float], tau: float, p: Params
-              ) -> tuple[list[tuple[Order, float, float]], float]:
+def scan_pins(
+    shift: Shift, st: BotState, goal: tuple[float, float], tau: float, p: Params
+) -> tuple[list[tuple[Order, float, float]], float]:
     """Pins the bot knows at ``tau`` and can still reach, plus the next moment a pin gets noticed.
 
     Args:
@@ -290,7 +312,7 @@ def scan_pins(shift: Shift, st: BotState, goal: tuple[float, float], tau: float,
     ox, oy, from_t = origin_at(shift, st, goal, tau)
     found: list[tuple[Order, float, float]] = []
     nxt = math.inf
-    for o in shift.orders[bisect_right(shift.times, tau):]:
+    for o in shift.orders[bisect_right(shift.times, tau) :]:
         lead = LEAD_S[o.c] * k
         notice = o.t - lead + p.lag
         if o.t - LEAD_S[0] * k + p.lag > tau and o.t - LEAD_S[0] * k + p.lag >= nxt:
@@ -336,8 +358,9 @@ def choose(found: list[tuple[Order, float, float]], strategy: str) -> tuple[Orde
     return max(found, key=lambda c: (score(c[0], c[1]), -c[0].i))
 
 
-def next_booking(shift: Shift, st: BotState, goal: tuple[float, float], p: Params
-                 ) -> tuple[Order, float] | None:
+def next_booking(
+    shift: Shift, st: BotState, goal: tuple[float, float], p: Params
+) -> tuple[Order, float] | None:
     """Find the next order the bot books, scanning decision moments in event order.
 
     Args:
@@ -411,8 +434,16 @@ def evaluate(shift: Shift, p: Params) -> Result:
         The graded result.
     """
     earned = play_shift(shift, p)
-    return Result(shift.id, earned, shift.median, shift.top10, shift.ghost,
-                  medal_for(earned, shift), rank_among(earned, shift), len(shift.ranking))
+    return Result(
+        shift.id,
+        earned,
+        shift.median,
+        shift.top10,
+        shift.ghost,
+        medal_for(earned, shift),
+        rank_among(earned, shift),
+        len(shift.ranking),
+    )
 
 
 def summarize(results: list[Result]) -> dict[str, float]:
@@ -425,8 +456,9 @@ def summarize(results: list[Result]) -> dict[str, float]:
         Shares 0..1 keyed by medal name.
     """
     n = max(len(results), 1)
-    return {name: sum(r.medal >= m for r in results) / n
-            for m, name in enumerate(MEDAL_NAMES) if m > 0}
+    return {
+        name: sum(r.medal >= m for r in results) / n for m, name in enumerate(MEDAL_NAMES) if m > 0
+    }
 
 
 def format_table(p: Params, results: list[Result]) -> str:
@@ -439,11 +471,15 @@ def format_table(p: Params, results: list[Result]) -> str:
     Returns:
         Multi-line text.
     """
-    lines = [f"== diff={p.diff} strategy={p.strategy} lag={p.lag:g}",
-             f"{'shift':<12}{'bot EUR':>9}{'median':>9}{'top10':>9}{'ghost':>9}  {'medal':<7}rank"]
+    lines = [
+        f"== diff={p.diff} strategy={p.strategy} lag={p.lag:g}",
+        f"{'shift':<12}{'bot EUR':>9}{'median':>9}{'top10':>9}{'ghost':>9}  {'medal':<7}rank",
+    ]
     for r in results:
-        lines.append(f"{r.shift_id:<12}{r.earned:>9.2f}{r.median:>9.2f}{r.top10:>9.2f}"
-                     f"{r.ghost:>9.2f}  {MEDAL_NAMES[r.medal]:<7}{r.rank}/{r.n_drivers}")
+        lines.append(
+            f"{r.shift_id:<12}{r.earned:>9.2f}{r.median:>9.2f}{r.top10:>9.2f}"
+            f"{r.ghost:>9.2f}  {MEDAL_NAMES[r.medal]:<7}{r.rank}/{r.n_drivers}"
+        )
     s = summarize(results)
     lines.append("summary: " + "  ".join(f"{k}+ {v:.0%}" for k, v in s.items()))
     return "\n".join(lines)
@@ -480,15 +516,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.shifts:
         shifts = [shifts[i] for i in parse_list(args.shifts, int)]
     runs = []
-    for diff, strategy, lag in product(parse_list(args.diff, str), parse_list(args.strategy, str),
-                                       parse_list(args.lag, float)):
+    for diff, strategy, lag in product(
+        parse_list(args.diff, str), parse_list(args.strategy, str), parse_list(args.lag, float)
+    ):
         if diff not in DIFF_K or strategy not in STRATEGIES:
             raise SystemExit(f"unknown diff/strategy: {diff}/{strategy}")
         p = Params(diff, strategy, lag)
         results = [evaluate(s, p) for s in shifts]
         print(format_table(p, results))
-        runs.append({"params": asdict(p), "results": [asdict(r) for r in results],
-                     "summary": summarize(results)})
+        runs.append(
+            {
+                "params": asdict(p),
+                "results": [asdict(r) for r in results],
+                "summary": summarize(results),
+            }
+        )
     if args.json:
         args.json.write_text(json.dumps(runs, sort_keys=True, indent=1), encoding="utf-8")
     return 0

@@ -19,14 +19,14 @@
   const DIFF = {
     easy: { react: 2.4, radius: 0.7, attn: 0.14, duty: 0.5, speed: 1, near: 0, nearReact: 1 },
     normal: { react: 1.0, radius: 1.0, attn: 0.35, duty: 0.88, speed: 1.15, near: 2500, nearReact: 0.5 },
-    hard: { react: 0.55, radius: 1.25, attn: 0.5, duty: 0.95, speed: 1.3, near: 3200, nearReact: 0.35 },
+    hard: { react: 0.55, radius: 1.25, attn: 0.5, duty: 0.9, speed: 1.6, near: 5000, nearReact: 0.35 },
   };
 
   const HUNT_M = 1500;       // Тіаго only takes pins this close to the player
   const SHORT_KM = 5;        // Інеш takes nothing longer
   const NUNO_KM = 4;         // Нуну takes nothing longer
   const LONG_KM = 3.5;       // Руй takes nothing shorter (unless it touches the airport)
-  const STAND_ETA = 200;     // Фатіма leaves her stand for a street pin only this close in time
+  const STAND_ETA = 120;     // Фатіма leaves her stand for a street pin only this close in time
   const STAND_WAIT = 420;    // ... and for a stand call at most this far away in time
 
   // S = per-candidate scratch: S.pdist (pickup to player, m), S.inSurge, S.live (a surge runs or is about
@@ -78,7 +78,7 @@
       },
     },
     nuno: {
-      react: 90, repos: 90, travel: 1.4, attn: 0.5,
+      react: 90, repos: 90, travel: 1.7, attn: 0.5,
       score(o, eta) { return o.km > NUNO_KM ? 0 : 1 / (eta + 60); },
     },
   };
@@ -127,7 +127,7 @@
 
   function leadFor(o, K) {
     if (PG.engine && typeof PG.engine.leadOf === 'function') return PG.engine.leadOf(o);
-    const L = C('LEAD', [720, 540, 420]);
+    const L = C('LEAD', [310, 310, 310]);
     return L[o.c] * K * (PG.rules && PG.rules.leadK ? PG.rules.leadK(o) : 1);
   }
 
@@ -180,7 +180,7 @@
       RAD: C('RADIUS', [5000, 3500, 2500]),
       MAP: C('MAP', { w: 15000, h: 19000 }),
     };
-    const K = (PG.engine && PG.engine.DIFF_K ? PG.engine.DIFF_K : C('DIFF_K', { easy: 1.25, normal: 1, hard: 0.85 }))[dn];
+    const K = (PG.engine && PG.engine.DIFF_K ? PG.engine.DIFF_K : C('DIFF_K', { easy: 1.0, normal: 1, hard: 0.9 }))[dn];
     for (let i = 0; i < sh.orders.length; i++) {
       const o = sh.orders[i];
       const l = leadFor(o, K);
