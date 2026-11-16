@@ -94,19 +94,19 @@ body:not([data-screen="play"]) .pty-mini { display: none; }
 .pty-pl.pl2 { animation-delay: 1.2s; }
 .pty-pl.pl1 { animation-delay: 2.1s; }
 .pty-pcar { width: min(100%, 240px); height: auto; aspect-ratio: 2 / 1; }
-.pty-pname { font-size: clamp(20px, 2.2vw, 38px); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pty-pname { color: var(--text); font-size: clamp(20px, 2.2vw, 38px); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pty-peur { font-size: clamp(18px, 1.8vw, 30px); font-weight: 700; color: var(--amber); font-variant-numeric: tabular-nums; }
 .pty-step { width: 100%; border-radius: 10px 10px 0 0; background: var(--chip); border: 1px solid var(--track); color: var(--text);
   font: 800 clamp(28px, 3vw, 52px) var(--font); display: flex; align-items: center; justify-content: center; }
 .pl1 .pty-step { height: clamp(90px, 16vh, 170px); background: var(--gold); color: #3a2c00; }
 .pl2 .pty-step { height: clamp(66px, 11vh, 120px); background: var(--silver); color: #1d2230; }
 .pl3 .pty-step { height: clamp(46px, 7vh, 80px); background: var(--bronze); color: #2a1604; }
-.pty-table { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); column-gap: 24px; max-height: 34vh; overflow-y: auto; text-align: left;
-  animation: pty-in .6s ease-out 3.2s backwards; }
-.pty-table .pty-row { font-size: clamp(15px, 1.2vw, 24px); border-bottom: 1px solid var(--track); }
+.pty-table { columns: 3 280px; column-gap: 24px; text-align: left; animation: pty-in .6s ease-out 3.2s backwards; }
+.pty-table .pty-row { font-size: clamp(14px, 1.1vw, 22px); padding: 3px 4px; border-bottom: 1px solid var(--track); break-inside: avoid; }
 @keyframes pty-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes pty-rise { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .pty-pl, .pty-table, .pty-feed-row, .pty-time.last, .pty-last { animation: none; } }
 .pty-lost { position: absolute; z-index: 60; left: 50%; top: 8px; transform: translateX(-50%); padding: 4px 12px; border-radius: 10px;
   background: var(--bad); color: #fff; font: 700 13px var(--font); pointer-events: none; }
 .pty-lost[hidden] { display: none; }
+.pty-myrank { margin: 0 0 6px; font-weight: 800; color: var(--amber); }

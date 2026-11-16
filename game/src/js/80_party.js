@@ -458,7 +458,7 @@
       cv.width = 240;
       cv.height = 120;
       PG.cars.paint(cv.getContext('2d'), lk[0], 120, 60, 150, p.color, lk[1] || {});
-      el('b', 'pty-pname', p.name, col).style.color = p.color;
+      el('b', 'pty-pname', p.name, col);
       el('span', 'pty-peur', eur(p.money), col);
       el('div', 'pty-step', String(i + 1), col);
     });
@@ -501,7 +501,8 @@
       res.insertBefore(box, res.querySelector('.res-buttons'));
     }
     box.textContent = '';
-    el('h2', null, myRank(), box);
+    el('h2', null, 'Перегони гравців', box);
+    el('p', 'pty-myrank', myRank(), box);
     ranked().forEach(function (p) {
       const row = el('div', 'race-row' + (p.id === me.id ? ' me' : ''), undefined, box);
       el('i', 'race-dot', undefined, row).style.background = p.color;
