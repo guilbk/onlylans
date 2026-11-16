@@ -39,6 +39,7 @@
   function place(id, s) {
     const w = card.offsetWidth, h = card.offsetHeight;
     const hud = rect('#hud', s), dsp = rect('#dispatch', s), oc = rect('#order-card', s);
+    const zm = rect('#map-zoom', s), ct = rect('#map-center', s);
     const top = hud ? hud.b + 8 : 8, bot = dsp ? dsp.t - 8 : s.height - 8;
     let ax = s.width / 2, ay = top;
     const p = PG.render && PG.render.pins && PG.render.pins[0];
@@ -52,7 +53,7 @@
     let y = top;
     for (let i = 0; i < tries.length; i++) {
       const b = { l: x, t: tries[i], r: x + w, b: tries[i] + h };
-      if (b.t >= top && b.b <= bot && !hit(b, oc)) { y = tries[i]; break; }
+      if (b.t >= top && b.b <= bot && !hit(b, oc) && !hit(b, zm) && !hit(b, ct)) { y = tries[i]; break; }
     }
     card.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
   }
@@ -65,6 +66,7 @@
   }
   function next() {
     if (cur || !queue.length || !playing() || (sheet && !sheet.hidden)) return;
+    if (PG.overlay && PG.overlay.busy(card)) { root.setTimeout(next, 700); return; }   // one card at a time: wait for the other
     const id = queue.shift();
     const st = document.getElementById('stage');
     if (!st) return;
@@ -84,7 +86,8 @@
   }
   function want(id) {
     load();
-    if (done[id] || !playing()) return;
+    if (done[id] || !playing() || queue.indexOf(id) >= 0 || cur === id) return;
+    if (PG.coach && PG.coach.active && PG.coach.active() && (id === 'pin' || id === 'ring' || id === 'next' || id === 'ghost' || id === 'stars')) return;   // the coach says it
     done[id] = 1;
     save();
     queue.push(id);
