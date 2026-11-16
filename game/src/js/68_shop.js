@@ -1,4 +1,4 @@
-/* 68_shop.js: «ОЛХ», the skin and tuning marketplace (a parody of a classifieds site). Look only: the engine is not touched.
+/* 68_shop.js: «ОЛХ», the skin and car-mod marketplace (a parody of a classifieds site). Mods come from PG.cars.MODS.
    The wallet is the sum of € earned over all shifts (spent on purchases). It adds its own menu button. */
 (function (root) {
   const PG = root.PG = root.PG || {};
@@ -35,23 +35,76 @@
       desc: 'Заводиться з морквини. Пробок не боїться, на світлофорі нервує. Подушка на возі м’яка. Торг за моркву.' }
   ];
 
-  // Cosmetic extras: look only. They show on the listing photo; the map car has no hook for them.
-  const TUNING = [
-    { id: 'taxi', price: 14, title: 'Шашка TAXI на дах, світиться', who: 'Жозе · склад біля порту · шашки з різних міст',
-      date: '12 травня 2014', desc: 'Клієнти бачать здалеку. Чи сядуть, то вже їхня справа.' },
-    { id: 'stickers', price: 9, torg: true, title: 'Наклейки «Полум’я», комплект на два боки',
-      who: 'Беатріш · друкарня на розі · гарантія до першої мийки', date: '10 травня 2014',
-      desc: 'Швидкість не додають, зате додають упевненості. Клеїти на суху і чисту, тобто не на Ланос.' },
-    { id: 'rims', price: 24, title: 'Литі диски, блищать навіть у дощ', who: 'Дієґу · Гайя · диски блищать, власник теж',
-      date: '9 травня 2014', desc: 'Колеса ті самі, видно їх тепер здалеку. Обіцяти, що їх не зніме хтось інший, не буду.' },
-    { id: 'tree', price: 4, title: 'Ялинка-ароматизатор «Новий салон»', who: 'Кіоск «Пахне» · ринок Болья · без здачі',
-      date: '8 травня 2014', desc: 'Пахне новою машиною, поки не відчинять вікно. Висить на дзеркалі, тримається міцно.' },
-    { id: 'garland', price: 11, title: 'Гірлянда на лобове, лишилась після Різдва',
-      who: 'Інеш · Порту · «у травні вже ні для чого»', date: '11 травня 2014',
-      desc: 'Блимає без причини. У нічну зміну видно, що ви їдете, хоча й не завжди куди.' }
-  ];
+  // The car mods (PG.cars.MODS) are sold as listings. PG.cars has no category names and no ad texts: they live here.
+  const CATN = { paint: 'Фарба', decal: 'Наклейки', spoiler: 'Спойлери', rims: 'Диски', glow: 'Неон', roof: 'Шашки', exhaust: 'Вихлоп', lights: 'Фари' };
+  const CAT_ORDER = ['paint', 'decal', 'spoiler', 'rims', 'glow', 'roof', 'exhaust', 'lights'];
+  const TXT = {
+    paint_red: { t: 'Фарба червона, пожежна, не розводити', who: 'Ансельму · гараж у Мафамуді · фарбує за готівку', d: 5, torg: 1,
+      x: 'Видно здалеку, особливо з гелікоптера. Сохне довго, тому не торкайтеся.' },
+    paint_blue: { t: 'Синій металік, як у дорогих', who: 'Рікарду · Лейшойнс · металік справжній, документи теж', d: 6,
+      x: 'Блищить на сонці. Дощу не боїться, пташок боїться.' },
+    paint_lime: { t: 'Лайм, кислотний, для сміливих', who: 'Тереза · Гайя · дзвонити лише після кави', d: 6, torg: 1,
+      x: 'Помітний навіть уночі. Сусіди питали, чи він світиться сам.' },
+    paint_violet: { t: 'Фіолетова фарба, колір кінця світу', who: 'Бруну · Ріо-Тінто · відповідає лише на повідомлення', d: 7,
+      x: 'Колір вибирав дизайнер із почуттям гумору. Лишився один балон, беріть.' },
+    paint_matte: { t: 'Матовий чорний, ні відблиску, ні совісті', who: 'Клара · Порту · «чорний це серйозно»', d: 7, torg: 1,
+      x: 'Не блищить, тож подряпин не видно. Мити можна, полірувати не треба.' },
+    paint_pearl: { t: 'Перлинна фарба, як зубна паста', who: 'Мануела · Фонтаїнгаш · пише лише смайликами', d: 8,
+      x: 'Переливається з рожевого в блакитний. На сонці краще в окулярах.' },
+    decal_flames: { t: 'Наклейки «Полум’я», комплект на два боки', who: 'Беатріш · друкарня на розі · гарантія до першої мийки', d: 10, torg: 1,
+      x: 'Швидкості не додають, зате додають упевненості. Клеїти на суху і чисту, тобто не на Ланос.' },
+    decal_azulejo: { t: 'Азулежу на двері, як на вокзалі Сан-Бенту', who: 'Дона Амелія · Алфама · плитку не відклеювати', d: 9,
+      x: 'Синій візерунок, який видно здалеку. Бабусі вже плачуть від захвату.' },
+    decal_racing: { t: 'Гоночні смуги, дві білі по центру', who: 'Едуарду · автобаза в Матозіньюш · торгується після обіду', d: 9,
+      x: 'З ними Ланос здається швидшим, але лише поки стоїть.' },
+    spoiler_lip: { t: 'Малий спойлер на багажник, майже для краси', who: 'Жуау · СТО «Три ключі» · приймає з 9 до 9:15', d: 8,
+      x: 'Притискає машину до дороги міліметра на два. Інших ефектів не помічено.' },
+    spoiler_wing: { t: 'Крило, як у літака, тільки без літака', who: 'Фернанду · аеродромчик у Віла-Реал · літак продав окремо', d: 8, torg: 1,
+      x: 'Дві опори, чотири болти. На сильному вітрі машина злітає лише подумки.' },
+    rims_chrome: { t: 'Хромовані диски, блищать навіть у дощ', who: 'Дієґу · Гайя · диски блищать, власник теж', d: 9,
+      x: 'Колеса ті самі, видно їх тепер здалеку. Гальмівний пил теж видно.' },
+    rims_gold: { t: 'Золоті диски, майже золоті', who: 'Сантуш · ломбард на Байші · пробу не питайте', d: 10, torg: 1,
+      x: 'Блищать як золото, а ваги від них мало. Продавець клянеться, що на дотик справжні.' },
+    rims_red: { t: 'Червоні диски, колеса як ґудзики', who: 'Лінда · шиномонтаж «Круглий» · без запису, але й без черги', d: 10,
+      x: 'Один диск трохи світліший, бо з іншої партії. На швидкості не помітно.' },
+    glow_cyan: { t: 'Неон бірюзовий під днище, ніч тепер ваша', who: 'Гонсалу · магазин «Світло» · Лапа', d: 11,
+      x: 'Їдете і світитесь. Поліція теж помітить, але це вже ваша справа.' },
+    glow_pink: { t: 'Неон рожевий, для тих, хто нічого не соромиться', who: 'Мафалда · Порту · підсвічує все, що не прибите', d: 11,
+      x: 'Асфальт під машиною рожевий. Клієнти питають, чи далеко дискотека.' },
+    glow_green: { t: 'Неон зелений, як ліхтар на розі', who: 'Руфіну · ліхтарник на пенсії · звик працювати вночі', d: 12, torg: 1,
+      x: 'Світиться рівно і м’яко. Коти збираються, звідки, невідомо.' },
+    glow_violet: { t: 'Неон фіолетовий, під вечір особливо корисний', who: 'Саломе · готель «Зірка» · біля стійки реєстрації', d: 12,
+      x: 'Тихо пульсує, ніби машина дихає. Поряд лягати спати не раджу.' },
+    roof_classic: { t: 'Шашка класична, шашечки в комплекті', who: 'Жозе · склад біля порту · шашки з різних міст', d: 12,
+      x: 'Клієнти бачать здалеку. Чи сядуть, то вже їхня справа.' },
+    roof_led: { t: 'Світлодіодна «ТАКСІ» на дах', who: 'Інеш · Порту · «у травні вже ні для чого»', d: 13, torg: 1,
+      x: 'Горить рівно, видно з кінця вулиці. Підключати до запальнички, до серця не треба.' },
+    roof_disco: { t: 'Диско-шашка, крутиться і мигає', who: 'Діогу · клуб «Бомба» · після закриття', d: 13, torg: 1,
+      x: 'Мигає в такт, але не в ваш. Увечері пасажири просяться сісти, зранку просяться вийти.' },
+    exhaust_grey: { t: 'Сірий дим, перевірений часом', who: 'Тоні · СТО на Рібейрі · руки в мастилі, совість чиста', d: 14,
+      x: 'Класика. Саме такий дим був у діда, і нічого, возив.' },
+    exhaust_pink: { t: 'Рожевий дим, ніби цукрова вата', who: 'Беа · ярмарок у Матозіньюш · по четвергах', d: 14,
+      x: 'Пахне не так, як виглядає. Вітер розганяє вже на найближчому перехресті.' },
+    exhaust_blue: { t: 'Блакитний дим, як із чарівної труби', who: 'Афонсу · пароплавна компанія · давно не пливе', d: 15,
+      x: 'Тонка смужка за машиною. Коли тиснете газ, смужка стає веселішою.' },
+    lights_xenon: { t: 'Ксенон, ближнє як на стадіоні', who: 'Рафа · Гайя · світить усім, навіть собі в очі', d: 15, torg: 1,
+      x: 'Зустрічні моргають, а ви думаєте, що вітаються.' },
+    lights_fog: { t: 'Жовті протитуманки, а туману немає', who: 'Вітор · гараж у Віла-Нова · дивіться на стовп', d: 16,
+      x: 'Туман у Порту був у березні, фари чекають далі. Світять приємно, наче свічки.' }
+  };
 
-  const st = { earned: 0, spent: 0, owned: { lanos: 1 }, skin: 'lanos', tune: {}, fit: {} };   // money in cents
+  function buildMods() {
+    const src = PG.cars && Array.isArray(PG.cars.MODS) ? PG.cars.MODS : [];
+    return src.map(function (m) {
+      const x = TXT[m.id] || {};
+      return { id: m.id, cat: m.cat, price: m.price, name: m.name, title: x.t || m.name,
+        who: x.who || 'Продавець · Порту · на сайті з 2012', date: (x.d || 12) + ' травня 2014', desc: x.x || 'Без опису, зате з фото.', torg: !!x.torg };
+    });
+  }
+  const MODS = buildMods();   // empty on an old build without PG.cars.MODS: the tuning section then hides
+
+  // fit: the chosen mod per category (owned ones only); mods: the bought ones
+  const st = { earned: 0, spent: 0, owned: { lanos: 1 }, skin: 'lanos', mods: {}, fit: {} };   // money in cents
   const flt = { cat: 'all', max: 500, can: false, q: '' };   // the listing filter (not saved)
   const MAXP = 500;
   let dom = null;
@@ -62,14 +115,36 @@
     try {
       const ls = store();
       const raw = ls ? JSON.parse(ls.getItem(KEY) || 'null') : null;
-      if (!raw) return;
-      st.earned = Math.max(0, raw.earned | 0);
-      st.spent = Math.max(0, raw.spent | 0);
-      if (raw.owned) for (const k in raw.owned) if (byId(k)) st.owned[k] = 1;
-      if (byId(raw.skin) && st.owned[raw.skin]) st.skin = raw.skin;
-      if (raw.tune) for (const k in raw.tune) if (tuneById(k)) st.tune[k] = 1;
-      if (raw.fit) for (const k in raw.fit) if (tuneById(k) && st.tune[k] && raw.fit[k]) st.fit[k] = 1;
+      if (raw) {
+        st.earned = Math.max(0, raw.earned | 0);
+        st.spent = Math.max(0, raw.spent | 0);
+        if (raw.owned) for (const k in raw.owned) if (byId(k)) st.owned[k] = 1;
+        if (byId(raw.skin) && st.owned[raw.skin]) st.skin = raw.skin;
+        // ids of the old tuning (taxi, stickers, ...) are simply not in the catalog and are dropped here
+        if (raw.mods) for (const k in raw.mods) if (modById(k)) st.mods[k] = 1;
+      }
     } catch (e) { /* a broken save is ignored */ }
+    sanitise(raw0());
+  }
+
+  function raw0() {
+    try { const ls = store(); const r = ls ? JSON.parse(ls.getItem(KEY) || 'null') : null; return r && r.fit && typeof r.fit === 'object' ? r.fit : {}; } catch (e) { return {}; }
+  }
+
+  // The car module keeps the selection it was given last time. Keep only owned mods, one per category.
+  function sanitise(saved) {
+    if (!MODS.length) return;
+    const have = PG.cars && PG.cars.mods ? PG.cars.mods() : {};
+    const fit = {};
+    CAT_ORDER.forEach(function (cat) {
+      [have[cat], saved && saved[cat]].some(function (id) {
+        const m = modById(id);
+        if (m && m.cat === cat && st.mods[id]) { fit[cat] = id; return true; }
+        return false;
+      });
+    });
+    st.fit = fit;
+    apply(have);
   }
 
   function save() {
@@ -77,14 +152,26 @@
   }
 
   function byId(id) { for (let i = 0; i < ITEMS.length; i++) if (ITEMS[i].id === id) return ITEMS[i]; return null; }
-  function tuneById(id) { for (let i = 0; i < TUNING.length; i++) if (TUNING[i].id === id) return TUNING[i]; return null; }
+  function modById(id) { for (let i = 0; i < MODS.length; i++) if (MODS[i].id === id) return MODS[i]; return null; }
   function wallet() { return (st.earned - st.spent) / 100; }
   function owned(id) { return !!st.owned[id]; }
-  function ownedTune(id) { return !!st.tune[id]; }
-  function fitted(id) { return !!st.fit[id]; }
+  function ownedMod(id) { return !!st.mods[id]; }
+  function fitted(id) { const m = modById(id); return !!(m && st.fit[m.cat] === id); }
   function lack(it) { return it ? Math.max(0, Math.ceil(it.price - wallet() - 1e-9)) : 0; }
   function need(id) { return lack(byId(id)); }
-  function needTune(id) { return lack(tuneById(id)); }
+  function needMod(id) { return lack(modById(id)); }
+  function selection() { const o = {}; for (const k in st.fit) o[k] = st.fit[k]; return o; }
+
+  // Hands the owned selection to the car module (so the map car wears it); `before` skips a call when nothing changes.
+  function apply(before) {
+    if (!PG.cars || !PG.cars.setMods) return;
+    const sel = selection();
+    if (before) {
+      const same = Object.keys(before).length === Object.keys(sel).length && Object.keys(sel).every(function (k) { return before[k] === sel[k]; });
+      if (same) return;
+    }
+    PG.cars.setMods(sel);
+  }
 
   function earn(x) {
     if (!(x > 0) || !isFinite(x)) return;
@@ -108,109 +195,49 @@
     return pick(id);
   }
 
-  function buyTune(id) {
-    const it = tuneById(id);
-    if (!it || ownedTune(id) || needTune(id) > 0) return false;
-    st.spent += it.price * 100;
-    st.tune[id] = 1;
-    st.fit[id] = 1;
+  // on: true fits, false takes it off, undefined flips; fitting replaces the mod of the same category
+  function fitMod(id, on) {
+    const m = modById(id);
+    if (!m || !ownedMod(id)) return false;
+    const want = on === undefined ? !fitted(id) : !!on;
+    if (want) st.fit[m.cat] = id; else if (st.fit[m.cat] === id) delete st.fit[m.cat];
+    apply();
     save();
     return true;
   }
 
-  // on: true fits, false takes it off, undefined flips
-  function fitTune(id, on) {
-    if (!ownedTune(id)) return false;
-    st.fit[id] = (on === undefined ? !st.fit[id] : !!on) ? 1 : 0;
-    save();
-    return true;
+  function buyMod(id) {
+    const m = modById(id);
+    if (!m || ownedMod(id) || needMod(id) > 0) return false;
+    st.spent += m.price * 100;
+    st.mods[id] = 1;
+    return fitMod(id, true);
   }
-
-  function fittedList() { return TUNING.filter(function (t) { return st.fit[t.id]; }).map(function (t) { return t.id; }); }
 
   function unlockAll() {
     ITEMS.forEach(function (it) { st.owned[it.id] = 1; });
-    TUNING.forEach(function (it) { st.tune[it.id] = 1; });
+    MODS.forEach(function (m) { st.mods[m.id] = 1; });
     save();
   }
 
-  // The visible listings for a filter: [{ kind: 'car' | 'tune', it }]. Cars first, then the tuning.
+  // The visible listings for a filter: [{ kind: 'car' | 'mod', it }]. Cars first, then the mods by category.
   function listings(f) {
     f = f || flt;
     const q = String(f.q || '').trim().toLowerCase();
     const max = f.max >= MAXP ? Infinity : f.max;
     const out = [];
     function add(kind, it) {
-      const mine = kind === 'car' ? owned(it.id) : ownedTune(it.id);
+      const mine = kind === 'car' ? owned(it.id) : ownedMod(it.id);
       if (it.price > max) return;
       if (f.can && (mine || lack(it) > 0)) return;
-      if (q && (it.title + ' ' + it.desc + ' ' + it.who).toLowerCase().indexOf(q) < 0) return;
+      const hay = it.title + ' ' + it.desc + ' ' + it.who + (kind === 'mod' ? ' ' + CATN[it.cat] : '');
+      if (q && hay.toLowerCase().indexOf(q) < 0) return;
       out.push({ kind: kind, it: it });
     }
     if (f.cat !== 'tune') ITEMS.forEach(function (it) { add('car', it); });
-    if (f.cat !== 'car') TUNING.forEach(function (it) { add('tune', it); });
+    if (f.cat !== 'car') CAT_ORDER.forEach(function (cat) { MODS.forEach(function (m) { if (m.cat === cat) add('mod', m); }); });
     return out;
   }
-
-  // ---- the extras, drawn over the car in the car's own units (points to +x, nominal 40 x 20) ----
-  const ROOF = { lanos: -4, horse: -9, rickshaw: -5, electro: 0, cab: -3, golf: 0 };
-  const HALF = { matiz: 8, rickshaw: 8, electro: 8, horse: 9, porto: 9, nyc: 9 };
-  const GLOW = ['#ff4d6a', '#ffd23f', '#43d6a1', '#6fb4ff', '#ff9ad5'];
-
-  function fillPoly(c, col, pts) {
-    c.fillStyle = col; c.beginPath(); c.moveTo(pts[0], pts[1]);
-    for (let i = 2; i < pts.length; i += 2) c.lineTo(pts[i], pts[i + 1]);
-    c.closePath(); c.fill();
-  }
-
-  const EXTRA = {
-    taxi(c, id) {
-      const x = ROOF[id] === undefined ? -2 : ROOF[id];
-      c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(x - 3, -5.6, 6, 11.6);
-      c.fillStyle = '#ffd23f'; c.fillRect(x - 3, -6, 6, 12);
-      c.fillStyle = '#1c1a2e'; c.fillRect(x - 3, -6, 6, 1); c.fillRect(x - 3, 5, 6, 1);
-      c.save(); c.translate(x, 0); c.rotate(Math.PI / 2);
-      c.font = '800 3.4px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillStyle = '#1c1a2e'; c.fillText('TAXI', 0, 0.2); c.restore();
-    },
-    stickers(c, id) {
-      const h = (HALF[id] || 9) + 0.2;
-      [-1, 1].forEach(function (s) {
-        for (let i = 0; i < 3; i++) {
-          const x = 10 - i * 8;
-          fillPoly(c, i === 1 ? '#ffd23f' : '#1c1a2e', [x, s * h, x - 7, s * h, x - 9.5, s * (h - 4.2)]);
-        }
-      });
-    },
-    rims(c, id) {
-      const h = HALF[id] || 9;
-      [-12, 12].forEach(function (x) {
-        [-1, 1].forEach(function (s) {
-          c.fillStyle = '#12111c'; c.beginPath(); c.ellipse(x, s * (h + 0.4), 3.3, 1.5, 0, 0, Math.PI * 2); c.fill();
-          c.fillStyle = '#d9e0ec'; c.beginPath(); c.ellipse(x, s * (h + 0.4), 2.5, 1.1, 0, 0, Math.PI * 2); c.fill();
-          c.fillStyle = '#7d879b'; c.fillRect(x - 0.3, s * (h + 0.4) - 1, 0.6, 2);
-        });
-      });
-    },
-    tree(c, id) {
-      const x = id === 'horse' ? -8 : 9.5, y = -2.4;
-      c.strokeStyle = '#e9e6dc'; c.lineWidth = 0.35;
-      c.beginPath(); c.moveTo(x - 1.2, y); c.lineTo(x - 0.2, y); c.stroke();
-      fillPoly(c, '#2fae5f', [x + 3.2, y, x - 0.2, y - 2, x - 0.2, y + 2]);
-      fillPoly(c, '#1f8a49', [x + 3.2, y, x + 1, y - 0.1, x - 0.2, y + 2]);
-    },
-    garland(c, id) {
-      const x = id === 'horse' ? -14 : id === 'rickshaw' ? 6.4 : 11.6, h = (HALF[id] || 9) - 1.5;
-      c.strokeStyle = '#0c0b14'; c.lineWidth = 0.35; c.beginPath(); c.moveTo(x, -h);
-      for (let i = 1; i <= 6; i++) c.lineTo(x + (i % 2 ? -0.8 : 0), -h + (2 * h * i) / 6);
-      c.stroke();
-      for (let i = 0; i <= 6; i++) {
-        const y = -h + (2 * h * i) / 6, col = GLOW[i % GLOW.length];
-        c.globalAlpha = 0.35; c.fillStyle = col; c.beginPath(); c.arc(x, y, 2.2, 0, Math.PI * 2); c.fill();
-        c.globalAlpha = 1; c.beginPath(); c.arc(x, y, 0.95, 0, Math.PI * 2); c.fill();
-      }
-    }
-  };
 
   // ---- DOM ----
   function el(tag, cls, text) {
@@ -219,6 +246,8 @@
     if (text !== undefined) e.textContent = text;
     return e;
   }
+
+  function isPhone() { try { return !!(root.matchMedia && root.matchMedia('(max-width: 600px)').matches); } catch (e) { return false; } }
 
   function scene(c, css) {
     const W = PHOTO.w, H = PHOTO.h;
@@ -238,38 +267,99 @@
     c.fillStyle = v; c.fillRect(0, 0, W, H);                             // vignette, like a phone photo
   }
 
-  // The listing photo: a car on the street. `extras` is the list of tuning drawn on it.
-  function photo(it, id, extras, big) {
-    const cv = el('canvas', 'olx-photo');
+  // The street background, drawn once per theme and copied under every photo.
+  function background() {
+    if (dom.bg) return dom.bg;
+    const cv = document.createElement('canvas');
     cv.width = PHOTO.w * 2; cv.height = PHOTO.h * 2;
+    const c = cv.getContext && cv.getContext('2d');
+    if (!c) return null;
+    c.scale(2, 2);
+    scene(c, root.getComputedStyle(dom.root));
+    return (dom.bg = cv);
+  }
+
+  // ---- one animation loop for the photos that move (neon, exhaust, disco); off when the shop closes ----
+  let anim = [];
+  let raf = 0;
+  let seen = null;
+  function moves(id) { return /^(glow|exhaust)_/.test(id) || id === 'roof_disco'; }
+
+  function paintMod(a) {
+    const c = a.cv.getContext('2d');
+    c.clearRect(0, 0, a.cv.width, a.cv.height);
+    const bg = background();
+    if (bg) c.drawImage(bg, 0, 0, a.cv.width, a.cv.height);
+    const sel = {}; sel[a.cat] = a.id;
+    PG.cars.preview(a.off, st.skin, sel);
+    c.drawImage(a.off, 0, 0);
+  }
+
+  function frame() {
+    raf = 0;
+    if (!dom || dom.root.hidden) return;
+    anim.forEach(function (a) { if (a.vis !== false && a.cv.isConnected !== false) paintMod(a); });
+    raf = root.requestAnimationFrame(frame);
+  }
+  function startLoop() {
+    if (raf || PG.REDUCED || !anim.length || typeof root.requestAnimationFrame !== 'function') return;
+    raf = root.requestAnimationFrame(frame);
+  }
+  function stopLoop() {
+    if (raf && typeof root.cancelAnimationFrame === 'function') root.cancelAnimationFrame(raf);
+    raf = 0;
+  }
+  function watch(a) {
+    if (typeof root.IntersectionObserver !== 'function') return;
+    if (!seen) seen = new root.IntersectionObserver(function (es) { es.forEach(function (e) { if (e.target._a) e.target._a.vis = e.isIntersecting; }); });
+    a.vis = false; a.cv._a = a; seen.observe(a.cv);
+  }
+  function dropAnim(sheetOnly) {
+    anim = anim.filter(function (a) {
+      const drop = sheetOnly ? a.sheet : !a.sheet;
+      if (drop && seen) seen.unobserve(a.cv);
+      return !drop;
+    });
+  }
+
+  // The listing photo. A car: its skin on the street (with the chosen mods on the skin in use).
+  // A mod: the selected skin with that one mod, through PG.cars.preview.
+  function photo(row, sheet) {
+    const it = row.it, car = row.kind === 'car';
+    const cv = el('canvas', 'olx-photo');
+    cv.width = car ? PHOTO.w * 2 : 540; cv.height = car ? PHOTO.h * 2 : 255;
     cv.setAttribute('role', 'img');
     cv.setAttribute('aria-label', it.title);
     const c = cv.getContext && cv.getContext('2d');
     if (!c) return cv;
-    const css = root.getComputedStyle(dom.root);
-    c.scale(2, 2);
-    scene(c, css);
-    const len = big ? PHOTO.car + 40 : PHOTO.car, px = PHOTO.w / 2, py = PHOTO.h / 2 - 6;
-    if (PG.cars) PG.cars.paint(c, id, px, py, len, '#3df5b0');
-    if (extras.length) {
-      c.save(); c.translate(px, py); c.scale(len / 40, len / 40);
-      extras.forEach(function (x) { if (EXTRA[x]) EXTRA[x](c, id); });
-      c.restore();
+    if (car) {
+      const bg = background();
+      if (bg) c.drawImage(bg, 0, 0);
+      c.scale(2, 2);
+      if (PG.cars) PG.cars.paint(c, it.id, PHOTO.w / 2, PHOTO.h / 2 - 6, PHOTO.car, '#3df5b0', st.skin === it.id ? selection() : {});
+      return cv;
     }
+    if (!PG.cars || !PG.cars.preview) return cv;
+    const off = document.createElement('canvas');
+    off.width = cv.width; off.height = cv.height;
+    const a = { cv: cv, off: off, id: it.id, cat: it.cat, sheet: !!sheet };
+    paintMod(a);
+    if (moves(it.id) && !PG.REDUCED) { anim.push(a); watch(a); }
     return cv;
   }
 
   function badge(cls, text) { return el('span', 'olx-badge ' + cls, text); }
 
-  function card(row) {
+  // One listing. `full` is the sheet version; on a phone the grid shows the compact tile and a tap opens the sheet.
+  function card(row, full) {
     const car = row.kind === 'car', it = row.it;
-    const mine = car ? owned(it.id) : ownedTune(it.id);
+    const mine = car ? owned(it.id) : ownedMod(it.id);
     const on = car && mine && st.skin === it.id;
     const n = lack(it);
-    const a = el('article', 'olx-ad' + (car ? '' : ' olx-tune'));
-    a.setAttribute(car ? 'data-skin' : 'data-tune', it.id);
+    const a = el('article', 'olx-ad' + (car ? '' : ' olx-tune') + (full ? ' full' : ''));
+    a.setAttribute(car ? 'data-skin' : 'data-mod', it.id);
     const ph = el('div', 'olx-ph');
-    ph.appendChild(car ? photo(it, it.id, on ? fittedList() : [], false) : photo(it, st.skin, [it.id], true));
+    ph.appendChild(photo(row, full));
     if (it.top) ph.appendChild(el('span', 'olx-top', 'ТОП'));
     if (!car && fitted(it.id)) ph.appendChild(el('span', 'olx-top fit', 'Встановлено'));
     a.appendChild(ph);
@@ -279,7 +369,7 @@
     rowEl.appendChild(el('span', 'olx-price' + (it.cur ? ' own' : ''), it.cur || PG.util.eur(it.price)));
     b.appendChild(rowEl);
     const tags = el('div', 'olx-tags');
-    tags.appendChild(badge('kind', car ? 'Авто' : 'Тюнінг'));
+    tags.appendChild(badge('kind', car ? 'Авто' : CATN[it.cat] || 'Тюнінг'));
     if (it.torg) tags.appendChild(badge('torg', 'торг'));
     if (mine) tags.appendChild(badge('mine', car ? 'у гаражі' : 'куплено'));
     b.appendChild(tags);
@@ -306,41 +396,95 @@
     const act = el('button', 'olx-btn ' + cls, label);
     act.type = 'button';
     act.disabled = off;
-    act.addEventListener('click', function () {
+    act.addEventListener('click', function (e) {
+      if (e && e.stopPropagation) e.stopPropagation();
       if (car) { if (!mine) buy(it.id); else pick(it.id); }
-      else if (!mine) buyTune(it.id);
-      else fitTune(it.id);
+      else if (!mine) buyMod(it.id);
+      else fitMod(it.id);
       refresh();
     });
     b.appendChild(act);
     a.appendChild(b);
+    if (!full) {
+      const go = function () { if (isPhone()) openSheet(row.kind, it.id); };
+      a.addEventListener('click', go);
+      if (isPhone()) {
+        a.setAttribute('tabindex', '0');
+        a.setAttribute('aria-label', it.title + ', ' + (it.cur || PG.util.eur(it.price)));
+        a.addEventListener('keydown', function (e) { if (e.target === a && (e.key === 'Enter' || e.key === ' ')) { if (e.preventDefault) e.preventDefault(); go(); } });
+      }
+    }
     return a;
+  }
+
+  // ---- the sheet: the full listing over the phone gallery ----
+  function rowOf(kind, id) { const it = kind === 'car' ? byId(id) : modById(id); return it ? { kind: kind, it: it } : null; }
+
+  function renderSheet() {
+    if (!dom || !dom.sheet) return;
+    const sh = dom.sheet;
+    dropAnim(true);
+    sh.panel.textContent = '';
+    const row = sh.key ? rowOf(sh.key[0], sh.key[1]) : null;
+    if (!row) { sh.root.hidden = true; return; }
+    const x = el('button', 'olx-sheet-x'); x.type = 'button'; x.setAttribute('aria-label', 'Закрити');
+    x.appendChild(el('span', 'olx-x'));
+    x.addEventListener('click', closeSheet);
+    sh.panel.appendChild(card(row, true));
+    sh.panel.appendChild(x);
+    sh.root.hidden = false;
+    startLoop();
+  }
+
+  function openSheet(kind, id) {
+    if (!dom || !dom.sheet) return false;
+    if (!rowOf(kind, id)) return false;
+    dom.sheet.key = [kind, id];
+    dom.root.className = 'sheet-open';
+    renderSheet();
+    if (dom.sheet.panel.querySelector) { const x = dom.sheet.panel.querySelector('.olx-sheet-x'); if (x && x.focus) x.focus(); }
+    return true;
+  }
+
+  function closeSheet() {
+    if (!dom || !dom.sheet) return;
+    dom.sheet.key = null;
+    dom.sheet.root.hidden = true;
+    dom.sheet.panel.textContent = '';
+    dom.root.className = '';
+    dropAnim(true);
   }
 
   function refresh() {
     if (!dom) return;
     dom.wal.textContent = PG.util.eur(wallet());
     renderAds();
+    renderSheet();
     updateButton();
   }
 
   function renderAds() {
+    dropAnim(false);
     dom.ads.textContent = '';
     const rows = listings(flt);
-    const cars = rows.filter(function (r) { return r.kind === 'car'; });
-    const tune = rows.filter(function (r) { return r.kind === 'tune'; });
     dom.count.textContent = rows.length ? 'Знайдено: ' + rows.length : '';
     if (!rows.length) {
       dom.ads.appendChild(el('p', 'olx-empty', flt.can ? 'Поки що нічого не по кишені. Відкатайте ще одну зміну.' : 'Нічого не знайшли. Спробуйте інший запит.'));
       return;
     }
-    function section(title, list) {
-      if (!list.length) return;
-      if (flt.cat === 'all') dom.ads.appendChild(el('h2', 'olx-sec', title));
-      list.forEach(function (r) { dom.ads.appendChild(card(r)); });
-    }
-    section('Авто', cars);
-    section('Тюнінг', tune);
+    // sections: the cars, then one per mod category (the gallery on a phone, the grid on a PC)
+    let last = '';
+    rows.forEach(function (r) {
+      const key = r.kind === 'car' ? 'car' : r.it.cat;
+      if (key !== last && flt.cat !== 'car') {
+        const h = el('h2', 'olx-sec', key === 'car' ? 'Авто' : CATN[key]);
+        h.setAttribute('data-sec', key);
+        dom.ads.appendChild(h);
+      }
+      last = key;
+      dom.ads.appendChild(card(r, false));
+    });
+    startLoop();
   }
 
   function updateButton() {
@@ -352,6 +496,7 @@
   // Both filter sets (phone chips, PC sidebar) write into `flt` and are kept in step.
   function syncFilter() {
     if (!dom) return;
+    if (!MODS.length && flt.cat === 'tune') flt.cat = 'all';
     dom.chips.forEach(function (c) {
       const on = c.key === 'cheap' ? flt.max < MAXP : c.key === 'can' ? flt.can : c.key === flt.cat;
       c.btn.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -365,7 +510,8 @@
   }
 
   function buildFilters(bar, side) {
-    const CATS = [['all', 'Усе'], ['car', 'Авто'], ['tune', 'Тюнінг']];
+    const CATS = [['all', 'Усе'], ['car', 'Авто']];
+    if (MODS.length) CATS.push(['tune', 'Тюнінг']);
     const chips = el('div', 'olx-chips');
     chips.setAttribute('role', 'group'); chips.setAttribute('aria-label', 'Фільтри');
     dom.chips = [];
@@ -454,25 +600,43 @@
     const ads = el('div', 'olx-ads');
     list.appendChild(count); list.appendChild(ads);
     main.appendChild(side); main.appendChild(list);
-    dom = { root: r, wal: wal, ads: ads, count: count, q: q };
+    dom = { root: r, wal: wal, ads: ads, count: count, q: q, bg: null, sheet: null };
     buildFilters(bar, side);
     r.appendChild(bar);
     r.appendChild(main);
+    const sr = el('div', 'olx-sheet'); sr.hidden = true;
+    sr.setAttribute('role', 'dialog'); sr.setAttribute('aria-label', 'Оголошення');
+    const panel = el('div', 'olx-sheet-panel');
+    sr.appendChild(panel);
+    sr.addEventListener('click', function (e) { if (e.target === sr) closeSheet(); });
+    r.appendChild(sr);
+    dom.sheet = { root: sr, panel: panel, key: null };
+    r.addEventListener('keydown', function (e) { if (e.key === 'Escape' && dom.sheet.key) { closeSheet(); if (e.stopPropagation) e.stopPropagation(); } });
+    if (root.addEventListener) {
+      let was = isPhone();
+      root.addEventListener('resize', function () {
+        const now = isPhone();
+        if (now !== was) { was = now; if (!now) closeSheet(); if (!dom.root.hidden) renderAds(); }
+      });
+    }
     (document.getElementById('app') || document.body).appendChild(r);
   }
 
   function open() {
     if (typeof document === 'undefined') return;
     if (!dom) build();
+    dom.bg = null;                                   // the theme may have changed since the last visit
     dom.q.value = flt.q;
+    closeSheet();
+    dom.root.hidden = false;
     syncFilter();
     refresh();
-    dom.root.hidden = false;
     dom.root.scrollTop = 0;
   }
 
   function close() {
-    if (dom) dom.root.hidden = true;
+    stopLoop();
+    if (dom) { closeSheet(); dom.root.hidden = true; dropAnim(false); }
     updateButton();
   }
 
@@ -495,9 +659,10 @@
   load();
   if (PG.cars) PG.cars.setSkin(st.skin);
   PG.shop = {
-    ITEMS: ITEMS, TUNING: TUNING, KEY: KEY, wallet: wallet, owned: owned, need: need, earn: earn, buy: buy, pick: pick,
-    ownedTune: ownedTune, needTune: needTune, buyTune: buyTune, fitTune: fitTune, fitted: fitted, fittedList: fittedList,
-    listings: listings, filter: flt, unlockAll: unlockAll, skin: function () { return st.skin; }, open: open, close: close
+    ITEMS: ITEMS, MODS: MODS, CATN: CATN, KEY: KEY, wallet: wallet, owned: owned, need: need, earn: earn, buy: buy, pick: pick,
+    ownedMod: ownedMod, needMod: needMod, buyMod: buyMod, fitMod: fitMod, fitted: fitted, selection: selection,
+    listings: listings, filter: flt, unlockAll: unlockAll, skin: function () { return st.skin; }, open: open, close: close,
+    openSheet: openSheet, closeSheet: closeSheet
   };
   if (PG.bus) {
     PG.bus.on('shift:end', function (e) { if (e && e.result) { earn(e.result.earned); updateButton(); } });

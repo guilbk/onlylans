@@ -1,6 +1,6 @@
 /* «ОЛХ»: the skin and tuning marketplace. Own look (red, ink, a yellow price tag); the palette follows the theme
    (body[data-theme] day/night, set by the theme piece; night when there is none).
-   Phone (up to 600 px): one column of cards, the search and chips stick to the top.
+   Phone (up to 600 px): a 2-column gallery of compact tiles, a tap opens the full listing as a sheet; the search and chips stick to the top.
    Wider: a filter sidebar and a grid of cards. */
 #shop {
   --s-bg: #12111c; --s-card: #201e33; --s-ink: #f3f0ff; --s-muted: #a9a5c4; --s-line: #37344f;
@@ -19,6 +19,7 @@ body[data-theme="day"] #shop {
   --s-photo: #5c616b; --s-photo-hi: #7a808b;
 }
 #shop[hidden] { display: none !important; }
+#shop.sheet-open { overflow: hidden; }
 #shop ::selection { background: var(--s-tag); color: #1c1a2e; }
 #shop button:focus-visible, #shop input:focus-visible {
   outline: 3px solid var(--s-tag); outline-offset: 2px;
@@ -113,6 +114,36 @@ body[data-theme="day"] #shop {
   .olx-empty { grid-column: 1 / -1; }
   .olx-name { font-size: 18px; }
 }
+
+/* phone gallery: compact tiles (photo, title, price, «торг»); the full listing opens in the sheet */
+@media (max-width: 600px) {
+  .olx-main { padding: 6px 10px 0; }
+  .olx-ads { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+  .olx-sec { grid-column: 1 / -1; font-size: 20px; margin-top: 8px; }
+  .olx-empty { grid-column: 1 / -1; }
+  .olx-ads .olx-ad { cursor: pointer; min-height: 44px; min-width: 0; }
+  .olx-ads .olx-body { padding: 8px 10px 10px; }
+  .olx-ads .olx-row { flex-direction: column; gap: 6px; align-items: flex-start; }
+  .olx-ads .olx-name { font-size: 14px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .olx-ads .olx-price { font-size: 16px; padding: 3px 9px 3px 14px; }
+  .olx-ads .olx-tags { margin-top: 6px; }
+  .olx-ads .olx-badge:not(.torg) { display: none; }
+  .olx-ads .olx-who, .olx-ads .olx-date, .olx-ads .olx-desc, .olx-ads .olx-need, .olx-ads .olx-btn { display: none; }
+  .olx-ads .olx-top { left: 6px; top: 6px; font-size: 10px; padding: 4px 6px; }
+}
+
+/* the sheet */
+.olx-sheet { position: fixed; inset: 0; z-index: 8; display: flex; align-items: flex-end; justify-content: center;
+  background: rgba(8, 6, 18, .6); }
+.olx-sheet[hidden] { display: none; }
+.olx-sheet-panel { position: relative; width: 100%; max-width: 560px; max-height: 92%; overflow-y: auto; box-sizing: border-box;
+  background: var(--s-card); border-radius: 20px 20px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.olx-sheet-panel .olx-ad { box-shadow: none; border-radius: 20px 20px 0 0; }
+.olx-sheet-x { position: absolute; right: 10px; top: 10px; width: 44px; height: 44px; border: 0; border-radius: 50%; padding: 0;
+  background: rgba(0, 0, 0, .55); cursor: pointer; display: grid; place-items: center; }
+.olx-x { position: relative; width: 18px; height: 18px; }
+.olx-x::before, .olx-x::after { content: ""; position: absolute; left: 7px; top: -1px; width: 4px; height: 20px; background: #fff; border-radius: 2px; transform: rotate(45deg); }
+.olx-x::after { transform: rotate(-45deg); }
 
 /* the menu button the shop adds */
 #btn-shop { display: flex; align-items: center; justify-content: center; gap: 10px; background: #c9341e; color: #fff;
