@@ -790,3 +790,24 @@ while ×3 is on), `lights` (xenon, yellow fog). An id is `<cat>_<name>`.
   the animation); `mods` undefined means the saved ones. `PG.cars.paint(ctx, id, px, py, len, color, mods)` takes mods too.
 
 Test: `node tools/cars_test.mjs`.
+
+### ОЛЕКС v2 (shop UI, `68_shop.*`; part of §19)
+
+Categories: «Авто» (`car`), «Вигляд» (`look`, the cosmetic mods of this section), «Тюнінг» (`tune`, performance, §22).
+Filters: category, price range, «можу купити»; sort `PG.shop.filter.sort` = `def | asc | desc | new | eff`. Dense card
+(photo, price, category chip, one key line, «Порівняти»); the compare tray holds up to 3 listings (`PG.shop.compare`:
+`toggle(key, on?)`, `list()`, `open()`, `clear()`; key `kind:id`) and opens a table: price, category, effect, «вже є».
+Phone: 2-column grid, sticky search + sort + chips, the tray at the bottom, the table as a sheet.
+
+## §22 Performance tuning
+
+Three upgrades, 3 levels each, bought with the shop wallet (a level needs the one below; the listing id is
+`tune_<key>_<level>`): `speed` «Двигун» +5/+10/+15 % player speed (40/90/160 €), `radar` «Радар» +15/+30/+45 % pin radius
+(30/70/130 €), `tips` «Кондиціонер» +10/+20/+30 % tips (25/60/110 €). Saved in `porto-lanosiv-shop-v1` as `tune: {speed, radar, tips}` (0..3).
+
+**Engine hook** `PG.engine.tune = { speed, radar, tips }` (multipliers, default 1; the shop sets them from the saved
+levels on load, on purchase and on every return to the menu). `E.tuneK(k)` reads one and returns 1 in party mode
+(`E.party`): the upgrades are off in «Гра разом» (the shop says so; cosmetic mods stay). Read in: `speedAt` (player
+travel time, `eta`, `cruiseTo`), `newGame` (`G.diffK *= radar` after the leads are computed, so the pin radius in the
+engine and the render grows and the lead windows do not), `22_rules.js` dropoff tip. Routes (`12_roads.js`) are not touched.
+With all 1 the engine and `pipeline/sim.py` parity are unchanged. Test: `node tools/shop_test.mjs`.
