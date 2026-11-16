@@ -10,6 +10,7 @@
   const KEY = 'party-key';
   const MAP_W = 15000, MAP_H = 19000;
   const SMOOTH = 6;          // 1/s, how fast other cars follow the server positions
+  const FIRST_SLOT = 10, SLOTS = 22;   // PG.cars heading slots 0-9 belong to the rivals, ghost and hero
 
   let snap = null;           // last server state
   let me = null;             // {id, key}
@@ -137,14 +138,14 @@
     const right = el('div', 'pty-col', undefined, cols);
     ui.head = el('p', 'pty-sub', '', right);
     ui.list = el('div', 'pty-list', undefined, right);
-    el('label', 'pty-label', 'Зміна', card);
-    const sel = el('select', 'pty-input', undefined, card);
+    el('label', 'pty-label', 'Зміна', right);
+    const sel = el('select', 'pty-input', undefined, right);
     shifts.forEach(function (sh, i) {
       const slot = PG.C.SLOTS[sh.slot];
       el('option', null, sh.name + (slot ? ' · ' + slot.label : ''), sel).value = String(i);
     });
-    el('label', 'pty-label', 'Складність', card);
-    const dif = el('div', 'pty-seg', undefined, card);
+    el('label', 'pty-label', 'Складність', right);
+    const dif = el('div', 'pty-seg', undefined, right);
     let diff = 'normal';
     P.DIFFS.forEach(function (d) {
       const b = el('button', 'pty-seg-btn' + (d === diff ? ' on' : ''), P.DIFF_LABEL[d], dif);
@@ -154,9 +155,9 @@
         Array.prototype.forEach.call(dif.children, function (c) { c.classList.toggle('on', c === b); });
       });
     });
-    const go = el('button', 'pty-btn', 'Старт', card);
+    const go = el('button', 'pty-btn', 'Старт', right);
     go.type = 'button';
-    ui.err = el('p', 'pty-err', '', card);
+    ui.err = el('p', 'pty-err', '', right);
     go.addEventListener('click', function () {
       api('/api/start', { shift: +sel.value, difficulty: diff, duration: PG.C.SHIFT / PG.C.BASE_SCALE })
         .then(function (r) { if (!r.ok) ui.err.textContent = 'Не вдалося почати'; });
@@ -232,42 +233,32 @@
   // ---- other cars ----
   function follow(players) {
     players.forEach(function (p) {
-      if (p.x !== null && !cars.has(p.id)) cars.set(p.id, { x: p.x, y: p.y, hx: p.hx, hy: p.hy });
+      if (p.x !== null && !cars.has(p.id)) cars.set(p.id, { x: p.x, y: p.y });
     });
   }
 
   function drawCars(ctx) {
     if (!snap || !started) return;
-    const R = PG.render, k = 1 - Math.exp(-Math.min(0.1, nowS() - lastDraw) * SMOOTH), big = HOST;
+    const dt = Math.min(0.1, nowS() - lastDraw), k = 1 - Math.exp(-dt * SMOOTH), W = stage().clientWidth;
     lastDraw = nowS();
-    const len = big ? 22 : 17, wid = big ? 12 : 9;
-    ctx.font = (big ? '600 13px ' : '600 11px ') + 'system-ui, sans-serif';
+    // phones: the size of the hero; the host screen: big, readable from the back of the room
+    const len = HOST ? Math.max(44, W * 0.034) : PG.render.carLen('hero'), fs = Math.round(HOST ? len * 0.45 : 11);
+    ctx.font = '700 ' + fs + 'px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    snap.players.forEach(function (p) {
+    snap.players.forEach(function (p, i) {
       const c = cars.get(p.id);
       if (!c || (me && p.id === me.id)) return;
-      c.x += (p.x - c.x) * k; c.y += (p.y - c.y) * k; c.hx += (p.hx - c.hx) * k; c.hy += (p.hy - c.hy) * k;
-      const q = R.P(c.x, c.y), x = q.x, y = q.y;
-      if (x < -40 || y < -40 || x > root.innerWidth + 40 || y > root.innerHeight + 40) return;
-      ctx.globalAlpha = p.online ? 1 : 0.4;
+      c.x += (p.x - c.x) * k; c.y += (p.y - c.y) * k;
+      const a = PG.cars.turn(FIRST_SLOT + i % SLOTS, p.hx, p.hy, dt, false);
+      const q = PG.render.P(c.x, c.y), x = q.x, y = q.y, alpha = p.online ? 1 : 0.4;
+      if (x < -60 || y < -60 || x > W + 60 || y > stage().clientHeight + 60) return;
+      PG.cars.draw(ctx, x, y, a, len, p.color, alpha, 'rival');
+      const w = ctx.measureText(p.name).width + fs * 0.7, h = fs * 1.3, ty = y - len * 0.9;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = 'rgba(7,11,20,0.78)';
+      ctx.fillRect(x - w / 2, ty - h, w, h);
       ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(x, y, len, 0, 6.2832);
-      ctx.globalAlpha *= 0.18;
-      ctx.fill();
-      ctx.globalAlpha = p.online ? 1 : 0.4;
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(Math.atan2(c.hy, c.hx));
-      ctx.fillRect(-len / 2, -wid / 2, len, wid);
-      ctx.fillStyle = 'rgba(7,11,20,0.75)';
-      ctx.fillRect(len * 0.1, -wid / 2 + 1.5, len * 0.22, wid - 3);
-      ctx.restore();
-      const w = ctx.measureText(p.name).width + 8;
-      ctx.fillStyle = 'rgba(7,11,20,0.75)';
-      ctx.fillRect(x - w / 2, y - len - 14, w, 15);
-      ctx.fillStyle = p.color;
-      ctx.fillText(p.name, x, y - len - 3);
+      ctx.fillText(p.name, x, ty - h * 0.25);
     });
     ctx.globalAlpha = 1;
   }
@@ -346,16 +337,36 @@
     }
   }
 
+  /** The map fills the screen (no empty band); the camera follows the cars, left of the leaderboard. */
+  const cam = { s: 0, x: 0, y: 0 };
+  function hostCamera() {
+    const v = PG.render.view, st = stage(), W = st.clientWidth, H = st.clientHeight;
+    const pw = hud.board ? hud.board.offsetWidth + 12 : 0, cover = Math.max(W / MAP_W, H / MAP_H) * 1.02;
+    const live = snap.players.filter(function (p) { return p.x !== null && p.online; });
+    let ts = cover, tx = MAP_W / 2, ty = MAP_H / 2;
+    if (live.length) {
+      const xs = live.map(function (p) { return p.x; }), ys = live.map(function (p) { return p.y; });
+      const x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+      const fit = Math.min((W - pw) * 0.6 / Math.max(x1 - x0, 3000), H * 0.6 / Math.max(y1 - y0, 3000));
+      ts = Math.min(Math.max(cover, fit), cover * 3);
+      tx = (x0 + x1) / 2; ty = (y0 + y1) / 2;
+    }
+    const k = cam.s ? 0.06 : 1;   // the first frame jumps, then the camera eases
+    cam.s += (ts - cam.s) * k;
+    cam.x += (tx - cam.x) * k;
+    cam.y += (ty - cam.y) * k;
+    v.scale = cam.s;
+    v.cx = Math.min(Math.max(cam.x + pw / 2 / cam.s, W / 2 / cam.s), MAP_W - W / 2 / cam.s);
+    v.cy = Math.min(Math.max(cam.y, H / 2 / cam.s), MAP_H - H / 2 / cam.s);
+  }
+
   function frame() {
     if (!snap || !started) return;
     const left = snap.start_at - srvNow();
     const count = left > 0 ? String(Math.ceil(left)) : '';
     if (mode !== 'count:' + count) show('count:' + count, count ? function (card) { el('div', 'pty-count', count, card); } : null);
     if (HOST) {
-      const v = PG.render.view, s = stage(), pw = Math.min(420, s.clientWidth * 0.34);
-      v.scale = Math.min((s.clientWidth - pw) / MAP_W, s.clientHeight / MAP_H);
-      v.cx = MAP_W / 2 + pw / 2 / v.scale;
-      v.cy = MAP_H / 2;
+      hostCamera();
       if (hud.time) {
         const r = Math.max(0, Math.ceil(snap.start_at + snap.duration - srvNow()));
         hud.time.textContent = snap.phase === 'done' ? '' : Math.floor(r / 60) + ':' + String(r % 60).padStart(2, '0');
