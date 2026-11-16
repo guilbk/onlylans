@@ -334,3 +334,112 @@ def test_main_reports_empty_map(tmp_path, monkeypatch, capsys):
     argv = ["--out", str(tmp_path / "r.json"), "--debug", str(tmp_path / "d.png")]
     assert roads.main(argv) == 1
     assert "no road" in capsys.readouterr().out
+
+
+# small pure helpers
+
+
+def test_project_trip_gives_metres():
+    pts = lonlat_line(3)
+    arr = roads.project_trip(pts)
+    assert arr.shape == (3, 2) and arr.dtype == np.float64
+    assert tuple(arr[1]) == pytest.approx(geo.proj(*pts[1]))
+    assert arr[1, 0] - arr[0, 0] == pytest.approx(100.0, abs=0.5)  # 100 m east per step
+
+
+def test_map_grid_covers_the_map():
+    grid = roads.map_grid()
+    assert grid.width * grid.cell_m >= geo.MAP_W_M
+    assert grid.height * grid.cell_m >= geo.MAP_H_M
+    assert (grid.width - 1) * grid.cell_m < geo.MAP_W_M
+
+
+def test_px_to_m_is_the_pixel_centre():
+    assert roads.px_to_m(0, 0) == (4.0, 4.0)
+    assert roads.px_to_m(2, 3) == (28.0, 20.0)  # (row, col) -> (x, y)
+    assert roads.px_to_m(1, 1, cell_m=10.0) == (15.0, 15.0)
+
+
+def test_polyline_length_in_input_units():
+    assert roads.polyline_length([(0, 0), (3, 4), (3, 10)]) == pytest.approx(11.0)
+    assert roads.polyline_length([(1, 1)]) == 0.0
+
+
+def test_classify_pixels_counts_neighbours_on_the_skeleton_only():
+    skel = np.zeros((5, 5), dtype=bool)
+    skel[2, 1:4] = True  # a horizontal line of three pixels
+    degree = roads.classify_pixels(skel)
+    assert degree[2, 1] == 1 and degree[2, 2] == 2 and degree[2, 3] == 1
+    assert degree.sum() == 4  # zero off the skeleton
+    assert roads.classify_pixels(np.zeros((3, 3), dtype=bool)).sum() == 0
+
+
+def test_node_pixels_picks_ends_and_junctions_and_seeds_rings():
+    skel = np.zeros((5, 7), dtype=bool)
+    skel[2, 1:6] = True  # a straight line: only its two ends are nodes
+    nodes = roads.node_pixels(skel, roads.classify_pixels(skel))
+    assert sorted(zip(*np.nonzero(nodes), strict=True)) == [(2, 1), (2, 5)]
+    fork = skel.copy()
+    fork[1, 3] = fork[0, 3] = True  # a branch makes the pixel where it leaves a junction
+    junctions = roads.node_pixels(fork, roads.classify_pixels(fork))
+    assert junctions[2, 3] or junctions[2, 2] or junctions[2, 4]
+    assert junctions[0, 3] and junctions[2, 1] and junctions[2, 5]
+    ring = np.zeros((5, 5), dtype=bool)  # a diamond: every pixel has exactly 2 neighbours
+    for r, c in [(0, 2), (1, 1), (2, 0), (3, 1), (4, 2), (3, 3), (2, 4), (1, 3)]:
+        ring[r, c] = True
+    ring_nodes = roads.node_pixels(ring, roads.classify_pixels(ring))
+    assert ring_nodes.sum() == 1 and ring[ring_nodes].all()
+
+
+def test_walk_chain_follows_the_chain_from_an_end():
+    chain = {(0, 0), (0, 1), (1, 2), (2, 2)}
+    assert roads._walk_chain(chain, (0, 0)) == [(0, 0), (0, 1), (1, 2), (2, 2)]
+    assert roads._walk_chain(chain, (2, 2)) == [(2, 2), (1, 2), (0, 1), (0, 0)]
+    assert roads._walk_chain({(4, 4)}, (4, 4)) == [(4, 4)]
+
+
+def test_touching_lists_adjacent_clusters_and_respects_the_border():
+    cluster = np.zeros((4, 4), dtype=int)
+    cluster[0, 0] = 2
+    cluster[1, 2] = 1
+    assert roads._touching((1, 1), cluster) == [1, 2]
+    assert roads._touching((0, 1), cluster) == [1, 2]
+    assert roads._touching((3, 3), cluster) == []
+    assert roads._touching((0, 0), cluster) == []  # the pixel itself is not a neighbour
+    assert roads._touching((0, 2), cluster) == [1]
+
+
+def test_add_chain_connects_the_two_end_nodes():
+    import networkx as nx
+
+    graph = nx.MultiGraph()
+    graph.add_node(1, pos=roads.px_to_m(0, 0))
+    graph.add_node(2, pos=roads.px_to_m(0, 6))
+    cluster = np.zeros((3, 8), dtype=int)
+    cluster[0, 0], cluster[0, 6] = 1, 2
+    roads._add_chain(graph, cluster, [(0, c) for c in range(1, 6)], roads.CELL_M)
+    assert graph.number_of_edges() == 1
+    (_, _, data), = graph.edges(data=True)
+    assert {data["a"], data["b"]} == {1, 2}
+    assert data["pts"][0] == graph.nodes[data["a"]]["pos"]
+    assert data["pts"][-1] == graph.nodes[data["b"]]["pos"]
+    assert data["len"] == pytest.approx(6 * roads.CELL_M)
+    roads._add_chain(graph, cluster, [(2, 2)], roads.CELL_M)  # touches no node: ignored
+    assert graph.number_of_edges() == 1
+
+
+def test_unit_point_rounds_to_2_5_m_units():
+    assert roads._unit_point((0.0, 0.0)) == (0, 0)
+    assert roads._unit_point((6.0, 6.3)) == (2, 3)
+    assert roads._unit_point((1.2, 1.3)) == (0, 1)
+
+
+def test_edge_points_joins_nodes_and_interior():
+    doc = {"nodes": [0, 0, 10, 0, 10, 10], "edges": []}
+    assert roads.edge_points(doc, [0, 2, [10, 0]]) == [(0, 0), (10, 0), (10, 10)]
+    assert roads.edge_points(doc, [1, 2, []]) == [(10, 0), (10, 10)]
+
+
+def test_total_km_scales_by_unit_m():
+    doc = {"unit_m": 2.5, "nodes": [0, 0, 400, 0], "edges": [[0, 1, []]]}
+    assert roads.total_km(doc) == pytest.approx(1.0)  # 400 units x 2.5 m
