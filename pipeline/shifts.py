@@ -335,6 +335,24 @@ def pickup_spread(trips: Sequence[Trip]) -> float:
     return sum(math.hypot(p[0] - cx, p[1] - cy) for p in pts) / len(pts)
 
 
+def ghost_of(orders: Sequence[Sequence[Any]], ranking: Sequence[float]) -> dict[str, Any]:
+    """Describe the ghost, the best driver of the shift.
+
+    Args:
+        orders: Compact orders of the shift (field 11 is the driver rank index).
+        ranking: Driver totals in EUR, best first.
+
+    Returns:
+        ``{taxi, total, orders}``: taxi index 0, its total in EUR (0.0 if nobody drove) and the
+        indexes of its orders.
+    """
+    return {
+        "taxi": 0,
+        "total": ranking[0] if ranking else 0.0,
+        "orders": [i for i, o in enumerate(orders) if o[11] == 0],
+    }
+
+
 def build_shift(sd: ShiftDef, trips: Sequence[Trip], speeds: list[float], unit_m: int) -> dict:
     """Build one shift object (difficulty is a placeholder) from the trips inside its window.
 
@@ -366,11 +384,7 @@ def build_shift(sd: ShiftDef, trips: Sequence[Trip], speeds: list[float], unit_m
         "orders": orders,
         "taxis": taxis,
         "ranking": ranking,
-        "ghost": {
-            "taxi": 0,
-            "total": ranking[0] if ranking else 0.0,
-            "orders": [i for i, o in enumerate(orders) if o[11] == 0],
-        },
+        "ghost": ghost_of(orders, ranking),
         "median": median(ranking),
         "top10": top10_of(ranking),
         "speed_by_hour": speeds,
