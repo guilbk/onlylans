@@ -1,4 +1,4 @@
-"""AST check: every module needs a docstring; every function a docstring and full annotations."""
+"""AST check: every module and class needs a docstring; every function one and full annotations."""
 
 from __future__ import annotations
 
@@ -46,6 +46,10 @@ def check_source(source: str, name: str = "<string>") -> list[str]:
     if ast.get_docstring(tree) is None:
         problems.append(f"{name}: module has no docstring")
     for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            if ast.get_docstring(node) is None:
+                problems.append(f"{name}:{node.lineno}: class {node.name}: no docstring")
+            continue
         if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             continue
         where = f"{name}:{node.lineno}: {node.name}"
