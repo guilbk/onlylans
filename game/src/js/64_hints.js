@@ -95,8 +95,8 @@
   }
 
   // ---- «Як грати» ----
-  const RIV = [['#ff8a3d', 'Зé'], ['#f4d03f', 'Фатіма'], ['#4db8ff', 'Руй'], ['#ff4d6a', 'Інеш'],
-    ['#ff6ec7', 'Тіаго'], ['#a0e85b', 'Лурдеш'], ['#fff', 'Нуну']];
+  const RIV = [['#ff8a3d', 'Ашот'], ['#f4d03f', 'Тьотя Валя'], ['#4db8ff', 'Камран'], ['#ff4d6a', 'Зіна'],
+    ['#ff6ec7', 'ОлеКсій'], ['#a0e85b', 'Люда'], ['#fff', 'Стьопа']];
   function buildSheet() {
     sheet = document.createElement('div');
     sheet.className = 'help-sheet';

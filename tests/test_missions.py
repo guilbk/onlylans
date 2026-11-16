@@ -79,7 +79,7 @@ def test_long_threshold_comes_from_the_shift() -> None:
 
 def test_rival_is_the_strongest_one_the_player_matches() -> None:
     m = ms.rival_mission(RIVALS, 21.0, "mon-am")
-    assert m["rival"] == "rui" and m["title"] == "Обжени Руй «Сова» за гроші"
+    assert m["rival"] == "rui" and m["title"] == "Обжени Камран «Сова» за гроші"
     assert ms.rival_mission(RIVALS, 5.0, "mon-am")["rival"] == "nuno"  # all above: the weakest
     assert ms.rival_mission(None, 5.0, "mon-am") is None
 

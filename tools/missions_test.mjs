@@ -11,7 +11,7 @@ const M = {
     ],
     b: [
       { id: 'm1', kind: 'combo', n: 3, title: 'C', short: 'Комбо' },
-      { id: 'm2', kind: 'rival', n: 1, rival: 'ze', title: 'R', short: 'Обжени Зé' },
+      { id: 'm2', kind: 'rival', n: 1, rival: 'ze', title: 'R', short: 'Обжени Ашот' },
       { id: 'm3', kind: 'median', n: 1, eur: 10, by: 3600, title: 'M', short: '€10' },
     ],
   },
