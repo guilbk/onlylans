@@ -119,7 +119,7 @@
 
   // ---------- sounds: [duration s, fn(dest, t, opts)] ----------
   const S = {
-    click: [0.08, (d, t) => tone(d, { t, f: 1300, f2: 800, dur: 0.05, v: 0.16, type: 'triangle' })],
+    click: [0.08, (d, t) => tone(d, { t, f: 1300, f2: 800, dur: 0.05, v: 0.4, type: 'triangle' })],
     book: [0.3, (d, t) => {
       tone(d, { t, f: 660, dur: 0.1, v: 0.22, type: 'triangle' });
       tone(d, { t: t + 0.09, f: 880, dur: 0.16, v: 0.22, type: 'triangle' });
@@ -127,10 +127,10 @@
     pickup: [0.45, (d, t) => seq(d, t, [523, 659, 784], 0.09, 0.2, 0.22, 'triangle')],
     dropoff: [0.7, (d, t) => { bell(d, t, 784, 0.25, 0.22); bell(d, t + 0.14, 1047, 0.5, 0.22); }],
     coin: [0.4, (d, t) => {
-      tone(d, { t, f: 1319, dur: 0.07, v: 0.12, type: 'square', lp: 4000 });
-      tone(d, { t: t + 0.06, f: 1976, dur: 0.3, v: 0.12, type: 'square', lp: 4000 });
+      tone(d, { t, f: 1319, dur: 0.07, v: 0.2, type: 'square', lp: 4000 });
+      tone(d, { t: t + 0.06, f: 1976, dur: 0.3, v: 0.2, type: 'square', lp: 4000 });
     }],
-    lost: [0.4, (d, t) => tone(d, { t, f: 420, f2: 130, dur: 0.35, v: 0.2, type: 'sawtooth', lp: 900 })],
+    lost: [0.4, (d, t) => tone(d, { t, f: 420, f2: 130, dur: 0.35, v: 0.4, type: 'sawtooth', lp: 900 })],
     steal: [0.4, (d, t) => {
       tone(d, { t, f: 700, f2: 300, dur: 0.18, v: 0.16, type: 'square', lp: 1800 });
       tone(d, { t: t + 0.16, f: 500, f2: 180, dur: 0.22, v: 0.16, type: 'square', lp: 1500 });
@@ -145,7 +145,7 @@
       tone(d, { t, f: 440, f2: 880, dur: 0.22, v: 0.2, type: 'triangle' });
       bell(d, t + 0.2, 1175, 0.2, 0.18);
     }],
-    rank_down: [0.4, (d, t) => tone(d, { t, f: 440, f2: 220, dur: 0.34, v: 0.2, type: 'sine' })],
+    rank_down: [0.4, (d, t) => tone(d, { t, f: 440, f2: 220, dur: 0.34, v: 0.4, type: 'sine' })],
     overtake: [0.5, (d, t) => {
       noise(d, { t, f: 400, f2: 3500, dur: 0.3, v: 0.12, q: 1.5 });
       bell(d, t + 0.1, 988, 0.35, 0.2);
@@ -155,29 +155,29 @@
       tone(d, { t: t + 0.18, f: 262, dur: 0.25, v: 0.2, type: 'triangle' });
     }],
     shift_start: [1.0, (d, t) => seq(d, t, [392, 523, 659, 784], 0.13, 0.35, 0.2, 'triangle', 3000)],
-    countdown: [0.12, (d, t) => tone(d, { t, f: 880, dur: 0.09, v: 0.2, type: 'sine' })],
+    countdown: [0.12, (d, t) => tone(d, { t, f: 880, dur: 0.09, v: 0.4, type: 'sine' })],
     shift_end: [1.6, (d, t) => {
       [784, 659, 523, 392].forEach((f, i) => bell(d, t + i * 0.18, f, 0.9, 0.18));
     }],
     medal: [2.6, (d, t, o) => {
       const L = clamp(Math.round(o.level || 0), 0, 4);
       const sc = [523, 587, 659, 784, 880, 1047, 1319];
-      for (let i = 0; i <= 1 + L; i++) bell(d, t + i * 0.1, sc[i], 0.4, 0.18);
+      for (let i = 0; i <= 1 + L; i++) bell(d, t + i * 0.1, sc[i], 0.4, 0.13);
       const t2 = t + (2 + L) * 0.1;
       [523, 659, 784, 1047].slice(0, 2 + (L > 1 ? 2 : 0)).forEach((f) =>
-        tone(d, { t: t2, f, dur: 0.5 + L * 0.3, v: 0.12, type: 'triangle', lp: 3500 }));
+        tone(d, { t: t2, f, dur: 0.5 + L * 0.3, v: 0.08, type: 'triangle', lp: 3500 }));
       if (L >= 4) for (let i = 0; i < 6; i++) tone(d, { t: t2 + i * 0.08, f: 1568 * (1 + i * 0.12), dur: 0.5, v: 0.06 });
     }],
     horn: [0.5, (d, t) => {
-      tone(d, { t, f: 311, dur: 0.4, v: 0.12, type: 'sawtooth', lp: 1200, a: 0.02 });
-      tone(d, { t, f: 392, dur: 0.4, v: 0.12, type: 'sawtooth', lp: 1200, a: 0.02 });
+      tone(d, { t, f: 311, dur: 0.4, v: 0.2, type: 'sawtooth', lp: 1200, a: 0.02 });
+      tone(d, { t, f: 392, dur: 0.4, v: 0.2, type: 'sawtooth', lp: 1200, a: 0.02 });
     }],
     denied: [0.3, (d, t) => {
       tone(d, { t, f: 160, dur: 0.1, v: 0.2, type: 'square', lp: 600 });
       tone(d, { t: t + 0.13, f: 130, dur: 0.14, v: 0.2, type: 'square', lp: 600 });
     }],
-    whoosh: [0.35, (d, t) => noise(d, { t, f: 300, f2: 3200, dur: 0.28, v: 0.2, q: 1.2, a: 0.08 })],
-    pause: [0.2, (d, t) => tone(d, { t, f: 620, f2: 400, dur: 0.13, v: 0.18, type: 'triangle' })]
+    whoosh: [0.35, (d, t) => noise(d, { t, f: 300, f2: 3200, dur: 0.28, v: 0.5, q: 1.2, a: 0.08 })],
+    pause: [0.2, (d, t) => tone(d, { t, f: 620, f2: 400, dur: 0.13, v: 0.4, type: 'triangle' })]
   };
 
   function play(name, opts) {
