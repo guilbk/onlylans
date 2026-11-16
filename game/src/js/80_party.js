@@ -74,6 +74,7 @@
     ui = {};
     box.textContent = '';
     box.hidden = !build;
+    box.classList.toggle('count', m.indexOf('count') === 0);
     if (build) build(el('div', 'pty-card', undefined, box));
   }
 
