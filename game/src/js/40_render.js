@@ -15,9 +15,17 @@
   const COL_GHOST = '#b48cff';
   const COL_MUTED = '#6b7488';
   const PIN_COL = ['#ffc857', '#5ee6ff', '#ff7a90'];
-  const PIN_RGB = ['255,200,87', '94,230,255', '255,122,144'];
   const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
+  const PIN_GLOW = ['rgba(255,200,87,0.20)', 'rgba(94,230,255,0.20)', 'rgba(255,122,144,0.20)'];
+  const PIN_TRACK = ['rgba(255,200,87,0.25)', 'rgba(94,230,255,0.25)', 'rgba(255,122,144,0.25)'];
+  const FONT_LABEL = '700 12px ' + FONT;
+  const FONT_TAG = '600 10px ' + FONT;
+  const FONT_FLOAT = '800 15px ' + FONT;
+  const GHOST_TRAIL_N = 10;
+  const GHOST_ALPHA = [];
+  for (let i = 0; i < GHOST_TRAIL_N; i++) GHOST_ALPHA.push('rgba(180,140,255,' + (0.35 * i / GHOST_TRAIL_N).toFixed(3) + ')');
+  const LABELS = [];
   const DASH = [7, 7];
   const NO_DASH = [];
 
@@ -28,7 +36,6 @@
   const MIN_SCALE_PHONE_M = 6000; // metres across on a phone at start
   const DESKTOP_VIEW_H_M = 8000;  // metres of height on desktop at start
   const MAX_SCALE = 0.4;          // px per metre
-  const GHOST_TRAIL_N = 10;
   const GHOST_TRAIL_DT = 12;      // game s between ghost trail samples
 
   // ---- state ----
@@ -44,6 +51,7 @@
   let lastPanClock = -1e9;
   let recenterUntil = 0;
   let centerShown = null;
+  let frameNo = 0;
 
   const view = { cx: HOME_X, cy: HOME_Y, scale: 0.065 };
   const pOut = { x: 0, y: 0 };
@@ -60,6 +68,7 @@
   let ghostTrailT = -1e9;
   const carAngle = { player: 0, ghost: 0 };
   const layers = [];
+  const zone = { top: 0, bottom: 1e9, bx0: 0, by0: 0, bx1: 0, by1: 0 };  // keeps pins clear of UI
 
   function clock() {
     return (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
@@ -133,6 +142,35 @@
     }
   }
 
+  function measureZones() {
+    if (!stage) return;
+    const sr = stage.getBoundingClientRect();
+    const hud = document.getElementById('hud');
+    const dsp = document.getElementById('dispatch');
+    zone.top = 0;
+    zone.bottom = H;
+    if (hud) {
+      const r = hud.getBoundingClientRect();
+      if (r.height > 0) zone.top = Math.max(0, r.bottom - sr.top);
+    }
+    if (dsp) {
+      const r = dsp.getBoundingClientRect();
+      if (r.height > 0) zone.bottom = Math.min(H, r.top - sr.top);
+    }
+    if (centerBtn) {
+      const r = centerBtn.getBoundingClientRect();
+      zone.bx0 = r.left - sr.left - 12;
+      zone.bx1 = r.right - sr.left + 12;
+      zone.by0 = r.top - sr.top - 12;
+      zone.by1 = r.bottom - sr.top + 12;
+    }
+  }
+
+  function inZone(x, y) {
+    if (y < zone.top || y > zone.bottom) return false;
+    return !(x >= zone.bx0 && x <= zone.bx1 && y >= zone.by0 && y <= zone.by1);
+  }
+
   // ---- size ----
   function resize() {
     if (!stage || !canvas) return;
@@ -146,6 +184,7 @@
     const bh = Math.round(h * dpr);
     if (canvas.width !== bw) canvas.width = bw;
     if (canvas.height !== bh) canvas.height = bh;
+    measureZones();
     if (!fitted) {
       fitted = true;
       resetCamera(HOME_X, HOME_Y);
@@ -273,7 +312,10 @@
     for (let i = 0; i < layers.length; i++) {
       const l = layers[i];
       if ((l.z < 0) !== neg) continue;
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       l.fn(ctx, now);
+      ctx.restore();
     }
   }
 
@@ -342,6 +384,7 @@
         const dy = o.y0 - G.y;
         isPin = dx * dx + dy * dy <= (C.RADIUS[o.c] * dk) * (C.RADIUS[o.c] * dk);
       }
+      if (isPin && !inZone(sx, sy)) isPin = false;
       if (isPin) {
         const p = pinAt(n++);
         const reach = eng.reachable(o);
@@ -516,7 +559,7 @@
       if (frac < 0) frac = 0;
       if (frac > 1) frac = 1;
       const pulse = frac < 0.25 ? 0.6 + 0.4 * Math.sin(tReal * 10) : 1;
-      ctx.fillStyle = 'rgba(' + PIN_RGB[c] + ',0.20)';
+      ctx.fillStyle = PIN_GLOW[c];
       ctx.beginPath();
       ctx.arc(p.px, p.py, p.r + 5, 0, TAU);
       ctx.fill();
@@ -529,7 +572,7 @@
       ctx.beginPath();
       ctx.arc(p.px, p.py, p.r - 3, 0, TAU);
       ctx.stroke();
-      ctx.strokeStyle = 'rgba(' + PIN_RGB[c] + ',0.25)';
+      ctx.strokeStyle = PIN_TRACK[c];
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.arc(p.px, p.py, p.r + 4.5, 0, TAU);
@@ -546,13 +589,14 @@
   }
 
   function drawPinLabels(carPx, carPy) {
-    ctx.font = '700 12px ' + FONT;
+    ctx.font = FONT_LABEL;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (let i = 0; i < pins.length; i++) {
       const p = pins[i];
       if (!p.reach) continue;
-      const txt = '€' + Math.round(p.o.fare);
+      const fr = Math.round(p.o.fare);
+      const txt = LABELS[fr] || (LABELS[fr] = '€' + fr);
       const w = txt.length * 7.4 + 10;
       const h = 16;
       const x = p.px - w * 0.5;
@@ -670,7 +714,7 @@
       ctx.lineWidth = 3;
       ctx.lineCap = 'round';
       for (let i = 1; i < ghostTrailN; i++) {
-        ctx.strokeStyle = 'rgba(180,140,255,' + (0.35 * i / ghostTrailN).toFixed(3) + ')';
+        ctx.strokeStyle = GHOST_ALPHA[i];
         ctx.beginPath();
         ctx.moveTo(ghostTrail[i * 2 - 2] * s + ox, ghostTrail[i * 2 - 1] * s + oy);
         ctx.lineTo(ghostTrail[i * 2] * s + ox, ghostTrail[i * 2 + 1] * s + oy);
@@ -694,7 +738,7 @@
   function drawRivals(G) {
     const rv = G.rivals;
     if (!rv || !rv.length) return;
-    ctx.font = '600 10px ' + FONT;
+    ctx.font = FONT_TAG;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     for (let i = 0; i < rv.length; i++) {
@@ -739,7 +783,7 @@
   function drawFloats(G) {
     const fl = G.floats;
     if (!fl || !fl.length) return;
-    ctx.font = '800 15px ' + FONT;
+    ctx.font = FONT_FLOAT;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (let i = 0; i < fl.length; i++) {
@@ -763,6 +807,7 @@
     if (!centerBtn || centerShown === show) return;
     centerShown = show;
     centerBtn.hidden = !show;
+    measureZones();
   }
 
   // ---- main draw ----
@@ -779,6 +824,7 @@
     const play = PG.screen === 'play' && !!G && !!G.sh;
     updateCamera(dt, G, play);
     updateCenterBtn(play);
+    if ((++frameNo & 63) === 0) measureZones();
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = 1;
@@ -848,6 +894,7 @@
     if (PG.bus) {
       PG.bus.on('shift:start', function () {
         const G = PG.engine && PG.engine.G;
+        measureZones();
         ghostTrailN = 0;
         ghostTrailT = -1e9;
         lastPanClock = -1e9;
