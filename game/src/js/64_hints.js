@@ -97,6 +97,18 @@
   // ---- «Як грати» ----
   const RIV = [['#ff8a3d', 'Ашот'], ['#f4d03f', 'Тьотя Валя'], ['#4db8ff', 'Камран'], ['#ff4d6a', 'Зіна'],
     ['#ff6ec7', 'ОлеКсій'], ['#a0e85b', 'Люда'], ['#fff', 'Стьопа']];
+  const GUIDE = [
+    ['🎯', 'Мета', ['Заробити за зміну більше, ніж справжні водії Порту.', '<b>Бронза</b> — не гірше за середнього водія.',
+      '<b>Срібло</b> — серед найкращих 10 %.', '<b>Золото</b> — більше за привид.', '<b>Легенда</b> — у 1,25 раза більше за привид.']],
+    ['👆', 'Керування', ['Торкнись кружка (клік) — побачиш маршрут. Ще раз або «Беру» — береш замовлення.',
+      'Колесо або щипок — масштаб. Тягни — рухаєш мапу.', '«×3» — швидше, «Пауза» — стоп (також пробіл).']],
+    ['📍', 'Мапа', ['Яскравий кружок із кільцем — замовлення; кільце — скільки лишилось часу.', 'Сіра крапка — замовлення ще далеко.',
+      'Золоте — плата ×2.', 'Бузкова машина — привид, найкращий водій зміни.', 'Сім суперників: §.']],
+    ['💶', 'Гроші', ['Плата за поїздку: €3,25 + €0,50 за км.', 'Вночі плата ×1,2.', 'Чайові — за швидку подачу й приємну поїздку.',
+      'Комбо: замовлення поспіль дають бонус — не барися між ними.']],
+    ['👥', 'Гра разом', ['Хто завгодно створює кімнату й показує код для сканування та номер кімнати.', 'Решта сканує код телефоном або вводить номер.',
+      'Одна мапа для всіх: замовлення бере хто встиг першим.']]
+  ];
   function buildSheet() {
     sheet = document.createElement('div');
     sheet.className = 'help-sheet';
@@ -105,18 +117,23 @@
     const dots = RIV.map(function (r) {
       return '<span class="help-dot" style="background:' + r[0] + '"></span>' + r[1];
     }).join(', ');
+    const tabs = GUIDE.map(function (g, i) {
+      return '<button type="button" class="g-tab' + (i ? '' : ' on') + '" data-i="' + i + '"><span aria-hidden="true">' + g[0] + '</span> ' + g[1] + '</button>';
+    }).join('');
+    const secs = GUIDE.map(function (g, i) {
+      return '<section class="g-sec' + (i ? '' : ' on') + '" data-i="' + i + '"><h3><span class="g-ico" aria-hidden="true">' + g[0] + '</span>' + g[1] +
+        '</h3><ul>' + g[2].map(function (t) { return '<li>' + t.replace('§', dots) + '</li>'; }).join('') + '</ul></section>';
+    }).join('');
     sheet.innerHTML = '<div class="help-box" role="dialog" aria-modal="true" aria-label="Як грати">' +
       '<button type="button" class="help-x" aria-label="Закрити">✕</button><h2>Як грати</h2>' +
-      '<h3>Керування</h3><ul><li>Торкнись кружка (клік) — побачиш маршрут.</li>' +
-      '<li>Ще раз або «Беру» — береш замовлення.</li><li>Колесо або щипок — масштаб. Тягни — рухаєш мапу.</li></ul>' +
-      '<h3>Мапа</h3><ul><li>Яскравий кружок із сумою — замовлення, кільце — час.</li>' +
-      '<li>Сіра крапка — замовлення далеко.</li><li>Бузкова машина — привид, найкращий водій.</li>' +
-      '<li>Суперники: ' + dots + '.</li><li>Лінія — маршрут, прапорець — куди везти.</li></ul>' +
-      '<h3>Медалі</h3><ul><li>Бронза — не гірше за середнього водія.</li><li>Срібло — серед найкращих 10 %.</li>' +
-      '<li>Золото — більше за привид.</li><li>Легенда — у 1,25 раза більше за привид.</li></ul>' +
-      '<h3>Швидкість</h3><ul><li>×3 — швидше, «Пауза» — стоп (також пробіл).</li></ul>' +
+      '<div class="g-tabs" role="tablist">' + tabs + '</div><div class="g-body">' + secs + '</div>' +
       '<button type="button" class="help-reset">Скинути підказки</button></div>';
     sheet.querySelector('.help-x').addEventListener('click', closeSheet);
+    sheet.querySelectorAll('.g-tab').forEach(function (t) {
+      t.addEventListener('click', function () {
+        sheet.querySelectorAll('.g-tab, .g-sec').forEach(function (n) { n.classList.toggle('on', n.getAttribute('data-i') === t.getAttribute('data-i')); });
+      });
+    });
     sheet.querySelector('.help-reset').addEventListener('click', function () {
       done = {}; queue = []; save(); bus.emit('note', { text: 'Підказки знову увімкнено', ms: 1800 });
     });
@@ -148,8 +165,6 @@
   function mount() {
     const extra = document.getElementById('hud-extra') || document.getElementById('hud');
     if (extra && !document.getElementById('help-hud')) extra.appendChild(mkBtn('hud'));
-    const menu = document.getElementById('menu');
-    if (menu && !document.getElementById('help-menu')) menu.appendChild(mkBtn('menu'));
   }
 
   root.addEventListener('keydown', function (e) {
