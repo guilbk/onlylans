@@ -82,7 +82,11 @@ def filter_week(rows: Iterable[list[str]], out: Path, w0: int, w1: int) -> tuple
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the command-line parser."""
+    """Build the command-line parser.
+
+    Returns:
+        Parser with ``--root`` and ``--out`` (paths, no units).
+    """
     parser = argparse.ArgumentParser(description="Cut the campaign week out of the Porto data.")
     parser.add_argument("--root", type=Path, default=Path("."), help="repository root")
     parser.add_argument(
