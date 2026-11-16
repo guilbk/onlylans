@@ -147,31 +147,54 @@
     return out;
   }
 
+  function paintTile(ctx, t, night, k) {            // one tile in world metres at k px per metre
+    const th = night ? 1 : 0, pal = night ? BP.night : BP.day, roof = night ? ROOF.night : ROOF.day;
+    ctx.fillStyle = BP.garden[th]; ctx.fill(t.garden);
+    ctx.fillStyle = BP.tree[th]; ctx.fill(t.trees);
+    for (const key in t.fills) { ctx.fillStyle = pal[key >> 3][key & 7]; ctx.fill(t.fills[key], 'evenodd'); }
+    for (const sh in t.rows) { ctx.fillStyle = roof[sh]; ctx.fill(t.rows[sh]); }
+    if (k > ZOOM_HOUSES) {
+      if (!t.div) houses(t, PG.buildings.rows);
+      ctx.fillStyle = ROOF.alt[th]; ctx.fill(t.div.alt);
+      ctx.strokeStyle = ROOF.edge[th]; ctx.lineWidth = 0.7 / k; ctx.stroke(t.div.edge);
+      if (night) { ctx.fillStyle = ROOF.win; ctx.fill(t.div.win); }
+    }
+    ctx.fillStyle = BP.crane[th]; ctx.fill(t.crane);
+    if (k > 0.1) { ctx.strokeStyle = BP.ridge[th]; ctx.lineWidth = 0.8 / k; ctx.stroke(t.ridge); }
+    if (night && k > 0.05) { ctx.fillStyle = BP.lit; ctx.fill(t.lit); }
+  }
+
+  // Up to CACHE_K px/m a tile is drawn from a bitmap (two detail levels, day and night), a couple of new bitmaps per frame:
+  // thousands of vector rows were too slow for a 1366 px screen on a slow CPU.
+  const CACHE_K = [0.12, 0.3], SPAN = TILE + 2 * MARG;
+  let budget = 0;
+  function bitmap(t, lvl, night) {
+    const slot = lvl * 2 + (night ? 1 : 0), have = t.img || (t.img = []);
+    if (have[slot]) return have[slot];
+    if (budget <= 0 || typeof document === 'undefined') return null;
+    budget--;
+    const s = CACHE_K[lvl], c = document.createElement('canvas');
+    c.width = c.height = Math.ceil(SPAN * s);
+    const g = c.getContext('2d');
+    g.scale(c.width / SPAN, c.width / SPAN); g.translate(-t.x0, -t.y0);
+    paintTile(g, t, night, s);
+    return (have[slot] = c);
+  }
+
   function drawBuildings(ctx, p, night, k, x0, y0) {
     if (!PG.buildings) return;
     if (!bld) bld = buildBuildings(PG.buildings);
-    const W = ctx.canvas.clientWidth || 800, H = ctx.canvas.clientHeight || 800, th = night ? 1 : 0;
-    const pal = night ? BP.night : BP.day, size = (TILE + 2 * MARG) * k;
+    const W = ctx.canvas.clientWidth || 800, H = ctx.canvas.clientHeight || 800, size = SPAN * k;
+    const lvl = k <= CACHE_K[0] ? 0 : k <= CACHE_K[1] ? 1 : -1;
+    budget = 2;
     ctx.save();
     ctx.translate(x0, y0);
     ctx.scale(k, k);
     for (let i = 0; i < bld.length; i++) {
       const t = bld[i], sx = x0 + t.x0 * k, sy = y0 + t.y0 * k;
       if (sx > W || sy > H || sx + size < 0 || sy + size < 0) continue;
-      ctx.fillStyle = BP.garden[th]; ctx.fill(t.garden);
-      ctx.fillStyle = BP.tree[th]; ctx.fill(t.trees);
-      for (const key in t.fills) { ctx.fillStyle = pal[key >> 3][key & 7]; ctx.fill(t.fills[key], 'evenodd'); }
-      const roof = night ? ROOF.night : ROOF.day;
-      for (const sh in t.rows) { ctx.fillStyle = roof[sh]; ctx.fill(t.rows[sh]); }
-      if (k > ZOOM_HOUSES) {
-        if (!t.div) houses(t, PG.buildings.rows);
-        ctx.fillStyle = ROOF.alt[th]; ctx.fill(t.div.alt);
-        ctx.strokeStyle = ROOF.edge[th]; ctx.lineWidth = 0.7 / k; ctx.stroke(t.div.edge);
-        if (night) { ctx.fillStyle = ROOF.win; ctx.fill(t.div.win); }
-      }
-      ctx.fillStyle = BP.crane[th]; ctx.fill(t.crane);
-      if (k > 0.1) { ctx.strokeStyle = BP.ridge[th]; ctx.lineWidth = 1.2; ctx.stroke(t.ridge); }
-      if (night && k > 0.05) { ctx.fillStyle = BP.lit; ctx.fill(t.lit); }
+      const img = lvl < 0 ? null : bitmap(t, lvl, night);
+      if (img) ctx.drawImage(img, t.x0, t.y0, SPAN, SPAN); else paintTile(ctx, t, night, k);
     }
     ctx.restore();
   }
