@@ -32,7 +32,7 @@
   let storageOk = true;
 
   function fresh() {
-    return { v: 1, difficulty: 'normal', best: {}, hints: { h1: false, h2: false, h3: false } };
+    return { v: 1, difficulty: 'normal', best: {}, hints: { h1: false, h2: false, h3: false }, coach: false };
   }
   function store() {
     try { return root.localStorage || null; } catch (e) { return null; }
@@ -52,6 +52,7 @@
     if (o.hints && typeof o.hints === 'object') {
       ['h1', 'h2', 'h3'].forEach(function (k) { s.hints[k] = !!o.hints[k]; });
     }
+    s.coach = o.coach === true;
     return s;
   }
   function load() {
@@ -130,6 +131,9 @@
       }
       return Math.max(0, n - 1);
     },
+    // guided first shift (66_coach.js): finished or skipped
+    coachDone: function () { return state.coach; },
+    setCoachDone: function (v) { state.coach = !!v; save(); },
     hint: function (n) { return !!state.hints['h' + n]; },
     markHint: function (n) {
       if (n >= 1 && n <= 3) { state.hints['h' + n] = true; save(); }
