@@ -5,9 +5,9 @@ import math
 import numpy as np
 import pytest
 
-from pipeline import geo, roads
+from pipeline import geo, roads, trace
 
-GRID = roads.Grid(width=120, height=120)  # 960 m x 960 m of 8 m pixels
+GRID = trace.Grid(width=120, height=120, cell_m=roads.CELL_M)  # 960 m x 960 m of 8 m pixels
 
 
 def line(a, b, step=100.0):
@@ -39,38 +39,7 @@ def lonlat_line(n=12, step_m=100.0):
 # trip loading
 
 
-def test_parse_polyline():
-    assert roads.parse_polyline("[[1, 2], [3, 4]]") == [[1, 2], [3, 4]]
-    assert roads.parse_polyline("not json") is None
-    assert roads.parse_polyline('{"a": 1}') is None
-
-
-def test_load_trips_filters_and_projects(tmp_path):
-    good = lonlat_line()
-    week = tmp_path / "week.csv"
-    write_week(week, [json.dumps(good), "[]", "oops", json.dumps(good[:3])])
-    trips = roads.load_trips(week)
-    assert len(trips) == 1
-    assert trips[0].shape == (len(good), 2)
-    assert tuple(trips[0][0]) == pytest.approx(geo.proj(*good[0]))
-
-
 # rasterizing
-
-
-def test_trip_pixels_unique_and_connected():
-    trip = line((10, 100), (700, 100))
-    pix = roads.trip_pixels(trip, GRID)
-    assert len(pix) == len(set(pix.tolist()))
-    assert set(pix // GRID.width) == {12}  # y = 100 m is pixel row 12
-    cols = np.sort(pix % GRID.width)
-    assert cols[0] == 1 and cols[-1] == 87
-    assert np.all(np.diff(cols) == 1)
-
-
-def test_trip_pixels_stationary_trip_is_one_pixel():
-    trip = np.array([[50.0, 50.0], [50.0, 50.0], [50.0, 50.0]])
-    assert roads.trip_pixels(trip, GRID).tolist() == [6 * GRID.width + 6]
 
 
 def test_pixel_counts_once_per_trip():
@@ -315,8 +284,8 @@ def test_draw_debug_writes_a_png(tmp_path):
 
 def test_main_writes_roads_json(tmp_path, monkeypatch, capsys):
     trips = thrice([line((80, 480), (880, 480)), line((480, 100), (480, 860))])
-    monkeypatch.setattr(roads, "load_trips", lambda path: trips)
-    monkeypatch.setattr(roads, "map_grid", lambda: GRID)
+    monkeypatch.setattr(trace, "load_trips", lambda path: trips)
+    monkeypatch.setattr(trace, "map_grid", lambda m: GRID)
     out = tmp_path / "roads.json"
     debug = tmp_path / "debug.png"
     argv = ["--week", "unused.csv", "--out", str(out), "--debug", str(debug)]
@@ -328,30 +297,27 @@ def test_main_writes_roads_json(tmp_path, monkeypatch, capsys):
     assert "nodes: 5" in capsys.readouterr().out
 
 
+def test_main_does_not_write_an_over_budget_file(tmp_path, monkeypatch, capsys):
+    trips = thrice([line((80, 480), (880, 480)), line((480, 100), (480, 860))])
+    monkeypatch.setattr(trace, "load_trips", lambda path: trips)
+    monkeypatch.setattr(trace, "map_grid", lambda m: GRID)
+    monkeypatch.setattr(roads, "MAX_BYTES", 10)
+    out = tmp_path / "roads.json"
+    argv = ["--out", str(out), "--debug", str(tmp_path / "d.png")]
+    assert roads.main(argv) == 1
+    assert not out.exists() and not list(tmp_path.glob("*.tmp"))
+    assert "not written" in capsys.readouterr().out
+
+
 def test_main_reports_empty_map(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(roads, "load_trips", lambda path: [])
-    monkeypatch.setattr(roads, "map_grid", lambda: GRID)
+    monkeypatch.setattr(trace, "load_trips", lambda path: [])
+    monkeypatch.setattr(trace, "map_grid", lambda m: GRID)
     argv = ["--out", str(tmp_path / "r.json"), "--debug", str(tmp_path / "d.png")]
     assert roads.main(argv) == 1
     assert "no road" in capsys.readouterr().out
 
 
 # small pure helpers
-
-
-def test_project_trip_gives_metres():
-    pts = lonlat_line(3)
-    arr = roads.project_trip(pts)
-    assert arr.shape == (3, 2) and arr.dtype == np.float64
-    assert tuple(arr[1]) == pytest.approx(geo.proj(*pts[1]))
-    assert arr[1, 0] - arr[0, 0] == pytest.approx(100.0, abs=0.5)  # 100 m east per step
-
-
-def test_map_grid_covers_the_map():
-    grid = roads.map_grid()
-    assert grid.width * grid.cell_m >= geo.MAP_W_M
-    assert grid.height * grid.cell_m >= geo.MAP_H_M
-    assert (grid.width - 1) * grid.cell_m < geo.MAP_W_M
 
 
 def test_px_to_m_is_the_pixel_centre():

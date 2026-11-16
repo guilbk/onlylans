@@ -1,8 +1,11 @@
 """Tests for pipeline.week."""
 
 import csv
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+
+import pytest
 
 from pipeline import week
 
@@ -69,6 +72,22 @@ def test_filter_week_counts_and_writes(tmp_path: Path) -> None:
     train_rows = list(iter_rows(out))
     assert train_rows[0] == HEADER
     assert [row[TS_COL] for row in train_rows[1:]] == [str(w0), str(w1 - 1)]
+    assert [p.name for p in out.parent.iterdir()] == ["week.csv"]  # temp file renamed away
+
+
+def test_filter_week_keeps_the_old_file_when_reading_fails(tmp_path: Path) -> None:
+    w0, w1 = week.campaign_window()
+    out = tmp_path / "week.csv"
+    out.write_text("old", encoding="utf-8")
+
+    def broken() -> Iterator[list[str]]:
+        yield HEADER
+        yield make_row(w0)
+        raise OSError("disk")
+
+    with pytest.raises(OSError, match="disk"):
+        week.filter_week(broken(), out, w0, w1)
+    assert out.read_text(encoding="utf-8") == "old"
 
 
 

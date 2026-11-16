@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import json
 import math
 import re
 import struct
@@ -486,8 +487,6 @@ def load_shifts(path: Path) -> list[Shift]:
     Returns:
         All shifts in campaign order.
     """
-    import json
-
     raw = json.loads(path.read_text(encoding="utf-8"))
     unit_m = float(raw["unit_m"])
     return [parse_shift(s, unit_m) for s in raw["shifts"]]
@@ -2242,10 +2241,14 @@ def main(argv: list[str] | None = None) -> int:
             print("\n".join(tactic_table(by_diff[d])))
     if not args.compare:
         return 0
-    proc = subprocess.run(
-        ["node", "tools/engine_test.mjs", "--data", str(args.data)],
-        capture_output=True, text=True, check=False,
-    )  # fmt: skip
+    try:
+        proc = subprocess.run(
+            ["node", "tools/engine_test.mjs", "--data", str(args.data)],
+            capture_output=True, text=True, check=False,
+        )  # fmt: skip
+    except OSError as err:  # no node on the PATH, or no tools/ folder
+        print(f"cannot run the Node reference: {err}")
+        return 1
     if proc.returncode != 0:
         print(proc.stdout[-2000:])
         return 1

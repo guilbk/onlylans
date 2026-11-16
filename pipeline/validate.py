@@ -13,6 +13,7 @@ import json
 import math
 import re
 import statistics
+import sys
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
@@ -32,8 +33,8 @@ DATA_MAX_BYTES = 5_000_000  # section 4: "<= 5 MB", counted in decimal megabytes
 ROADS_MAX_BYTES = 400_000  # section 5: "<= 400 KB", counted in decimal kilobytes
 ROADS_UNIT_M = 2.5
 SHIFT_COUNT = 28
-SHIFT_S = 7200  # game seconds per shift
-RIDE_STEP_S = 15  # seconds between GPS points
+SHIFT_S = geo.SHIFT_S  # game seconds per shift
+RIDE_STEP_S = geo.GPS_STEP_S  # seconds between GPS points
 HOUR_S = 3600
 CENTS_PER_EUR = 100  # rankings and fares are compared in whole cents
 ORDER_LEN = 12
@@ -45,6 +46,9 @@ SURGE_T0_MIN = 150  # game s
 SURGE_T1_MAX = SHIFT_S  # game s
 CALL_TYPES = (0, 1, 2)
 DIFFICULTY_RANGE = (1, 5)
+DETOUR_RANGE = (1.1, 1.8)  # section 4: road / straight ratio, clamped
+SPEED_RANGE = (12.0, 60.0)  # section 4: km/h per local hour, clamped
+HOT_W_SUM_MAX = 1.0 + 1e-6  # the hotspot shares of one shift add up to at most 1
 HOURS_PER_DAY = 24
 MEDIAN_TOLERANCE_EUR = 0.005  # half a cent: a producer may round the median to cents
 EXACT_TOLERANCE_EUR = 1e-9
@@ -192,7 +196,7 @@ def check_top_level(data: Any) -> list[str]:
     unit = data.get("unit_m")
     if not is_int(unit) or unit <= 0:
         out.append(viol("top", "unit_m", "must be a positive integer (metres per unit)"))
-    elif data.get("bounds") != [0, 0, geo.MAP_W_M / unit, geo.MAP_H_M / unit]:
+    elif data.get("bounds") != [0, 0, geo.MAP_W_M // unit, geo.MAP_H_M // unit]:
         out.append(
             viol("top", "bounds", f"must be [0, 0, W/{unit}, H/{unit}], got {data.get('bounds')}")
         )
@@ -268,6 +272,10 @@ def check_shift_values(shift: dict[str, Any], where: str) -> list[str]:
         speeds = shift["speed_by_hour"]
         if len(speeds) != HOURS_PER_DAY or not all(is_num(v) for v in speeds):
             out.append(viol("shift-values", where, "speed_by_hour needs 24 numbers (km/h)"))
+        elif not all(SPEED_RANGE[0] <= v <= SPEED_RANGE[1] for v in speeds):
+            out.append(viol("shift-values", where, f"speed_by_hour must be in {SPEED_RANGE} km/h"))
+    if ok["detour"] and not DETOUR_RANGE[0] <= shift["detour"] <= DETOUR_RANGE[1]:
+        out.append(viol("shift-values", where, f"detour {shift['detour']} not in {DETOUR_RANGE}"))
     return out
 
 
@@ -391,18 +399,18 @@ def check_order_path(order: list[Any], bounds: Bounds, where: str = "order") -> 
         )
     if order[F_D] != RIDE_STEP_S * (n - 1):
         out.append(viol("order-d", where, f"d={order[F_D]} s, expected {RIDE_STEP_S * (n - 1)} s"))
-    x, y = order[F_X0], order[F_Y0]
-    for i in range(0, len(pts), 2):
-        x, y = x + pts[i], y + pts[i + 1]
+    path = geo.decode_path(order)
+    for i, (x, y) in enumerate(path[1:], start=1):
         if not in_bounds(x, y, bounds):
-            out.append(viol("order-bounds", where, f"path point {i // 2 + 1} ({x}, {y}) outside"))
-            break
-    if (x, y) != (order[F_X1], order[F_Y1]):
+            out.append(viol("order-bounds", where, f"path point {i} ({x}, {y}) outside"))
+            return out  # the end point is not checked after a point off the map
+    end = path[-1]
+    if end != (order[F_X1], order[F_Y1]):
         out.append(
             viol(
                 "order-pts",
                 where,
-                f"path ends at ({x}, {y}), x1/y1 is ({order[F_X1]}, {order[F_Y1]})",
+                f"path ends at {end}, x1/y1 is ({order[F_X1]}, {order[F_Y1]})",
             )
         )
     return out
@@ -478,6 +486,8 @@ def check_ranking_order(shift: dict[str, Any]) -> list[str]:
         )
     if not all(is_num(v) for v in ranking) or not all(is_int(v) for v in taxis):
         return out + [viol("ranking", where, "ranking must be numbers and taxis integers")]
+    if len(set(taxis)) != len(taxis):
+        out.append(viol("ranking", where, "taxis must be unique"))
     cents = [round(v * CENTS_PER_EUR) for v in ranking]
     for i in range(1, min(len(cents), len(taxis))):
         if cents[i] > cents[i - 1] or (cents[i] == cents[i - 1] and taxis[i] <= taxis[i - 1]):
@@ -589,6 +599,9 @@ def check_places(shift: dict[str, Any], bounds: Bounds) -> list[str]:
             out.append(viol("hot", pos, "x, y must be integers inside the bounds"))
         elif not (is_num(hot["w"]) and 0 <= hot["w"] <= 1 and isinstance(hot["name"], str)):
             out.append(viol("hot", pos, "w must be 0..1 and name a string"))
+    shares = [h["w"] for h in shift["hot"] if isinstance(h, dict) and is_num(h.get("w"))]
+    if sum(shares) > HOT_W_SUM_MAX:
+        out.append(viol("hot", where, f"the hotspot shares add up to {sum(shares):.3f}, over 1"))
     for i, surge in enumerate(shift["surges"]):
         out += check_surge(surge, f"{where} surge {i}", bounds)
     return out
@@ -642,8 +655,10 @@ def check_shift(shift: Any, bounds: Bounds) -> list[str]:
     found, shapes_ok = check_orders(shift, bounds)
     out += found + check_places(shift, bounds)
     where = f"shift {shift.get('id')}"
+    if not shift["orders"] and not shift["ranking"]:
+        return out  # an empty shift is valid; main() warns about it
     if not shift["orders"] or not shift["ranking"]:
-        return [*out, viol("shift-values", where, "has no orders or no ranking")]
+        return [*out, viol("shift-values", where, "has orders without a ranking or the reverse")]
     out += check_ranking_order(shift)
     if shapes_ok and all(is_num(v) for v in shift["ranking"]):
         out += check_ranking_totals(shift) + check_ghost(shift) + check_summary(shift)
@@ -667,7 +682,45 @@ def validate_data(data: Any) -> list[str]:
     out += check_shift_ids(data["shifts"])
     for shift in data["shifts"]:
         out += check_shift(shift, bounds)
-    return out
+    return out + check_speed_tables(data["shifts"])
+
+
+def check_speed_tables(shifts: Sequence[Any]) -> list[str]:
+    """Check that every shift carries the same ``speed_by_hour`` table (section 4).
+
+    Args:
+        shifts: The ``shifts`` list; entries of the wrong kind are skipped.
+
+    Returns:
+        One violation if the tables differ.
+    """
+    tables = {
+        tuple(s["speed_by_hour"])
+        for s in shifts
+        if isinstance(s, dict) and isinstance(s.get("speed_by_hour"), list)
+    }
+    if len(tables) > 1:
+        return [viol("shift-values", "shifts", f"speed_by_hour differs ({len(tables)} tables)")]
+    return []
+
+
+def empty_shift_warnings(data: Any) -> list[str]:
+    """List the shifts without orders; this is a warning, not a violation (section 4).
+
+    Args:
+        data: Parsed ``game_data.json`` (anything is accepted).
+
+    Returns:
+        One text per shift whose ``orders`` list is empty.
+    """
+    shifts = data.get("shifts") if isinstance(data, dict) else None
+    if not isinstance(shifts, list):
+        return []
+    return [
+        f"warning: shift {s.get('id')} has no orders"
+        for s in shifts
+        if isinstance(s, dict) and s.get("orders") == []
+    ]
 
 
 def check_file_size(size: int, limit: int, label: str) -> list[str]:
@@ -769,7 +822,11 @@ def check_roads_edges(edges: Sequence[Any], node_count: int) -> list[str]:
             not in_bounds(x, y, bounds) for x, y in zip(inner[0::2], inner[1::2], strict=True)
         ):
             out.append(viol("roads-bounds", where, "interior point outside the map"))
-    keys = [(e[0], e[1]) for e in edges if isinstance(e, list) and len(e) == EDGE_LEN]
+    keys = [
+        (e[0], e[1])
+        for e in edges
+        if isinstance(e, list) and len(e) == EDGE_LEN and is_int(e[0]) and is_int(e[1])
+    ]
     if keys != sorted(keys):
         out.append(viol("roads-sorted", "edges", "must be sorted by (a, b)"))
     return out
@@ -1055,6 +1112,8 @@ def main(argv: list[str] | None = None) -> int:
         [(str(args.data), found), (str(roads_path), roads_found), (str(html_path), html_found)]
     )
     print("\n".join(lines))
+    for text in empty_shift_warnings(data):
+        print(text, file=sys.stderr)
     return EXIT_OK if lines[-1] == "RESULT: OK" else EXIT_VIOLATIONS
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -115,8 +116,6 @@ def test_parse_shift_and_load(tmp_path: Path) -> None:
             "ranking": [20.0, 10.0], "median": 10.0, "top10": 20.0,
         }],
     }  # fmt: skip
-    import json
-
     path = tmp_path / "d.json"
     path.write_text(json.dumps(raw), encoding="utf-8")
     (sh,) = sim.load_shifts(path)
@@ -460,3 +459,24 @@ def test_play_many_in_process_matches_play_shift(tmp_path: Path) -> None:
     assert got[0] == sim.play_shift(shifts[0], "easy", st)
     by = sim.run_difficulties(path, st, ("easy", "normal"), 1, 1)
     assert set(by) == {"easy", "normal"} and len(by["easy"]) == 1
+
+
+def test_compare_without_node_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    raw = {
+        "unit_m": 5, "shifts": [{
+            "id": "mon-am", "start_hour": 8, "detour": 1.4, "speed_by_hour": [20.0] * 24,
+            "orders": [[600, 1800, 2400, 1900, 2400, [20, 0], 30, 1.0, 4.0, 0, 0, 0]],
+            "hot": [], "surges": [], "ranking": [20.0, 10.0], "median": 5.0, "top10": 9.0,
+        }],
+    }  # fmt: skip
+    path = tmp_path / "d.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    def no_node(*args: object, **kwargs: object) -> None:
+        raise FileNotFoundError(2, "No such file or directory: 'node'")
+
+    monkeypatch.setattr(sim.subprocess, "run", no_node)
+    assert sim.main(["--data", str(path), "--workers", "1", "--compare"]) == 1
+    assert "cannot run the Node reference" in capsys.readouterr().out

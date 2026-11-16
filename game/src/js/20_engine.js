@@ -207,6 +207,14 @@
     return true;
   }
 
+  /** Party mode: takes back a booking the server refused. The car stops where it is; a booked next order is dropped. */
+  function unbook(o) {
+    if (!G || !o) return;
+    release(o);
+    if (G.mode === 'pickup' && G.cur === o) { G.cur = null; G.mode = 'idle'; G.leg.t0 = G.leg.t1 = G.t; }
+    if (G.next === o) G.next = null;
+  }
+
   /** Counts real drivers with more money than the player and updates rank, ghost money and their events. */
   function refreshRace() {
     let n = 0;
@@ -416,6 +424,7 @@
   E.startPickup = startPickup;
   E.bookNext = bookNext;
   E.cruiseTo = cruiseTo;
+  E.unbook = unbook;
   E.say = say;
   E.leadOf = leadOf;
   E.calcResult = function () { return G ? calcResult() : null; };

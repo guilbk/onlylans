@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from typing import Any
 
 R_EARTH_KM = 6371.0
 LON0 = -8.72
@@ -20,6 +21,16 @@ MAP_H_M = 19000  # map height, metres
 HOME_LON = -8.6112
 HOME_LAT = 41.1481
 HOME = (9110.0, 12443.0)  # metres, player start (Aliados)
+SHIFT_S = 7200  # shift length, game seconds
+GPS_STEP_S = 15  # seconds between two GPS points of a trip (and of a ride)
+ORDER_X0, ORDER_Y0, ORDER_PTS = 1, 2, 5  # indices in a compact order array (CONTRACT section 4)
+
+RULE_BAD_JSON = "bad_json"  # keys of the trip filter rules, in the order they are checked
+RULE_POINTS = "points"
+RULE_BOUNDS = "bounds"
+RULE_STEP = "step"
+RULE_LENGTH = "length"
+RULE_STRAIGHT = "straight"
 
 M_PER_KM = 1000.0  # metres in a kilometre
 CENTS = 100  # cents in a euro
@@ -109,7 +120,7 @@ def path_km(pts: Sequence[Sequence[float]]) -> float:
     return sum(haversine(a[0], a[1], b[0], b[1]) for a, b in zip(pts, pts[1:], strict=False))
 
 
-def _is_point(p: object) -> bool:
+def is_point(p: object) -> bool:
     """Tell whether ``p`` is a 2-element sequence of finite numbers (not bool).
 
     Args:
@@ -125,11 +136,38 @@ def _is_point(p: object) -> bool:
     )
 
 
-def trip_ok(pts: Sequence[Sequence[float]]) -> bool:
-    """Tell whether a lon/lat polyline passes all game filters (CONTRACT section 3).
+def reject_reason(pts: object) -> str | None:
+    """Find the first game filter (CONTRACT section 3) that a lon/lat polyline breaks.
 
-    Checks: 4..240 points, all valid and in the map, path 0.8..30 km, no step over 625 m,
-    straight distance first to last at least 0.3 km.
+    Checks: a list, 4..240 points, all valid and in the map, no step over 625 m, path
+    0.8..30 km, straight distance first to last at least 0.3 km. The geometry rules need
+    at least two valid in-map points, which the point rules before them guarantee.
+
+    Args:
+        pts: Parsed POLYLINE value, expected ``[[lon, lat], ...]`` in degrees.
+
+    Returns:
+        The ``RULE_*`` key of the first failed rule, None if the polyline passes.
+    """
+    if not isinstance(pts, list | tuple):
+        return RULE_BAD_JSON
+    if not MIN_POINTS <= len(pts) <= MAX_POINTS:
+        return RULE_POINTS
+    if not all(is_point(p) and in_map(p[0], p[1]) for p in pts):
+        return RULE_BOUNDS
+    steps = [
+        haversine(a[0], a[1], b[0], b[1]) * M_PER_KM for a, b in zip(pts, pts[1:], strict=False)
+    ]
+    if max(steps) > MAX_STEP_M:
+        return RULE_STEP
+    if not MIN_PATH_KM <= sum(steps) / M_PER_KM <= MAX_PATH_KM:
+        return RULE_LENGTH
+    straight_km = haversine(pts[0][0], pts[0][1], pts[-1][0], pts[-1][1])
+    return RULE_STRAIGHT if straight_km < MIN_STRAIGHT_KM else None
+
+
+def trip_ok(pts: Sequence[Sequence[float]]) -> bool:
+    """Tell whether a lon/lat polyline passes all game filters (see :func:`reject_reason`).
 
     Args:
         pts: Points ``[lon, lat]`` in degrees.
@@ -137,18 +175,28 @@ def trip_ok(pts: Sequence[Sequence[float]]) -> bool:
     Returns:
         True when every check passes.
     """
-    if not MIN_POINTS <= len(pts) <= MAX_POINTS:
-        return False
-    if not all(_is_point(p) and in_map(p[0], p[1]) for p in pts):
-        return False
-    steps = [
-        haversine(a[0], a[1], b[0], b[1]) * M_PER_KM for a, b in zip(pts, pts[1:], strict=False)
-    ]
-    if max(steps) > MAX_STEP_M:
-        return False
-    if not MIN_PATH_KM <= sum(steps) / M_PER_KM <= MAX_PATH_KM:
-        return False
-    return haversine(pts[0][0], pts[0][1], pts[-1][0], pts[-1][1]) >= MIN_STRAIGHT_KM
+    return reject_reason(pts) is None
+
+
+def decode_path(order: Sequence[Any], unit_m: float = 1) -> list[tuple[float, float]]:
+    """Decode the points of a ride from a compact order array (CONTRACT section 4).
+
+    Args:
+        order: ``[t, x0, y0, x1, y1, pts, ...]``; ``pts`` holds the flattened deltas
+            ``dx1, dy1, dx2, dy2, ...`` in map units from the pickup ``(x0, y0)``.
+        unit_m: Metres per map unit; the default 1 keeps the map units (and integers).
+
+    Returns:
+        ``len(pts) // 2 + 1`` points, the pickup first.
+    """
+    x, y = order[ORDER_X0], order[ORDER_Y0]
+    deltas = order[ORDER_PTS]
+    out = [(x * unit_m, y * unit_m)]
+    for i in range(0, len(deltas) - 1, 2):
+        x += deltas[i]
+        y += deltas[i + 1]
+        out.append((x * unit_m, y * unit_m))
+    return out
 
 
 def _seg_dist(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:

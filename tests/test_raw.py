@@ -141,3 +141,18 @@ def test_ensure_raw_joins_and_extracts(tmp_path: Path, monkeypatch: pytest.Monke
     train_zip = raw.ensure_raw(tmp_path)
     assert train_zip == tmp_path / "data" / "work" / "train.csv.zip"
     assert [r[0] for r in raw.iter_train_rows(train_zip)][0] == "TRIP_ID"
+
+
+def test_write_atomic_replaces_the_file_and_leaves_no_temp(tmp_path: Path) -> None:
+    target = tmp_path / "sub" / "out.bin"
+    raw.write_atomic(target, b"one")
+    raw.write_atomic(target, b"two")
+    assert target.read_bytes() == b"two"
+    assert [p.name for p in target.parent.iterdir()] == ["out.bin"]
+
+
+def test_set_csv_limit_fits_a_32_bit_long() -> None:
+    import csv
+
+    raw.set_csv_limit()
+    assert csv.field_size_limit() == raw.CSV_FIELD_LIMIT <= 2**31 - 1

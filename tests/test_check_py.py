@@ -25,6 +25,15 @@ def test_bad_module_lists_every_problem() -> None:
     assert "missing annotations for a, return" in text
     assert "m: no docstring" in text
     assert "m: missing" not in text
+    assert "class K: no docstring" in text
+
+
+def test_class_docstring_is_required_and_accepted() -> None:
+    assert check_source('"""Mod."""\n\n\nclass A:\n    """Doc."""\n') == []
+    (problem,) = check_source('"""Mod."""\n\n\nclass A:\n    x = 1\n')
+    assert problem == "<string>:4: class A: no docstring"
+    nested = '"""Mod."""\n\n\ndef f() -> None:\n    """Doc."""\n\n    class B:\n        pass\n'
+    assert check_source(nested) == ["<string>:7: class B: no docstring"]
 
 
 def test_missing_annotations_skips_self_and_covers_varargs() -> None:

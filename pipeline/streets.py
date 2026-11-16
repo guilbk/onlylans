@@ -13,30 +13,25 @@ coordinates are metres in the map frame.
 from __future__ import annotations
 
 import argparse
-import csv
 import io
-import json
 import math
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
-from pipeline import geo
+from pipeline import raw, trace
+from pipeline.trace import Grid
 
 DEFAULT_WEEK = Path("data/work/week.csv")
 DEFAULT_OUT = Path("game/streets.png")
-POLYLINE_COLUMN = "POLYLINE"
-CSV_FIELD_LIMIT = 1 << 27  # the polyline column holds long JSON strings
 
 DEFAULT_M_PER_PX = 5.0  # metres per image pixel
 MAX_M_PER_PX = 8.0  # coarsest resolution tried when the size budget is not met
 M_PER_PX_STEP = 1.0  # step when raising metres per pixel, metres
 MAX_BYTES = 1_200_000  # PNG size budget, bytes
-SAMPLE_FRACTION = 0.5  # samples along a segment are this many pixels apart
 
 CLIP_PERCENTILE = 99.5  # densities above this percentile of lit pixels map to full glow
 STREET_RGB = (0x5A, 0xA9, 0xFF)  # cool blue, CONTRACT section 14
@@ -46,116 +41,6 @@ PALETTE_SIZE = 256  # palette entries; entry i is the glow colour with alpha i
 
 FloatGrid = NDArray[np.float32]
 Alpha = NDArray[np.uint8]
-
-
-@dataclass(frozen=True)
-class Grid:
-    """Raster geometry: ``width`` x ``height`` pixels of ``cell_m`` metres, origin at (0, 0)."""
-
-    width: int
-    height: int
-    cell_m: float
-
-
-def map_grid(m_per_px: float) -> Grid:
-    """Return the grid that covers the whole game map (CONTRACT section 3).
-
-    Args:
-        m_per_px: Pixel size in metres, greater than zero.
-
-    Returns:
-        Grid with ``ceil(MAP_W_M / m_per_px)`` columns and ``ceil(MAP_H_M / m_per_px)`` rows.
-    """
-    return Grid(
-        math.ceil(geo.MAP_W_M / m_per_px), math.ceil(geo.MAP_H_M / m_per_px), float(m_per_px)
-    )
-
-
-def parse_polyline(text: str) -> list[list[float]] | None:
-    """Parse a POLYLINE cell.
-
-    Args:
-        text: JSON text ``[[lon, lat], ...]``.
-
-    Returns:
-        The list of lon/lat points, or None if the text is not a JSON list.
-    """
-    try:
-        value = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    return value if isinstance(value, list) else None
-
-
-def project_trip(pts: list[list[float]]) -> NDArray[np.float64]:
-    """Project a lon/lat polyline to map-frame metres.
-
-    Args:
-        pts: Points ``[lon, lat]`` in degrees.
-
-    Returns:
-        Array of shape ``(n, 2)`` with columns x, y in metres.
-    """
-    return np.array([geo.proj(p[0], p[1]) for p in pts], dtype=np.float64)
-
-
-def load_trips(week_csv: Path) -> list[NDArray[np.float64]]:
-    """Read the week file and keep the trips that pass ``geo.trip_ok``.
-
-    Args:
-        week_csv: CSV with a POLYLINE column (one lon/lat point per 15 s).
-
-    Returns:
-        One ``(n, 2)`` metre array per accepted trip, in file order.
-    """
-    csv.field_size_limit(CSV_FIELD_LIMIT)
-    trips: list[NDArray[np.float64]] = []
-    with week_csv.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            pts = parse_polyline(row[POLYLINE_COLUMN])
-            if pts is not None and geo.trip_ok(pts):
-                trips.append(project_trip(pts))
-    return trips
-
-
-def sample_polyline(trip: NDArray[np.float64], step_m: float) -> NDArray[np.float64]:
-    """Sample a polyline so that consecutive samples are at most ``step_m`` apart.
-
-    Args:
-        trip: Array ``(n, 2)`` of x, y in metres, ``n >= 1``.
-        step_m: Maximum spacing between samples, metres, greater than zero.
-
-    Returns:
-        Array ``(k, 2)`` in metres containing every vertex and the points between them.
-    """
-    if len(trip) < 2:
-        return trip.copy()
-    seg = np.diff(trip, axis=0)
-    counts = np.maximum(1, np.ceil(np.hypot(seg[:, 0], seg[:, 1]) / step_m)).astype(np.int64)
-    starts = np.repeat(np.arange(len(seg)), counts)
-    first = np.cumsum(counts) - counts
-    frac = (np.arange(int(counts.sum())) - np.repeat(first, counts)) / np.repeat(counts, counts)
-    samples = trip[starts] + seg[starts] * frac[:, None]
-    return np.vstack([samples, trip[-1:]])
-
-
-def trip_pixels(trip: NDArray[np.float64], grid: Grid) -> NDArray[np.int64]:
-    """List the flat pixel indices a trip passes through, each once.
-
-    Samples falling outside the grid are dropped.
-
-    Args:
-        trip: Array ``(n, 2)`` of x, y in metres.
-        grid: Raster geometry.
-
-    Returns:
-        Sorted unique indices ``row * grid.width + col``.
-    """
-    samples = sample_polyline(trip, grid.cell_m * SAMPLE_FRACTION)
-    cols = np.floor(samples[:, 0] / grid.cell_m).astype(np.int64)
-    rows = np.floor(samples[:, 1] / grid.cell_m).astype(np.int64)
-    inside = (cols >= 0) & (cols < grid.width) & (rows >= 0) & (rows < grid.height)
-    return np.unique(rows[inside] * grid.width + cols[inside])
 
 
 def accumulate(trips: list[NDArray[np.float64]], grid: Grid) -> FloatGrid:
@@ -170,7 +55,7 @@ def accumulate(trips: list[NDArray[np.float64]], grid: Grid) -> FloatGrid:
     """
     flat = np.zeros(grid.width * grid.height, dtype=np.float32)
     for trip in trips:
-        flat[trip_pixels(trip, grid)] += 1.0
+        flat[trace.trip_pixels(trip, grid, clip=False)] += 1.0
     return flat.reshape(grid.height, grid.width)
 
 
@@ -246,7 +131,7 @@ def render_png(trips: list[NDArray[np.float64]], m_per_px: float) -> bytes:
     Returns:
         PNG bytes of the whole map.
     """
-    counts = accumulate(trips, map_grid(m_per_px))
+    counts = accumulate(trips, trace.map_grid(m_per_px))
     return encode_png(to_alpha(tone_map(counts, clip_level(counts))))
 
 
@@ -339,7 +224,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.m_per_px <= 0:
         print("--m-per-px must be greater than zero", file=sys.stderr)
         return 1
-    trips = load_trips(args.week)
+    raw.set_csv_limit()
+    trips = trace.load_trips(args.week)
     data, used = build_within_budget(trips, args.m_per_px)
     if not fits_budget(len(data)):
         print(f"PNG is {len(data)} bytes, over the {MAX_BYTES} budget", file=sys.stderr)

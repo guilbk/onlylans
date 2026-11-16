@@ -1,4 +1,5 @@
 import math
+import random
 
 import pytest
 
@@ -134,15 +135,15 @@ def test_rdp_tolerance_and_short_input():
 
 
 def test_is_point_accepts_only_finite_pairs():
-    assert geo._is_point([-8.6, 41.1])
-    assert geo._is_point((1, 2))
-    assert not geo._is_point([1.0])
-    assert not geo._is_point([1.0, 2.0, 3.0])
-    assert not geo._is_point("ab")
-    assert not geo._is_point([True, 1.0])
-    assert not geo._is_point([math.nan, 1.0])
-    assert not geo._is_point([math.inf, 1.0])
-    assert not geo._is_point(None)
+    assert geo.is_point([-8.6, 41.1])
+    assert geo.is_point((1, 2))
+    assert not geo.is_point([1.0])
+    assert not geo.is_point([1.0, 2.0, 3.0])
+    assert not geo.is_point("ab")
+    assert not geo.is_point([True, 1.0])
+    assert not geo.is_point([math.nan, 1.0])
+    assert not geo.is_point([math.inf, 1.0])
+    assert not geo.is_point(None)
 
 
 def test_seg_dist_projects_onto_the_segment_and_clamps_at_the_ends():
@@ -151,3 +152,73 @@ def test_seg_dist_projects_onto_the_segment_and_clamps_at_the_ends():
     assert geo._seg_dist((-3.0, 4.0), a, b) == pytest.approx(5.0)
     assert geo._seg_dist((13.0, 4.0), a, b) == pytest.approx(5.0)
     assert geo._seg_dist((3.0, 4.0), a, a) == pytest.approx(5.0)  # zero-length segment
+
+
+LON0, LAT0 = -8.61, 41.15
+DLAT = 0.0027  # about 300 m, below the 625 m step limit
+
+
+def north_line(n=8):
+    """A straight north-going polyline of n points, about 300 m apart."""
+    return [[LON0, LAT0 + i * DLAT] for i in range(n)]
+
+
+def zigzag(n, leg=30):
+    """n points going north and south in legs of ``leg`` steps (long path, short straight)."""
+    out = []
+    for i in range(n):
+        k = i % (2 * leg)
+        out.append([LON0, LAT0 + (k if k <= leg else 2 * leg - k) * DLAT])
+    return out
+
+
+@pytest.mark.parametrize(
+    ("pts", "rule"),
+    [
+        (north_line(), None),
+        ("not a list", geo.RULE_BAD_JSON),
+        (None, geo.RULE_BAD_JSON),
+        ([], geo.RULE_POINTS),
+        (north_line(3), geo.RULE_POINTS),
+        (north_line(241), geo.RULE_POINTS),
+        ([*north_line(4)[:3], [LON0, "x"]], geo.RULE_BOUNDS),
+        ([*north_line(4)[:3], [-9.5, LAT0]], geo.RULE_BOUNDS),
+        ([*north_line(4)[:3], [LON0]], geo.RULE_BOUNDS),
+        ([*north_line(4)[:3], [True, LAT0]], geo.RULE_BOUNDS),
+        (
+            [[LON0, LAT0], [LON0, LAT0 + 0.0027], [LON0, LAT0 + 0.0135], [LON0, LAT0 + 0.0162]],
+            geo.RULE_STEP,
+        ),
+        ([[LON0, LAT0 + i * 0.0001] for i in range(6)], geo.RULE_LENGTH),
+        (zigzag(120), geo.RULE_LENGTH),
+        (
+            [[LON0, LAT0], [LON0, LAT0 + DLAT], [LON0 + 0.003, LAT0 + DLAT], [LON0 + 0.003, LAT0]],
+            geo.RULE_STRAIGHT,
+        ),
+    ],
+)
+def test_reject_reason_cases(pts, rule):
+    """Each synthetic polyline is rejected by exactly the expected first rule."""
+    assert geo.reject_reason(pts) == rule
+
+
+def test_trip_ok_is_no_reject_reason_on_random_polylines():
+    rng = random.Random(7)
+    for _ in range(400):
+        n = rng.choice([2, 4, 6, 20, 60, 250])
+        step = rng.choice([0.0002, 0.001, 0.003, 0.007])
+        lon, lat = LON0 + rng.uniform(-0.02, 0.02), LAT0 + rng.uniform(-0.02, 0.02)
+        pts = []
+        for _i in range(n):
+            lon += rng.uniform(-step, step)
+            lat += rng.uniform(-step, step)
+            pts.append([lon, lat])
+        assert geo.trip_ok(pts) == (geo.reject_reason(pts) is None)
+
+
+def test_decode_path_keeps_map_units_by_default_and_scales_to_metres():
+    order = [10, 100, 200, 103, 202, [1, 0, 2, 2], 45, 1.0, 4.5, 0, 0, 0]
+    assert geo.decode_path(order) == [(100, 200), (101, 200), (103, 202)]
+    assert geo.decode_path(order, 2.5) == [(250.0, 500.0), (252.5, 500.0), (257.5, 505.0)]
+    assert geo.decode_path([0, 5, 6, 5, 6, [], 0, 1, 1, 0, 0, 0]) == [(5, 6)]
+    assert geo.decode_path([0, 5, 6, 5, 6, [1], 0, 1, 1, 0, 0, 0]) == [(5, 6)]  # odd tail ignored

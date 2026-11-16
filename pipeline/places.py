@@ -54,7 +54,7 @@ NAME_FAR = "околиця"  # name of a point far from every place
 
 BIN_S = 150  # time bin of the surge histogram, game seconds
 WINDOW_S = 750  # length of a surge window, game seconds
-SHIFT_S = 7200  # shift length, game seconds
+SHIFT_S = geo.SHIFT_S
 T0_MIN_S = 150  # no surge starts before this, game seconds
 SURGE_R_M = 700.0  # surge circle radius, metres
 SURGE_MAX = 6  # at most this many surges per shift
