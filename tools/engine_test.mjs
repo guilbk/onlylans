@@ -109,6 +109,25 @@ check(nShifts > 0, 'data has shifts');
   check(C.DIFF_K.easy > C.DIFF_K.normal && C.DIFF_K.normal > C.DIFF_K.hard, 'DIFF_K: easy > normal > hard');
 }
 
+// (0b) while riding, other pins stay takeable: the next order can be booked from the drop-off
+{
+  let ride = 0, withPin = 0;
+  for (let s = 0; s < nShifts; s++) {
+    const G = newGame(s);
+    for (let i = 0; i < 1000 && !G.over; i++) {
+      if (G.mode === 'idle' && G.t > 600) {
+        const o = G.sh.orders.find(x => x.t > G.t && x.t < G.t + 1500 && E.reachable(x));
+        if (o) E.startPickup(o);
+      }
+      E.step(7.2);
+      if (G.mode !== 'ride') continue;
+      ride++;
+      if (G.sh.orders.some(x => x.t > G.t && x.t < G.t + 1800 && x !== G.cur && E.reachable(x))) withPin++;
+    }
+  }
+  check(ride > 100 && withPin / ride >= 0.6, 'riding: another pin is takeable in ' + (100 * withPin / Math.max(1, ride)).toFixed(0) + '% of ' + ride + ' samples (>= 60%)');
+}
+
 // (0) data checks
 {
   const sh = PG.data.shifts[0];

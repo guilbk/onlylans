@@ -30,6 +30,8 @@
 
   const MAX_LABELS = 96;
   const MAX_FAINT = 900;
+  const EDGE_MAX = 6;             // off-screen takeable pins shown as edge arrows while riding
+  const edge = [];
   const POP_S = 0.4;              // real s of the pin pop-in
   const EXPIRE_S = 0.35;          // real s of the pin expiry fade
   const EXPIRE_N = 16;
@@ -485,6 +487,7 @@
     const horizon = G.t + maxLead + 1800;
     let n = 0;
     faintN = 0;
+    edge.length = 0;
     curPins.clear();
     const margin = 24;
     for (let i = firstAfter(orders, G.t); i < orders.length; i++) {
@@ -496,7 +499,12 @@
       if (cl && cl.by !== 'player' && cl.t1 <= G.t) continue;
       const sx = (o.x0 - view.cx) * view.scale + W * 0.5;
       const sy = (o.y0 - view.cy) * view.scale + H * 0.5;
-      if (sx < -margin || sy < -margin || sx > W + margin || sy > H + margin) continue;
+      if (sx < -margin || sy < -margin || sx > W + margin || sy > H + margin) {
+        // while riding, takeable pins are counted from the drop-off and often lie off screen: point to them
+        if (G.mode === 'ride' && edge.length < EDGE_MAX && o.t - eng.leadOf(o) <= G.t &&
+            Math.hypot(o.x0 - G.x, o.y0 - G.y) <= C.RADIUS[o.c] * dk && eng.reachable(o)) edge.push(o, sx, sy);
+        continue;
+      }
       let isPin = false;
       if (o.t - eng.leadOf(o) <= G.t) {
         const dx = o.x0 - G.x;
@@ -512,7 +520,7 @@
         p.py = sy;
         p.reach = reach;
         p.fare = o.fare;
-        p.r = reach ? 13 + Math.min(4, o.fare / 6) : 4;
+        p.r = reach ? 13 + Math.min(4, o.fare / 6) : 6;
         p.lw = 0;
         let b = born.get(o);
         if (b === undefined) { b = tNow; born.set(o, b); }
@@ -654,8 +662,8 @@
       const o = p.o;
       const k = p.k;
       if (!p.reach) {
-        ctx.fillStyle = COL_MUTED;
-        ctx.globalAlpha = 0.6 * Math.min(1, k);
+        ctx.fillStyle = PIN_COL[o.c] || COL_MUTED;
+        ctx.globalAlpha = 0.4 * Math.min(1, k);
         ctx.beginPath();
         ctx.arc(p.px, p.py, p.r, 0, TAU);
         ctx.fill();
@@ -860,6 +868,14 @@
     if (strong) {
       const fr = Math.round(o.fare);
       fareTag(LABELS[fr] || (LABELS[fr] = '€' + fr), px - 6, py - 42, col);
+    }
+  }
+
+  function drawEdgePins() {
+    for (let i = 0; i < edge.length; i += 3) {
+      const o = edge[i];
+      const col = PIN_COL[o.c] || PIN_COL[0];
+      if (!edgeArrow(edge[i + 1], edge[i + 2], col)) continue;
     }
   }
 
@@ -1077,6 +1093,7 @@
     drawRoutes(G);
     drawPinDots(G, t);
     drawTargets(G, t);
+    drawEdgePins();
     drawTrail(G);
     drawGhost(G);
     P(G.x, G.y);
