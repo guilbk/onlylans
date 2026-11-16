@@ -51,17 +51,16 @@ class Landmark(NamedTuple):
 
 
 LANDMARKS: tuple[Landmark, ...] = (
-    Landmark("clerigos", "Torre dos Clérigos", "Clérigos", "tower", -8.6146, 41.1459, 0),
-    Landmark("luis1", "Ponte Luís I", "Ponte Luís I", "bridge", -8.6093, 41.1399, 0),
-    Landmark("ribeira", "Ribeira", "Ribeira", "houses", -8.6129, 41.1406, 1),
-    Landmark("se", "Sé do Porto", "Sé", "cathedral", -8.6114, 41.1428, 1),
-    Landmark("bento", "Estação de São Bento", "São Bento", "station", -8.6104, 41.1456, 0),
-    Landmark("lello", "Livraria Lello", "Lello", "bookshop", -8.6149, 41.1468, 1),
-    Landmark("casa", "Casa da Música", "Casa da Música", "hall", -8.6307, 41.1588, 0),
-    Landmark("bolsa", "Palácio da Bolsa", "Bolsa", "palace", -8.6161, 41.1417, 1),
-    Landmark("serralves", "Serralves", "Serralves", "museum", -8.6597, 41.1595, 0),
-    Landmark("aliados", "Avenida dos Aliados", "Aliados", "square", -8.6112, 41.1487, 0),
-    Landmark("bolhao", "Mercado do Bolhão", "Bolhão", "market", -8.6062, 41.1494, 1),
+    Landmark("clerigos", "Torre dos Clérigos", "Клерігуш", "tower", -8.6146, 41.1459, 0),
+    Landmark("luis1", "Ponte Luís I", "Міст Луїша I", "bridge", -8.6093, 41.1399, 0),
+    Landmark("arrabida", "Ponte da Arrábida", "Аррабіда", "bridge", -8.6290, 41.1440, 0),
+    Landmark("ribeira", "Ribeira", "Рібейра", "houses", -8.6129, 41.1406, 0),
+    Landmark("se", "Sé do Porto", "Се", "cathedral", -8.6114, 41.1428, 0),
+    Landmark("bento", "Estação de São Bento", "Сан-Бенту", "station", -8.6104, 41.1456, 0),
+    Landmark("casa", "Casa da Música", "Каза да Музіка", "hall", -8.6307, 41.1588, 0),
+    Landmark("bolsa", "Palácio da Bolsa", "Болса", "palace", -8.6161, 41.1417, 0),
+    Landmark("serralves", "Serralves", "Серралвеш", "museum", -8.6597, 41.1595, 0),
+    Landmark("bolhao", "Mercado do Bolhão", "Болян", "market", -8.6062, 41.1494, 0),
 )
 
 

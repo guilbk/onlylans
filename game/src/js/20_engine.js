@@ -41,9 +41,14 @@
     return sh.speedByHour[(sh.startHour + Math.floor(t / 3600)) % 24];
   }
 
+  /** Jam slowdown (traffic layer 44_traffic.js) along a straight leg at game second t: 0.5..1, or 1 without it. */
+  function jam(x0, y0, x1, y1, t) {
+    return PG.traffic ? PG.traffic.leg(x0, y0, x1, y1, G.sh.startHour * 3600 + t) : 1;
+  }
+
   /** Seconds to drive from (fx, fy) to the pickup of o when leaving at game second t, boarding included. */
   function eta(fx, fy, t, o) {
-    return Math.hypot(o.x0 - fx, o.y0 - fy) / 1000 * G.sh.detour / speedAt(t) * 3600 + C.BOARD_S;
+    return Math.hypot(o.x0 - fx, o.y0 - fy) / 1000 * G.sh.detour / (speedAt(t) * jam(fx, fy, o.x0, o.y0, t)) * 3600 + C.BOARD_S;
   }
 
   /** Seconds a pin is shown before its order time. */
@@ -202,7 +207,7 @@
     if (G.mode === 'pickup') { release(G.cur); G.cur = null; }
     const dist = Math.hypot(x - G.x, y - G.y);
     if (dist < 1) { G.mode = 'idle'; return true; }
-    const dur = dist / 1000 * G.sh.detour / speedAt(G.t) * 3600;
+    const dur = dist / 1000 * G.sh.detour / (speedAt(G.t) * jam(G.x, G.y, x, y, G.t)) * 3600;
     beginLeg('cruise', x, y, G.t, G.t + dur);
     return true;
   }

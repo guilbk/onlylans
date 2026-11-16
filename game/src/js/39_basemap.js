@@ -12,13 +12,13 @@
   };
   const DAY = {
     land: '#f1e9d8', sea: '#5d9fdc', shore: '#a9d2f2', river: '#6fb2ea', bank: '#b4d9f4', park: '#a9d98e', bridge: '#fffdf6', arch: '#7a6f60',
-    casing: '#d8c7a4', main: '#fffdf6', mid: '#fbf2de', minor: '#ede1c8', text: 'rgba(60,48,40,0.85)', halo: 'rgba(255,250,240,0.8)',
+    casing: '#bda57a', main: '#fffaf0', mid: '#e8dcc2', minor: '#e8dcc2', text: 'rgba(60,48,40,0.85)', halo: 'rgba(255,250,240,0.8)',
   };
   const NIGHT = {
     land: '#0c1634', sea: '#0a2a62', shore: '#1b4a96', river: '#0f3a80', bank: '#1f5cb0', park: '#12483f', bridge: '#cfe0ff', arch: '#6b90d0',
-    casing: '#07102a', main: '#6fb4ff', mid: '#3a73c4', minor: '#1d3770', text: 'rgba(214,226,255,0.9)', halo: 'rgba(8,15,36,0.7)',
+    casing: '#07102a', main: '#6fb4ff', mid: '#27508f', minor: '#18305f', text: 'rgba(214,226,255,0.9)', halo: 'rgba(8,15,36,0.7)',
   };
-  const STREET_PX = {main: [15, 2.6], mid: [7, 1.4], minor: [3.5, 0.7]};   // [width in metres, minimum width in px]
+  const STREET_PX = {main: [18, 3.4], mid: [5, 0.9], minor: [3, 0.5]};   // [width in metres, minimum width in px]
   const LABEL_LO = 0.05, LABEL_FADE = 0.12;      // px per metre: district names fade out when zoomed in
   // buildings: per district id (see pipeline/buildings.py) colours [day..., night...]; roofs 0 flat 1 hip 2 court 3 L 4 villa 5 shed 6 crane
   const BP = {
@@ -36,6 +36,7 @@
     tree: ['#5a9a5a', '#1d4a40'], ridge: ['rgba(255,255,255,0.45)', 'rgba(255,255,255,0.12)'],
     lit: 'rgba(255,208,120,0.9)', crane: ['#e8742a', '#b86030'],
   };
+  const SHOW_BUILDINGS = false;                  // calm map: no building texture (data stays for a later look)
   const TILE = 700;                              // metres per culling tile
   let built = null, bld = null;
 
@@ -160,8 +161,12 @@
     ctx.fillStyle = p.land; ctx.fillRect(-4000, -4000, 40000, 40000);
     const th = p === NIGHT ? 1 : 0;
     for (let i = 0; i < built.districts.length; i++) {
-      ctx.fillStyle = (GROUND[B.districts[i].name] || [p.land, p.land])[th];
-      ctx.fill(built.districts[i]);
+      const col = (GROUND[B.districts[i].name] || [p.land, p.land])[th];
+      ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineJoin = 'round';
+      ctx.globalAlpha = 0.8; ctx.fill(built.districts[i]);       // soft edge: wide faint strokes of the same tint feather the outline
+      const feather = [260, 160, 80];
+      for (let j = 0; j < feather.length; j++) { ctx.globalAlpha = 0.1; ctx.lineWidth = feather[j]; ctx.stroke(built.districts[i]); }
+      ctx.globalAlpha = 1;
     }
     ctx.fillStyle = p.park;
     for (let i = 0; i < built.parks.length; i++) ctx.fill(built.parks[i]);
@@ -175,9 +180,9 @@
     ctx.lineCap = 'round';
     if (built.streets) {
       const S = built.streets, wpx = function (c) { return Math.max(STREET_PX[c][0] * k, STREET_PX[c][1]) / k; };
-      if (k > 0.04) { ctx.strokeStyle = p.minor; ctx.lineWidth = wpx('minor'); ctx.stroke(S.minor); }
+      if (k > 0.1) { ctx.strokeStyle = p.minor; ctx.lineWidth = wpx('minor'); ctx.stroke(S.minor); }
       ctx.strokeStyle = p.mid; ctx.lineWidth = wpx('mid'); ctx.stroke(S.mid);
-      ctx.strokeStyle = p.casing; ctx.lineWidth = wpx('main') + 1.6 / k; ctx.stroke(S.main);   // arteries: lighter and wider, with a thin edge
+      ctx.strokeStyle = p.casing; ctx.lineWidth = wpx('main') + 2.4 / k; ctx.stroke(S.main);   // arteries: lighter and wider, with a thin edge
       ctx.strokeStyle = p.main; ctx.lineWidth = wpx('main'); ctx.stroke(S.main);
     }
     ctx.lineCap = 'butt';
@@ -188,7 +193,7 @@
     ctx.strokeStyle = p.arch; ctx.lineWidth = 3 / k;
     for (let i = 0; i < built.arches.length; i++) ctx.stroke(built.arches[i]);
     ctx.restore();
-    drawBuildings(ctx, p, p === NIGHT, k, x0, y0);
+    if (SHOW_BUILDINGS) drawBuildings(ctx, p, p === NIGHT, k, x0, y0);
     const f = Math.max(0, Math.min(1, (LABEL_FADE - k) / (LABEL_FADE - LABEL_LO)));
     if (f > 0) {
       ctx.save();

@@ -231,7 +231,9 @@
   function driveTime(A, rv, T, x, y, tx, ty) {
     const dx = tx - x, dy = ty - y;
     const km = Math.sqrt(dx * dx + dy * dy) / 1000;
-    return km * A.sh.detour / speedAt(A, T) * 3600 * rv.p.pers.travel;
+    // jams (44_traffic.js) slow the rivals like the player; 1 when the layer is absent
+    const jam = PG.traffic ? PG.traffic.leg(x, y, tx, ty, A.sh.startHour * 3600 + T) : 1;
+    return km * A.sh.detour / (speedAt(A, T) * jam) * 3600 * rv.p.pers.travel;
   }
 
   function startLeg(A, rv, T, tx, ty, dur) {
@@ -418,7 +420,8 @@
     const R0 = pers.react * D.react * (id === 'rui' && night ? 0.7 : 1);
     const Rn = pers.react * D.nearReact * (id === 'rui' && night ? 0.7 : 1);
     const spd = speedAt(A, T);
-    const kmK = sh.detour / spd * 3600 * pers.travel / 1000;
+    // scoring estimate: the jam factor at the rival's own spot (driveTime uses the whole leg)
+    const kmK = sh.detour / (spd * (PG.traffic ? PG.traffic.mul(rv.x, rv.y, sh.startHour * 3600 + T) : 1)) * 3600 * pers.travel / 1000;
     const S = scratchS;
     S.diff = A.dn;
     const sg = sh.surgesM;

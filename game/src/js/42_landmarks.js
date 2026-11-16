@@ -117,8 +117,8 @@
     const a = R.P(0, 0), x0 = a.x, y0 = a.y;
     const k = Math.abs(R.P(100, 0).x - x0) / 100;       // px per metre, same helper as PG.fx
     if (k < FADE_LO * 0.5) return;
-    const alphaLabel = Math.max(0, Math.min(1, (k - 0.05) / 0.03));
-    const grow = Math.max(1.0, Math.min(1.7, 0.6 + k * 4));   // gentle icon scale with zoom
+    const alphaLabel = Math.max(0, Math.min(1, (k - 0.16) / 0.04));   // names only when zoomed in
+    const grow = Math.max(1.25, Math.min(2.0, 0.9 + k * 5));   // gentle icon scale with zoom
     ctx.save();
     ctx.font = '700 13px Trebuchet MS, Helvetica Neue, system-ui, sans-serif';
     for (let i = 0; i < items.length; i++) {
