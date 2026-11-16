@@ -17,6 +17,7 @@ OUT_DEFAULT = Path("game/index.html")
 PH_CSS = "/*__CSS__*/"
 PH_DATA = "<!--__DATA__-->"
 PH_JS = "<!--__JS__-->"
+KIB = 1024  # bytes in a KiB, for the size line
 
 
 class BuildError(Exception):
@@ -185,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(html, encoding="utf-8")
-    print(f"built {args.out} ({len(html) // 1024} KB, data: {data})")
+    print(f"built {args.out} ({len(html) // KIB} KB, data: {data})")
     return 0
 
 
