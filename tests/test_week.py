@@ -69,4 +69,3 @@ def test_filter_week_counts_and_writes(tmp_path: Path) -> None:
     train_rows = list(iter_rows(out))
     assert train_rows[0] == HEADER
     assert [row[TS_COL] for row in train_rows[1:]] == [str(w0), str(w1 - 1)]
-
