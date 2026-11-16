@@ -1,0 +1,4 @@
+/* 69_share: «Поділитися» in the result buttons; wraps onto its own line on narrow screens */
+.res-buttons { flex-wrap: wrap; }
+.res-buttons .share-btn { flex: 1 1 100%; background: var(--panel-solid, #0e1424); color: var(--hero, #3df5b0); border: 1px solid var(--hero, #3df5b0); }
+.res-buttons .share-btn:active { opacity: 0.8; }
