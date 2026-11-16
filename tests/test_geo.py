@@ -131,3 +131,23 @@ def test_rdp_tolerance_and_short_input():
     assert geo.rdp(pts, 0.1) == pts
     assert geo.rdp([(1.0, 1.0)], 1.0) == [(1.0, 1.0)]
     assert geo.rdp([(1.0, 1.0), (2.0, 2.0)], 1.0) == [(1.0, 1.0), (2.0, 2.0)]
+
+
+def test_is_point_accepts_only_finite_pairs():
+    assert geo._is_point([-8.6, 41.1])
+    assert geo._is_point((1, 2))
+    assert not geo._is_point([1.0])
+    assert not geo._is_point([1.0, 2.0, 3.0])
+    assert not geo._is_point("ab")
+    assert not geo._is_point([True, 1.0])
+    assert not geo._is_point([math.nan, 1.0])
+    assert not geo._is_point([math.inf, 1.0])
+    assert not geo._is_point(None)
+
+
+def test_seg_dist_projects_onto_the_segment_and_clamps_at_the_ends():
+    a, b = (0.0, 0.0), (10.0, 0.0)
+    assert geo._seg_dist((5.0, 3.0), a, b) == pytest.approx(3.0)
+    assert geo._seg_dist((-3.0, 4.0), a, b) == pytest.approx(5.0)
+    assert geo._seg_dist((13.0, 4.0), a, b) == pytest.approx(5.0)
+    assert geo._seg_dist((3.0, 4.0), a, a) == pytest.approx(5.0)  # zero-length segment
