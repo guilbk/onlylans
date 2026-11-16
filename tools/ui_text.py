@@ -35,6 +35,8 @@ PLACE_NAMES: tuple[str, ...] = (
     "Gaia", "Santo Ovídio", "Ribeira", "Trindade", "Clérigos", "Bonfim", "Boavista", "Marquês",
     "Asprela", "Foz", "Matosinhos", "Campo 24 de Agosto",
 )  # fmt: skip
+# Radio station names in the game's audio (proper names, kept for the Porto flavour).
+PROPER_NAMES: tuple[str, ...] = ("Smooth FM", "Rádio Bossa", "Noite FM")
 # Latin words allowed besides the places: dataset licence/source acronyms and the unit «km».
 LATIN_WHITELIST = frozenset({"uci", "cc", "by", "km", "ecml", "pkdd"})
 # Words that mix scripts on purpose (the rival «Зé», CONTRACT §13).
@@ -580,7 +582,7 @@ def _script_of(ch: str) -> str:
 
 
 def strip_allowed_latin(text: str) -> str:
-    """Remove the Latin text that is allowed: «quoted» titles and Porto place names.
+    """Remove the Latin text that is allowed: «quoted» titles, Porto places, radio stations.
 
     Args:
         text: UI string.
@@ -589,7 +591,7 @@ def strip_allowed_latin(text: str) -> str:
         The string with the allowed spans replaced by spaces.
     """
     text = QUOTED_RE.sub(" ", text)
-    for name in sorted(PLACE_NAMES, key=len, reverse=True):
+    for name in sorted(PLACE_NAMES + PROPER_NAMES, key=len, reverse=True):
         text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", " ", text)
     return text
 
