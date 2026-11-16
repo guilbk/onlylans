@@ -149,3 +149,15 @@ def test_build_data_block_parts(tmp_path: Path) -> None:
     assert "data:image/png;base64,iVBORw==" in block
     with pytest.raises(bg.BuildError):
         bg.build_data_block(tmp_path / "missing.json", roads, streets)
+
+
+def test_missions_inlined_when_present_and_skipped_when_absent(tmp_path: Path) -> None:
+    src, data = make_src(tmp_path), write_data(tmp_path)
+    roads, streets = tmp_path / "r.json", tmp_path / "s.png"
+    missions = tmp_path / "missions.json"
+    assert "missions-data" not in bg.build(src, data, roads, streets)
+    assert "missions-data" not in bg.build(src, data, roads, streets, missions)
+    missions.write_text('{"version":1,"x":"</p>"}', encoding="utf-8")
+    html = bg.build(src, data, roads, streets, missions)
+    assert html.index("game-data") < html.index("missions-data")
+    assert '<script type="application/json" id="missions-data">{"version":1,"x":"<\\/p>"}' in html
