@@ -42,7 +42,16 @@ def file_sha256(path: Path) -> str:
 
 
 def _is_valid(path: Path, expected_size: int, expected_sha256: str) -> bool:
-    """Tell whether a file exists with the expected size (bytes) and SHA-256."""
+    """Check a file against an expected size and hash.
+
+    Args:
+        path: File to check.
+        expected_size: Expected size, bytes.
+        expected_sha256: Expected SHA-256, lowercase hex.
+
+    Returns:
+        True if the file exists with that size and hash.
+    """
     if not path.is_file() or path.stat().st_size != expected_size:
         return False
     return file_sha256(path) == expected_sha256
