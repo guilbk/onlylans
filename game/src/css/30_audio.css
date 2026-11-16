@@ -1,5 +1,5 @@
 .audio-mute {
-  min-width: 40px; min-height: 40px; padding: 0 8px;
+  min-width: 44px; min-height: 44px; padding: 0 8px;
   font-size: 18px; line-height: 1; color: var(--text);
   background: var(--panel); border: 0;
   border-radius: 10px; cursor: pointer; pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent;

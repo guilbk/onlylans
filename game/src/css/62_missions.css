@@ -1,6 +1,6 @@
 /* 62_missions: chip in the HUD slot, the card at shift start, the result block, stars on the cards */
 .msn-chip {
-  min-height: 40px; max-width: min(72vw, 300px); padding: 0 10px; box-sizing: border-box;
+  min-height: 44px; max-width: min(72vw, 300px); padding: 0 10px; box-sizing: border-box;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 600 13px var(--font); color: var(--gold);
   background: var(--panel); border: 0; border-radius: 10px;

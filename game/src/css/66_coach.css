@@ -4,7 +4,7 @@
   color: var(--text); font: 600 14px/1.35 var(--font); text-align: center;
   pointer-events: none; opacity: 0; transition: opacity .25s; z-index: 6; }
 .coach-card.on { opacity: 1; }
-.coach-skip { display: none; min-height: 40px; padding: 0 12px; border: 1px solid var(--amber); border-radius: 10px;
+.coach-skip { display: none; min-height: 44px; padding: 0 12px; border: 1px solid var(--amber); border-radius: 10px;
   background: var(--panel); color: var(--amber); font: 600 14px var(--font);
   pointer-events: auto; cursor: pointer; touch-action: manipulation; }
 .coach-skip.on { display: block; }
