@@ -1,6 +1,6 @@
 /* Menu, about, result */
 #menu, #about, #result { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #e8eefc;
-  background: #070b14; box-sizing: border-box; padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+  background: #070b14; box-sizing: border-box; padding: 16px max(14px, calc((100% - 560px) / 2)) calc(16px + env(safe-area-inset-bottom));
   overflow-y: auto; -webkit-overflow-scrolling: touch; }
 #menu[hidden], #about[hidden], #result[hidden] { display: none !important; }
 #menu:not([hidden]), #about:not([hidden]), #result:not([hidden]) { display: flex; flex-direction: column; gap: 12px; }
