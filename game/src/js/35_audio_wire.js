@@ -12,7 +12,13 @@
     for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 0x01000193) >>> 0; }
     return x >>> 0;
   }
-  function sceneOff() { A.fast.set(false); A.ambience.stop(); }
+  let rlvl = -1;
+  const radioLvl = (l) => { if (l !== rlvl) { rlvl = l; A.radio.level(l); } };
+  function menuBed() { // no tune in the menu: only a very soft city bed
+    A.fast.set(false); radioLvl(0);
+    A.ambience.set({ night: 0, rain: 0, traffic: 0.12, speed: 0, hour: 12 });
+  }
+  function sceneOff() { A.fast.set(false); A.ambience.stop(); radioLvl(0); }
 
   on('ui:click', () => A.play('click'));
   on('order:book', () => A.play('book'));
@@ -33,9 +39,11 @@
     const h = e && e.sh ? e.sh.startHour : 8;
     cdAcc = 0; cdOn = false; startH = h;
     A.play('shift_start');
-    A.music.start(isNight(h) ? 'night' : 'day');
-    // rain: about one shift in four, fixed by the shift id
     const hs = hash(String(e && e.sh && e.sh.id != null ? e.sh.id : e && e.idx != null ? e.idx : 0));
+    A.radio.seed(hs); // each shift gets its own station order
+    A.music.start(isNight(h) ? 'night' : 'day');
+    rlvl = -1; radioLvl(0.25);
+    // rain: about one shift in four, fixed by the shift id
     A.fast.set(false);
     A.ambience.set({
       night: nightW(h), rain: hs % 4 === 0 ? 0.4 + ((hs >>> 8) % 50) / 100 : 0,
@@ -46,9 +54,9 @@
   on('medal', (e) => A.play('medal', { level: e && e.level }));
   on('pause', (e) => { A.play('pause'); A.music.duck(!!(e && e.paused)); });
   on('ui:screen', (e) => {
-    if (e && e.name === 'menu') { A.music.start('menu'); A.music.setIntensity(0.2); A.engine.set(0); sceneOff(); }
+    if (e && e.name === 'menu') { A.music.start('menu'); A.engine.set(0); menuBed(); }
   });
-  on('radio:surge', () => A.play('horn'));
+  on('radio:surge', () => { A.play('horn'); A.radio.next(); });
 
   on('frame', (f) => {
     const G = PG.engine && PG.engine.G;
@@ -61,6 +69,7 @@
     A.engine.set(sp, { run: !G.over });
     if (G.over) return;
     A.fast.set(!!G.fast);
+    radioLvl(G.mode === 'ride' ? 1 : 0.25);
     A.ambience.set({ night: nightW(h + (G.t % 3600) / 3600), speed: sp, hour: h });
     A.music.setIntensity(Math.min(1, 0.25 + 0.2 * (G.combo || 0) + (G.t > 6000 ? 0.2 : 0)));
     if (G.t >= CD_FROM && !G.paused) {

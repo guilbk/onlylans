@@ -12,7 +12,7 @@
 <h2>7 ланосів: audio demo</h2>
 <h3>Sounds</h3><div id="sfx"></div>
 <h3>Special</h3><div id="sp"></div>
-<h3>Music</h3><div id="mus"></div>
+<h3>Radio</h3><div id="mus"></div><div id="stl"></div><div id="now">station: -</div>
 <label>intensity <input id="int" type="range" min="0" max="1" step="0.05" value="0.2"></label>
 <label>engine <input id="eng" type="range" min="0" max="1" step="0.05" value="0"></label>
 <h3>Ambience</h3><div id="amb"></div>
@@ -44,8 +44,24 @@
   [1, 2, 4, 8].forEach((n) => btn('sp', 'combo n=' + n, () => A.play('combo', { n })));
   [0, 1, 2, 3, 4].forEach((level) => btn('sp', 'medal ' + level, () => A.play('medal', { level })));
   btn('sp', 'spam 12 clicks (voice limit)', () => { for (let i = 0; i < 12; i++) A.play('pickup', { delay: i * 0.02 }); });
-  ['menu', 'day', 'night'].forEach((m) => btn('mus', m, () => A.music.start(m)));
-  btn('mus', 'stop', () => A.music.stop());
+  const now = () => { const st = A.radio.station(); $('now').textContent = 'station: ' + (st ? st.name : '-'); };
+  btn('mus', 'radio on (day)', () => { A.music.start('day'); A.radio.on(1); now(); });
+  btn('mus', 'radio on (night)', () => { A.music.start('night'); A.radio.on(1); now(); });
+  btn('mus', 'radio off', () => A.radio.off());
+  btn('mus', 'next station', () => { A.radio.next(); setTimeout(now, 100); });
+  btn('mus', 'low level', () => A.radio.level(0.25));
+  let simT = 0;
+  btn('mus', 'simulate ride (toggle)', () => {
+    if (simT) { clearInterval(simT); simT = 0; A.radio.level(0.25); return; }
+    let on = true; A.music.start('day'); A.radio.level(1);
+    simT = setInterval(() => { on = !on; A.radio.level(on ? 1 : 0.25); }, 8000);
+  });
+  A.radio.stations().forEach((st) => btn('stl', 'station: ' + st.name, () => {
+    A.music.start(st.night ? 'night' : 'day'); A.radio.on(1);
+    let n = 0; while (A.radio.station() && A.radio.station().id !== st.id && n++ < 6) A.radio.next();
+    setTimeout(now, 100);
+  }));
+  btn('mus', 'stop music', () => A.music.stop());
   btn('mus', 'duck on', () => A.music.duck(true));
   btn('mus', 'duck off', () => A.music.duck(false));
   const amb = (o) => { A.ambience.set(Object.assign({ rain: +$('rain').value, traffic: +$('trf').value, speed: +$('spd').value }, o)); };
