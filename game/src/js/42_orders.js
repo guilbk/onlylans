@@ -188,9 +188,9 @@
     const els = S.els;
     if (key !== S.cardKey) {
       S.cardKey = key;
-      els.type.textContent = callName(o.c);
       els.fare.textContent = eur(o.fare);
-      els.km.textContent = (Math.round(o.km * 10) / 10).toString().replace('.', ',') + ' км';
+      els.perkm.innerHTML = o.km > 0.05 ? eur(o.fare / o.km) + '<small>/км</small>' : '';
+      els.km.textContent = callName(o.c) + ' · ' + (Math.round(o.km * 10) / 10).toString().replace('.', ',') + ' км';
       els.eta.textContent = 'доїзд ' + mins(pv.eta);
       els.wait.textContent = pv.ok ? (g.mode === 'ride' ? 'наступним · ' : '') + 'чекає ще ' + mins(pv.wait) : 'не встигнеш';
       els.wait.className = pv.ok ? 'oc-wait' : 'oc-wait oc-bad';
@@ -303,12 +303,12 @@
     card.id = 'order-card';
     card.className = 'order-card hidden';
     card.innerHTML =
-      '<div class="oc-main"><div class="oc-row"><span class="oc-fare"></span><span class="oc-type"></span></div>' +
+      '<div class="oc-main"><div class="oc-row"><span class="oc-fare"></span><span class="oc-perkm"></span></div>' +
       '<div class="oc-row oc-sub"><span class="oc-km"></span><span class="oc-eta"></span></div>' +
       '<div class="oc-wait"></div></div>' +
       '<button type="button" class="oc-btn">Взяти</button>';
     S.els = {
-      type: card.querySelector('.oc-type'), fare: card.querySelector('.oc-fare'),
+      perkm: card.querySelector('.oc-perkm'), fare: card.querySelector('.oc-fare'),
       km: card.querySelector('.oc-km'), eta: card.querySelector('.oc-eta'),
       wait: card.querySelector('.oc-wait'), btn: card.querySelector('.oc-btn')
     };

@@ -83,13 +83,20 @@
     root.history.replaceState(null, '', '?room=' + room);
   }
 
+  const LOOK = { 'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O', 'Р': 'P', 'С': 'C', 'Т': 'T', 'Х': 'X', 'І': 'I' };
+  /** Room code as the server reads it: upper case, no spaces, Cyrillic look-alikes turned Latin. */
+  function normCode(s) {
+    return String(s || '').toUpperCase().replace(/\s+/g, '').replace(/[АВЕКМНОРСТХІ]/g, function (c) { return LOOK[c]; });
+  }
+
   /** Create or join a room; on success the poll takes over and shows the lobby. */
   function enter(path, body, name) {
     ui.err.textContent = '';
+    if (body.room) body.room = normCode(body.room);
     return root.fetch(path, { method: 'POST', headers: JSON_TYPE, body: JSON.stringify(body) }).then(function (r) {
       return r.json().then(function (d) {
         if (!r.ok) { ui.err.textContent = ({ no_room: 'Такого лобі немає', phase: 'Гру вже завершено', full: 'Лобі заповнене', busy: 'Забагато лобі' })[d.error] || 'Не вдалося'; return; }
-        room = d.room || body.room;
+        room = normCode(d.room || body.room);
         me = { key: d.key, id: d.id, token: d.token };
         save(name);
         onState(d.state);
@@ -491,11 +498,11 @@
       if (e.name === 'menu' && !G().over) PG.screens.setScreen('play');
       if (e.name === 'result') resultBlock();
     });
-    const code = (qs.get('room') || '').toUpperCase();
+    const code = normCode(qs.get('room'));
     const saved = JSON.parse(root.sessionStorage.getItem(KEY) || 'null');
     if (SCREEN) { room = code; startPoll(); return; }
-    if (saved && (!code || saved.room === code)) {
-      room = saved.room;
+    if (saved && (!code || normCode(saved.room) === code)) {
+      room = normCode(saved.room);
       me = { key: saved.key, id: saved.id, token: saved.token };
       startPoll();
     } else show('entry:' + code, buildEntry(code));

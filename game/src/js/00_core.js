@@ -66,7 +66,7 @@
   PG.C.NIGHT_TO = 5;
   PG.C.THEMES = {
     day: {
-      name: 'day', bg: '#e6d4b4', ground: '#eddfc2', blocks: ['#e6d4b4', '#eadabe', '#e0cca8', '#e3cfae'],
+      name: 'day', bg: '#e6d4b4', ground: '#e6d5b2', blocks: ['#e1cfaa', '#e9dabb', '#dcc8a2', '#e3d0ac'],
       roofs: ['#d9895f', '#e3a679', '#cfae8e', '#c97a52'], park: '#b9d79a', tree: '#9cc47a', azulejo: '#2456c4',
       street: '255,250,240', streetMinor: 0.08, streetMain: 1, additive: false, widen: true,
       ink: '#12234a', card: 'rgba(255,250,240,0.94)', muted: '#55627f', dot: '#8d8a86', faint: 'rgba(18,35,74,0.16)',
