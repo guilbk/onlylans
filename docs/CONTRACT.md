@@ -672,6 +672,14 @@ resumes the player (`sessionStorage`, money restarts at the server time). `?part
 name, a leaderboard, the time left and a small QR. Other cars are drawn 0.35 s behind the server time, interpolated between
 the last samples (`at`), so they glide at the 200 ms poll.
 
+**Battle of 30 (client, `80_party.js`)**: `join` and `create` carry `skin` (`PG.cars.skin()`) and `mods` (`PG.cars.mods()`),
+not every sync; the state's players may return both and others' cars are drawn with `PG.cars.draw(…, skin, mods)` (an
+unknown skin falls back to the colour car). Polls are one request at a time at the reply's `poll_ms` (default 200); on an
+error the pause doubles up to 2 s and a «Перепідключення…» line shows until a reply arrives. Projector: name tags for the
+top 10 and the hovered car that avoid each other (the rest are dots), a leaderboard of the top 10 with the player count,
+a live feed (earnings, overtakes; worded without gender), the last 30 s as a big countdown, and at the end a podium of
+the top 3 with their cars, then the full table. Phones: «#N з M» in the mini board and «Ти — #N з M» on the result.
+
 ## §16 Завдання зміни (missions)
 
 Each shift has 3 short missions computed by `pipeline/missions.py` from that shift's real data. They give
