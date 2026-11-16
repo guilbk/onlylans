@@ -33,7 +33,7 @@
     const t = ctx.currentTime;
     master.gain.setTargetAtTime(cfg.muted ? 0 : cfg.master, t, 0.02);
     sfxBus.gain.setTargetAtTime(cfg.sfx, t, 0.02);
-    musicBus.gain.setTargetAtTime(cfg.music * 0.5, t, 0.02);
+    musicBus.gain.setTargetAtTime(cfg.music * 1.0, t, 0.02); // radio +6 dB after the phone test
     ambBus.gain.setTargetAtTime(cfg.amb * 0.07, t, 0.02);
   }
 
