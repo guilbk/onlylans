@@ -42,7 +42,9 @@ DP_STEP_M = 1.0
 DEFAULT_DEBUG = Path("data/work/roads_debug.png")
 MAX_BYTES = 400_000
 UNIT_M = 2.5  # coordinate unit of roads.json, metres
+M_PER_KM = 1000.0  # metres in a kilometre
 EIGHT = np.ones((3, 3), dtype=int)  # 8-connectivity structure
+CLOSING_SQUARE = np.ones((3, 3), dtype=np.uint8)  # structuring element of the closing
 NEIGHBOURS = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
 
 
@@ -103,7 +105,11 @@ class Grid:
 
 
 def map_grid() -> Grid:
-    """Return the grid that covers the whole game map (CONTRACT section 3)."""
+    """Build the grid that covers the whole game map (CONTRACT section 3).
+
+    Returns:
+        A 1875 x 2375 pixel grid of 8 m cells.
+    """
     return Grid(math.ceil(geo.MAP_W_M / CELL_M), math.ceil(geo.MAP_H_M / CELL_M))
 
 
@@ -169,7 +175,7 @@ def close_mask(mask: np.ndarray) -> np.ndarray:
     Returns:
         The closed boolean mask.
     """
-    return closing(mask.astype(np.uint8), np.ones((3, 3), dtype=np.uint8)).astype(bool)
+    return closing(mask.astype(np.uint8), CLOSING_SQUARE).astype(bool)
 
 
 def thin_mask(mask: np.ndarray) -> np.ndarray:
@@ -189,12 +195,28 @@ Point = tuple[float, float]  # (x, y) in metres
 
 
 def px_to_m(row: float, col: float, cell_m: float = CELL_M) -> Point:
-    """Return the metre position (x, y) of the centre of a pixel (pixel * cell + cell / 2)."""
+    """Locate the centre of a pixel.
+
+    Args:
+        row: Pixel row (y index).
+        col: Pixel column (x index).
+        cell_m: Pixel size, metres.
+
+    Returns:
+        ``(x, y)`` in metres: ``index * cell_m + cell_m / 2`` on each axis.
+    """
     return col * cell_m + cell_m / 2, row * cell_m + cell_m / 2
 
 
 def polyline_length(pts: Sequence[Sequence[float]]) -> float:
-    """Return the length in metres of a polyline given in metres."""
+    """Measure a polyline.
+
+    Args:
+        pts: Points ``(x, y)`` in one length unit.
+
+    Returns:
+        Length in that unit (metres for map-frame input, 2.5 m units for roads documents).
+    """
     return sum(math.dist(a, b) for a, b in zip(pts, pts[1:], strict=False))
 
 
@@ -235,7 +257,15 @@ def node_pixels(skel: np.ndarray, degree: np.ndarray) -> np.ndarray:
 
 
 def _walk_chain(pixels: set[Pixel], start: Pixel) -> list[Pixel]:
-    """Follow a one-pixel-wide chain from ``start`` through unvisited neighbours."""
+    """Follow a one-pixel-wide chain from ``start`` through unvisited neighbours.
+
+    Args:
+        pixels: Pixels ``(row, col)`` of the chain.
+        start: The pixel to begin at (an end of the chain).
+
+    Returns:
+        The pixels in walking order, starting with ``start``.
+    """
     path = [start]
     seen = {start}
     while True:
@@ -255,7 +285,15 @@ def _walk_chain(pixels: set[Pixel], start: Pixel) -> list[Pixel]:
 
 
 def _touching(pix: Pixel, cluster: np.ndarray) -> list[int]:
-    """Return the sorted node-cluster ids among the 8 neighbours of a pixel."""
+    """Find the node clusters touching a pixel.
+
+    Args:
+        pix: Pixel ``(row, col)``.
+        cluster: Label image of node clusters (0 = none).
+
+    Returns:
+        Sorted ids of the clusters among the 8 neighbours of ``pix``.
+    """
     r, c = pix
     h, w = cluster.shape
     found = {
@@ -301,7 +339,14 @@ def skeleton_to_graph(skel: np.ndarray, cell_m: float = CELL_M) -> nx.MultiGraph
 def _add_chain(
     graph: nx.MultiGraph, cluster: np.ndarray, chain: list[Pixel], cell_m: float
 ) -> None:
-    """Order one chain component, find its two end nodes and add it as an edge."""
+    """Order one chain component, find its two end nodes and add it as an edge (in place).
+
+    Args:
+        graph: Graph that already holds the nodes.
+        cluster: Label image of node clusters.
+        chain: Pixels ``(row, col)`` of one chain component.
+        cell_m: Pixel size, metres.
+    """
     pixels = set(chain)
     ends = sorted(p for p in chain if _touching(p, cluster))
     if not ends:
@@ -317,7 +362,15 @@ def _add_chain(
 
 
 def oriented(data: dict, start: int) -> list[Point]:
-    """Return an edge polyline in metres so that it begins at node ``start``."""
+    """Orient an edge polyline.
+
+    Args:
+        data: Edge attributes (``a``, ``b``, ``pts``).
+        start: Id of the node the polyline must begin at (``a`` or ``b``).
+
+    Returns:
+        The edge points in metres, beginning at ``start``.
+    """
     pts: list[Point] = data["pts"]
     return pts if data["a"] == start else pts[::-1]
 
@@ -384,7 +437,14 @@ def largest_component(graph: nx.MultiGraph) -> nx.MultiGraph:
 
 
 def _unit_point(p: Point) -> tuple[int, int]:
-    """Convert a metre point to integer coordinates in 2.5 m units."""
+    """Convert a point to roads.json units.
+
+    Args:
+        p: Point ``(x, y)`` in metres.
+
+    Returns:
+        Integer ``(x, y)`` in 2.5 m units.
+    """
     return round(p[0] / UNIT_M), round(p[1] / UNIT_M)
 
 
@@ -419,7 +479,14 @@ def encode_roads(graph: nx.MultiGraph, tol_m: float) -> dict:
 
 
 def dumps_roads(doc: dict) -> bytes:
-    """Serialise the document compactly and deterministically (UTF-8, no spaces)."""
+    """Serialise a roads document.
+
+    Args:
+        doc: The document from :func:`encode_roads`.
+
+    Returns:
+        Compact UTF-8 JSON bytes without spaces; the size is in bytes.
+    """
     return json.dumps(doc, separators=(",", ":")).encode("utf-8")
 
 
@@ -467,7 +534,15 @@ def encode_within_budget(
 
 
 def edge_points(doc: dict, edge: list) -> list[tuple[int, int]]:
-    """Return the full polyline of an edge of a roads document, in 2.5 m units."""
+    """Rebuild the full polyline of an edge.
+
+    Args:
+        doc: Roads document (``nodes`` flat x, y).
+        edge: ``[a, b, flat interior points]`` from ``doc["edges"]``.
+
+    Returns:
+        Points ``(x, y)`` in 2.5 m units, from node ``a`` to node ``b``.
+    """
     a, b, flat = edge
     nodes = doc["nodes"]
     inner = list(zip(flat[0::2], flat[1::2], strict=True))
@@ -475,9 +550,16 @@ def edge_points(doc: dict, edge: list) -> list[tuple[int, int]]:
 
 
 def total_km(doc: dict) -> float:
-    """Return the total length in km of all edges of a roads document."""
+    """Sum the length of all edges of a roads document.
+
+    Args:
+        doc: Roads document.
+
+    Returns:
+        Total length in kilometres.
+    """
     units = sum(polyline_length(edge_points(doc, e)) for e in doc["edges"])
-    return units * doc["unit_m"] / 1000.0
+    return units * doc["unit_m"] / M_PER_KM
 
 
 def draw_debug(doc: dict, grid: Grid, out: Path) -> None:
