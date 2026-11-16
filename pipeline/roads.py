@@ -18,6 +18,7 @@ from pathlib import Path
 
 import networkx as nx
 import numpy as np
+from PIL import Image, ImageDraw
 from scipy import ndimage
 from skimage.morphology import closing, skeletonize
 
@@ -475,8 +476,6 @@ def draw_debug(doc: dict, grid: Grid, out: Path) -> None:
         grid: Raster geometry that sets the image size and scale.
         out: PNG path; parent directories are created.
     """
-    from PIL import Image, ImageDraw  # noqa: PLC0415 - only the debug view needs Pillow
-
     k = doc["unit_m"] / grid.cell_m
     img = Image.new("L", (grid.width, grid.height), 0)
     draw = ImageDraw.Draw(img)

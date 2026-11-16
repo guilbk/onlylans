@@ -372,7 +372,7 @@ def main(argv: list[str] | None = None) -> int:
         argv: Command-line arguments (default: ``sys.argv[1:]``).
 
     Returns:
-        0 always (the tables are the result).
+        0 after the tables are printed, 1 if no normal point obeys the floor.
     """
     ap = argparse.ArgumentParser(description="Sweep the balance levers with the Python twin")
     ap.add_argument("--data", type=Path, default=Path("game/game_data.json"))
@@ -391,6 +391,9 @@ def main(argv: list[str] | None = None) -> int:
         normal = sweep(grid, "normal", args.data, n_shifts, pool)
         print("\n".join(report("normal: LEAD A/B/C", "normal", normal, args.top)))
         pool_c = [c for c in rank(normal) if not args.floor or obeys_floor(c.settings)]
+        if not pool_c:
+            print("no point of the normal sweep obeys the reachability floor: raise --lead")
+            return 1
         base = pool_c[0].settings
         easy = sweep(easy_grid(base), "easy", args.data, n_shifts, pool)
         print("\n".join(report("easy: DIFF_K", "easy", easy, args.top)))
