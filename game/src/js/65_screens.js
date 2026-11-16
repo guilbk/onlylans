@@ -3,20 +3,20 @@
 
   const NAMES = ['menu', 'about', 'play', 'result'];
   const MEDAL_NAMES = ['Без медалі', 'Бронза', 'Срібло', 'Золото', 'Легенда'];
-  const MEDAL_COLORS = ['#8a96b3', '#cd7f32', '#c0c8d8', '#ffd700', '#b48cff'];
+  const MEDAL_COLORS = ['var(--muted)', 'var(--bronze)', 'var(--silver)', 'var(--gold)', 'var(--legend)'];
   const PARTY_NOTE = 'Гра разом працює, коли гру відкрито з ноутбука ведучого';
   const RESULT_DELAY_MS = 700;
   const MEDAL_DELAY_MS = 700;
 
   const HERO_SVG = '<svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">' +
-    '<circle cx="32" cy="32" r="31" fill="#0e1424" stroke="#3df5b0" stroke-width="2"/>' +
-    '<path d="M12 56c2-12 10-17 20-17s18 5 20 17z" fill="#2a3350"/>' +
+    '<circle cx="32" cy="32" r="31" style="fill:var(--card);stroke:var(--acc)" stroke-width="2"/>' +
+    '<path d="M12 56c2-12 10-17 20-17s18 5 20 17z" style="fill:var(--track)"/>' +
     '<circle cx="32" cy="30" r="11" fill="#f1c9a5"/>' +
     '<path d="M19 27c1-9 8-14 14-14s12 5 13 14z" fill="#3df5b0"/>' +
     '<rect x="17" y="25" width="30" height="5" rx="2.5" fill="#1fa97c"/>' +
     '<path d="M32 28h19c0 3-4 5-9 5h-10z" fill="#1fa97c"/>' +
-    '<circle cx="28" cy="33" r="1.4" fill="#0e1424"/><circle cx="36" cy="33" r="1.4" fill="#0e1424"/>' +
-    '<path d="M28 38c2 2 6 2 8 0" stroke="#0e1424" stroke-width="1.6" fill="none" stroke-linecap="round"/>' +
+    '<circle cx="28" cy="33" r="1.4" style="fill:var(--text)"/><circle cx="36" cy="33" r="1.4" style="fill:var(--text)"/>' +
+    '<path d="M28 38c2 2 6 2 8 0" style="stroke:var(--text)" stroke-width="1.6" fill="none" stroke-linecap="round"/>' +
     '</svg>';
 
   const dom = {};
