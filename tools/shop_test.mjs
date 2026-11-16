@@ -2,12 +2,10 @@
 import vm from 'node:vm'; import fs from 'node:fs'; import assert from 'node:assert';
 
 function fresh(saved) {
-  const handlers = {};
   const mem = new Map(saved ? [['porto-lanosiv-shop-v1', JSON.stringify(saved)]] : []);
   globalThis.localStorage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
-  globalThis.PG = { bus: { on: (ev, fn) => { (handlers[ev] = handlers[ev] || []).push(fn); },
-    emit: (ev, p) => (handlers[ev] || []).forEach((fn) => fn(p)) } };
-  for (const f of ['41_cars', '68_shop']) {
+  globalThis.PG = {};
+  for (const f of ['00_core', '41_cars', '68_shop']) {
     vm.runInThisContext(fs.readFileSync(new URL(`../game/src/js/${f}.js`, import.meta.url), 'utf8'));
   }
   return { PG, S: PG.shop, mem, end: (e) => PG.bus.emit('shift:end', { result: { earned: e } }) };
