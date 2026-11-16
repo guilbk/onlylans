@@ -99,3 +99,45 @@ def test_iter_train_rows_yields_header_then_rows(tmp_path: Path) -> None:
     assert len(rows) == 5
     assert rows[1][8] == "[[-8.6,41.1],[-8.61,41.11]]"
     assert rows[2][7] == "True"
+
+
+def test_file_sha256_matches_hashlib(tmp_path: Path) -> None:
+    path = tmp_path / "f.bin"
+    path.write_bytes(b"x" * 1000)
+    assert raw.file_sha256(path) == hashlib.sha256(b"x" * 1000).hexdigest()
+
+
+def test_is_valid_checks_existence_size_and_hash(tmp_path: Path) -> None:
+    path = tmp_path / "f.bin"
+    assert not raw._is_valid(path, 3, hashlib.sha256(b"abc").hexdigest())
+    path.write_bytes(b"abc")
+    good = hashlib.sha256(b"abc").hexdigest()
+    assert raw._is_valid(path, 3, good)
+    assert not raw._is_valid(path, 4, good)  # wrong size
+    assert not raw._is_valid(path, 3, hashlib.sha256(b"abd").hexdigest())  # wrong hash
+
+
+def test_concat_parts_returns_size_and_hex_digest(tmp_path: Path) -> None:
+    parts_dir, joined = make_parts(tmp_path)
+    parts = sorted(parts_dir.glob(raw.PART_GLOB))
+    tmp = tmp_path / "joined.tmp"
+    size, sha256 = raw._concat_parts(parts, tmp)
+    assert tmp.read_bytes() == joined
+    assert size == len(joined)
+    assert sha256 == hashlib.sha256(joined).hexdigest()
+
+
+def test_ensure_raw_joins_and_extracts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    outer = make_outer_zip(tmp_path)
+    data = outer.read_bytes()
+    midpoint = len(data) // 2
+    parts_dir = tmp_path / "data" / "porto"
+    parts_dir.mkdir(parents=True)
+    (parts_dir / "porto_uci.zip.part00").write_bytes(data[:midpoint])
+    (parts_dir / "porto_uci.zip.part01").write_bytes(data[midpoint:])
+    real_join = raw.join_parts
+    sha256 = hashlib.sha256(data).hexdigest()
+    monkeypatch.setattr(raw, "join_parts", lambda d, o: real_join(d, o, len(data), sha256))
+    train_zip = raw.ensure_raw(tmp_path)
+    assert train_zip == tmp_path / "data" / "work" / "train.csv.zip"
+    assert [r[0] for r in raw.iter_train_rows(train_zip)][0] == "TRIP_ID"
