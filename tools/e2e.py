@@ -243,7 +243,7 @@ def judge_takeable(rows: Sequence[dict[str, Any]]) -> list[str]:
     for r in rows:
         if not r["reach"]:
             problems.append(f"order {r['i']} at t={r['t']:.0f}s: reachable() is false")
-        elif not r["took"] or r["mode"] not in ("pickup", "ride"):
+        elif not r["took"] or r["mode"] not in TAKEN_MODES:
             problems.append(f"order {r['i']} at t={r['t']:.0f}s: take refused (mode {r['mode']})")
     return problems
 

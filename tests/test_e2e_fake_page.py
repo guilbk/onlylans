@@ -347,3 +347,100 @@ def test_main_returns_usage_when_the_browser_is_missing(
 def test_constants_keep_their_values() -> None:
     assert (e2e.SHORT_HEX_DIGITS, e2e.CHANNEL_MAX, e2e.TABLE_COLUMNS) == (3, 255, 3)
     assert e2e.MAX_REASONS == 3 and e2e.TAKEN_MODES == ("pickup", "ride")
+
+
+def test_sc_pins_takes_every_sampled_reachable_pin(tmp_path: Path) -> None:
+    idx_js = f"() => {{ {e2e.JS_PG} return E.G.idx; }}"
+    snaps = iter(
+        {"t": 150.0 * k, "pins": [{"i": k, "px": 1.0, "py": 1.0, "reach": True}]}
+        for k in range(1, e2e.PIN_PASSES + 1)
+    )
+    rows = [{"i": 1, "t": 150.0, "reach": True, "took": True, "mode": "pickup"}]
+    page = FakePage(
+        {
+            idx_js: 3,
+            e2e.JS_PAUSE_STEP: 0,
+            e2e.JS_PINS: lambda _a: next(snaps),
+            e2e.JS_VERIFY: lambda args: rows if args["idx"] == 3 else [],
+        }
+    )
+    reason = e2e.sc_pins(make_env(page, tmp_path))
+    assert reason.startswith("1 of ")
+    rows[0]["took"] = False
+    page.answers[e2e.JS_PINS] = {
+        "t": 150.0,
+        "pins": [{"i": 1, "px": 1.0, "py": 1.0, "reach": True}],
+    }
+    with pytest.raises(e2e.Fail, match="take refused"):
+        e2e.sc_pins(make_env(page, tmp_path))
+
+
+def test_sc_pins_fails_when_no_pin_is_ever_reachable(tmp_path: Path) -> None:
+    idx_js = f"() => {{ {e2e.JS_PG} return E.G.idx; }}"
+    page = FakePage({idx_js: 0, e2e.JS_PAUSE_STEP: 0, e2e.JS_PINS: {"t": 1.0, "pins": []}})
+    with pytest.raises(e2e.Fail, match="no reachable pin"):
+        e2e.sc_pins(make_env(page, tmp_path))
+
+
+def test_sc_touch_mouse_runs_both_halves(tmp_path: Path) -> None:
+    pin = {"i": 2, "px": 30.0, "py": 40.0, "reach": True}
+    script = iter(
+        [
+            {"mode": "idle", "sel": 2, "cur": None},
+            {"mode": "ride", "sel": 2, "cur": 2},
+            {"mode": "idle", "sel": None, "cur": None},
+            {"mode": "pickup", "sel": 2, "cur": 2},
+        ]
+    )
+    page = FakePage(
+        {
+            e2e.JS_PAUSE_STEP: 0,
+            e2e.JS_PINS: {"t": 1.0, "pins": [pin]},
+            e2e.JS_STATE: lambda _a: next(script),
+            e2e.JS_CARD: {"shown": True, "cls": "card sel"},
+        }
+    )
+    page.boxes["#map"] = {"x": 0.0, "y": 0.0, "width": 300.0, "height": 600.0}
+    assert e2e.sc_touch_mouse(make_env(page, tmp_path)).startswith("touch: tap 1 selects")
+
+
+def rank_snap(rank: int, x: float) -> dict[str, Any]:
+    return {"rank": rank, "nDrivers": 212, "gx": x, "gy": 100.0, "ghostMoney": x}
+
+
+def test_sc_rank_ghost_compares_hud_with_engine(tmp_path: Path) -> None:
+    pin = {"i": 1, "px": 1.0, "py": 1.0, "reach": True}
+    ranks = iter([3] + [5] * (e2e.RANK_SAMPLES - 1))
+    xs = iter(range(100, 100 + 10 * e2e.RANK_SAMPLES, 10))
+    page = FakePage(
+        {
+            e2e.JS_PAUSE_STEP: 0,
+            e2e.JS_PINS: {"t": 1.0, "pins": [pin]},
+            e2e.JS_TAKE_BEST: True,
+            e2e.JS_SAMPLE: lambda _a: rank_snap(next(ranks), float(next(xs))),
+        }
+    )
+    # the fake HUD always reads "#3 з 212", so a rank of 5 is a mismatch and must fail
+    with pytest.raises(e2e.Fail, match="HUD"):
+        e2e.sc_rank_ghost(make_env(page, tmp_path))
+    page.answers[e2e.JS_TAKE_BEST] = False
+    with pytest.raises(e2e.Fail, match="could not take an order"):
+        e2e.sc_rank_ghost(make_env(page, tmp_path))
+
+
+def test_sc_full_shift_checks_medal_rank_and_race_table(tmp_path: Path) -> None:
+    result = {"medal": "Бронза", "rank": "#3 з 212", "rows": 8, "raceTitle": e2e.RACE_TITLE}
+    run = {"rides": 12, "hasAi": True}
+    page = FakePage({e2e.JS_FULL_SHIFT: run, e2e.JS_RESULT: result})
+    assert (
+        e2e.sc_full_shift(make_env(page, tmp_path)) == "12 rides, medal «Бронза», race table 8 rows"
+    )
+    page.answers[e2e.JS_FULL_SHIFT] = {"rides": 12, "hasAi": False}
+    assert "race table SKIP" in e2e.sc_full_shift(make_env(page, tmp_path))
+    page.answers[e2e.JS_FULL_SHIFT] = run
+    page.answers[e2e.JS_RESULT] = {**result, "medal": "?"}
+    with pytest.raises(e2e.Fail, match="medal line"):
+        e2e.sc_full_shift(make_env(page, tmp_path))
+    page.answers[e2e.JS_RESULT] = {**result, "rows": 3}
+    with pytest.raises(e2e.Fail, match="race table has 3 rows"):
+        e2e.sc_full_shift(make_env(page, tmp_path))
