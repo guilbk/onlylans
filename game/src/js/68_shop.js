@@ -52,7 +52,6 @@
   function wallet() { return (st.earned - st.spent) / 100; }
   function owned(id) { return !!st.owned[id]; }
   function need(id) { const it = byId(id); return it ? Math.max(0, Math.ceil(it.price - wallet() - 1e-9)) : 0; }
-  function eur(x) { return (Math.round(x * 100) % 100 ? x.toFixed(2).replace('.', ',') : String(Math.round(x))) + ' €'; }
 
   function earn(x) {
     if (!(x > 0) || !isFinite(x)) return;
@@ -117,7 +116,7 @@
     const b = el('div', 'olx-body');
     const row = el('div', 'olx-row');
     row.appendChild(el('h3', 'olx-name', it.title));
-    row.appendChild(el('span', 'olx-price' + (it.tag ? ' own' : ''), it.tag || it.price + ' €'));
+    row.appendChild(el('span', 'olx-price' + (it.tag ? ' own' : ''), it.tag || PG.util.eur(it.price)));
     b.appendChild(row);
     b.appendChild(el('p', 'olx-who', it.who));
     b.appendChild(el('p', 'olx-desc', it.desc));
@@ -129,7 +128,7 @@
       b.appendChild(bar);
     }
     const act = el('button', 'olx-btn ' + (on ? 'on' : mine || n === 0 ? 'buy' : 'no'),
-      on ? 'Обрано' : mine ? 'Обрати' : n === 0 ? 'Купити' : 'Не вистачає ' + n + ' €');
+      on ? 'Обрано' : mine ? 'Обрати' : n === 0 ? 'Купити' : 'Не вистачає ' + PG.util.eur(n));
     act.type = 'button';
     act.disabled = on || (!mine && n > 0);
     act.addEventListener('click', function () { if (!mine) buy(it.id); else pick(it.id); refresh(); });
@@ -140,7 +139,7 @@
 
   function refresh() {
     if (!dom) return;
-    dom.wal.textContent = eur(wallet());
+    dom.wal.textContent = PG.util.eur(wallet());
     dom.ads.textContent = '';
     ITEMS.forEach(function (it) { dom.ads.appendChild(card(it)); });
     updateButton();
@@ -149,7 +148,7 @@
   function updateButton() {
     if (typeof document === 'undefined') return;
     const b = document.getElementById('btn-shop');
-    if (b) b.querySelector('.olx-open-wal').textContent = eur(wallet());
+    if (b) b.querySelector('.olx-open-wal').textContent = PG.util.eur(wallet());
   }
 
   function build() {
@@ -163,7 +162,7 @@
     top.appendChild(el('div', 'olx-logo', 'ОЛЕКС'));
     const w = el('div', 'olx-wal');
     w.appendChild(el('small', '', 'Гаманець'));
-    const wal = el('b', '', eur(wallet()));
+    const wal = el('b', '', PG.util.eur(wallet()));
     w.appendChild(wal);
     let hold = 0;                                   // long-press on the wallet: «Демо: відкрити все»
     const stop = function () { if (hold) { clearTimeout(hold); hold = 0; } };
