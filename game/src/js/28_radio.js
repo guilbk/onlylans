@@ -4,7 +4,7 @@
   // Dispatcher radio: announces demand surges ahead of time and draws them,
   // plus faint glows at the hotspots. The core (update) is DOM-free.
   const LEAD_S = 240;          // announce this many game s before t0
-  const CLOSE_PX = 0.012;      // hotspot names show when 1 m >= this many px
+  const CLOSE_PX = 0.1;        // hotspot names show when 1 m >= this many px
   const MAX = 16;
 
   let sh = null;               // shift the state belongs to
@@ -34,11 +34,15 @@
     return 'за ' + Math.max(1, Math.ceil(inSec / 60)) + ' хв';
   }
 
+  function place(s) {            // «район Boavista» -> «Boavista» (reads right after «біля»)
+    return String(s.name).replace(/^район\s+/, '');
+  }
+
   function announce(G, s, inSec) {
     PG.bus.emit('radio:surge', { s: s, inSec: inSec });
     if (PG.engine && PG.engine.say) {
       PG.engine.say('📻 Диспетчер: ' + minutesText(inSec) + ' хвиля замовлень біля ' +
-        s.name + ' (≈' + s.n + ')', 4200);
+        place(s) + ' (≈' + s.n + ')', 4200);
     }
   }
 
@@ -141,7 +145,7 @@
       ctx.font = '600 12px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ffe3a8';
-      ctx.fillText('📻 Хвиля замовлень: ' + s.name, x, y - rr - 6);
+      ctx.fillText('📻 Хвиля замовлень: ' + place(s), x, y - rr - 6);
       ctx.restore();
     }
   }
