@@ -587,7 +587,7 @@ countdown ring = remaining visible time `(o.t − G.t) / leadOf(o)`; colour by c
 (skip a later one) and stay off the player's car. Out of reach: small grey dot. **Tier 1 two-step tap**
 (`PG.orders`): mouse hover → preview, click → take; touch first tap → select + preview (route to the
 passenger, the trip along `o.pts`, flag at drop-off, card with price, km, «доїзд N хв», «чекає ще N хв» /
-«не встигнеш», call type, button «Беру»), second tap on the same pin or «Беру» → take, tap elsewhere →
+«не встигнеш», call type, button «Взяти»), second tap on the same pin or «Взяти» → take, tap elsewhere →
 clear. Tier 0: one tap/click takes at once. Input hit radius `r + 10` px.
 
 **Fonts**: system only (`system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`), no embedded fonts.

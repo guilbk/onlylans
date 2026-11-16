@@ -89,3 +89,6 @@ body:not([data-screen="play"]) #hud, body:not([data-screen="play"]) #dispatch { 
 .res-unlock { text-align: center; color: var(--acc); font-weight: 700; font-size: 15px; }
 .party-note { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--panel); border-left: 3px solid var(--amber); color: var(--text); font-size: 13px; line-height: 1.4; }
 .party-note[hidden] { display: none; }
+.menu-name { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.menu-name-in { flex: 1; min-height: 44px; padding: 0 12px; border: 1px solid var(--track); border-radius: 10px;
+  background: var(--card); color: var(--text); font: 600 16px var(--font); }
