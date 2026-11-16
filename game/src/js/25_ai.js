@@ -401,7 +401,7 @@
   }
 
   function toast(G, rv) {
-    const text = rv.name + ' «' + rv.nick + '» ' + (rv.f ? 'випередила' : 'випередив') + ' тебе';
+    const text = rv.name + ' ' + (rv.f ? 'випередила' : 'випередив') + ' тебе';
     if (PG.engine && typeof PG.engine.say === 'function') PG.engine.say(text, TOAST_MS);
     else if (PG.bus) PG.bus.emit('note', { text: text, ms: TOAST_MS });
   }
