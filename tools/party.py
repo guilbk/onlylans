@@ -1,14 +1,14 @@
-"""Party mode server: everyone at the presentation plays one shift on one map.
+"""Party mode server: friends play one shift together on one map, each from their own phone.
 
-``python tools/party.py [--port 8090] [--build] [--dir game] [--open-host]`` serves
-``game/index.html`` (like ``tools/serve.py``) plus a small JSON API under ``/api/``. Standard
-library only.
+``python tools/party.py [--port 8090] [--build] [--dir game]`` serves ``game/index.html`` (like
+``tools/serve.py``) plus a small JSON API under ``/api/``. Standard library only.
 
-The state lives in the pure :class:`Party` class (lobby -> running -> done, players, the set of
-taken orders, the start time); the clock is injected so it is tested without a network. The server
-decides every order claim: the first claim wins. Game time on the phones follows the server clock
-(``now`` and ``start_at`` in every reply). Host-only actions (``/api/start``, ``/api/reset``) are
-accepted from the machine the server runs on; ``--open-host`` accepts them from anywhere.
+Anyone can create a room from the game menu and share its 4-letter code. The state of one room
+lives in the pure :class:`Party` class (lobby -> running -> done, players, the set of taken orders,
+the start time); :class:`Rooms` keeps many of them; the clock is injected so it is tested without
+a network. The server decides every order claim: the first claim wins. Game time on the phones
+follows the server clock (``now`` and ``start_at`` in every reply). Host-only actions (start and
+reset) need the host token that ``/api/create`` returns to the creator.
 """
 
 from __future__ import annotations
@@ -16,7 +16,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import secrets
+import socket
 import sys
 import threading
 import time
@@ -25,6 +27,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs
 
 from qr import QRError, encode
 from serve import (
@@ -50,10 +53,18 @@ MAX_MONEY = 1_000_000.0
 COORD_LIMIT = 1e6  # metres; the map is 15 x 19 km
 DEFAULT_DURATION = 180.0  # real seconds of one shift: 7200 game seconds at 40x
 DURATION_RANGE = (10.0, 1800.0)
-DEFAULT_COUNTDOWN = 5.0
+DEFAULT_COUNTDOWN = 3.0  # the phones show 3-2-1
 COUNTDOWN_RANGE = (0.0, 30.0)
 GRACE_S = 2.0  # after the shift end the phones still post their final money
 OFFLINE_S = 8.0  # no sync for this long: shown as offline
+LOBBY_DROP_S = 25.0  # a guest who is silent this long leaves the lobby
+ROOM_TTL_S = 4 * 3600.0  # an untouched room is forgotten
+MAX_ROOMS = 200
+CODE_LEN = 4
+# Room code letters: no vowels (no words), no I, O, Q (look like 1, 0).
+CODE_ALPHABET = "BCDFGHJKLMNPRSTVWXZ"
+# Cyrillic letters that look like Latin ones, typed on a Ukrainian keyboard.
+LOOKALIKE = str.maketrans("АВЕКМНОРСТХІ", "ABEKMHOPCTXI")
 DIFFICULTIES = ("easy", "normal", "hard")
 DEFAULT_NAME = "Таксист"
 # Car colours for the other players (no mint, that is the hero, and no lilac, that is the ghost).
@@ -71,7 +82,6 @@ COLORS = (
     "#e0a030",
     "#7fd1ae",
 )
-HOST_PATHS = ("/api/start", "/api/reset")
 
 
 class PartyError(Exception):
@@ -104,6 +114,7 @@ class Player:
     money: float = 0.0
     trips: int = 0
     seen: float = 0.0
+    at: float = 0.0  # server time of the last position, for smooth cars on the other phones
 
 
 def _number(value: object, lo: float, hi: float) -> float:
@@ -125,6 +136,20 @@ def _number(value: object, lo: float, hi: float) -> float:
     return min(max(float(value), lo), hi)
 
 
+def clean_code(raw: object) -> str:
+    """Normalise a typed room code: upper case, spaces dropped, Cyrillic lookalikes turned Latin.
+
+    Args:
+        raw: The code as typed (any type; non-strings give an empty code).
+
+    Returns:
+        The code, possibly empty or not a valid room.
+    """
+    if not isinstance(raw, str):
+        return ""
+    return "".join(raw.upper().split()).translate(LOOKALIKE)[:CODE_LEN]
+
+
 def clean_name(raw: object) -> str:
     """Make a safe player name: printable, one line, at most ``MAX_NAME`` characters.
 
@@ -143,13 +168,18 @@ def clean_name(raw: object) -> str:
 class Party:
     """The whole game state, without any network code. Every method takes the lock."""
 
-    def __init__(self, now: Callable[[], float] = time.time) -> None:
+    def __init__(self, now: Callable[[], float] = time.time, code: str = "") -> None:
         """Create an empty lobby.
 
         Args:
             now: Clock in seconds (injected for tests).
+            code: The room code (shown in every state).
         """
         self._now = now
+        self.code = code
+        self.token = secrets.token_hex(8)  # proves the host; given only to the creator
+        self.touched = now()
+        self._host_id: int | None = None
         self._lock = threading.Lock()
         self._players: dict[int, Player] = {}
         self._by_key: dict[str, Player] = {}
@@ -193,6 +223,16 @@ class Party:
             n += 1
         return name
 
+    def _prune(self) -> None:
+        """In the lobby, drop guests who went silent (the host stays)."""
+        self.touched = now = self._now()
+        if self._phase() != "lobby":
+            return
+        for p in [p for p in self._players.values() if now - p.seen > LOBBY_DROP_S]:
+            if p.id != self._host_id:
+                del self._players[p.id]
+                del self._by_key[p.key]
+
     def _state(self) -> dict[str, Any]:
         """The public state (the secret keys are left out)."""
         now = self._now()
@@ -207,11 +247,14 @@ class Party:
                 "hy": round(p.hy, 3),
                 "money": round(p.money, 2),
                 "trips": p.trips,
+                "at": p.at,
                 "online": now - p.seen <= OFFLINE_S,
             }
             for p in self._players.values()
         ]
         return {
+            "room": self.code,
+            "host": self._host_id,
             "phase": self._phase(),
             "now": now,
             "start_at": self._start_at,
@@ -231,6 +274,7 @@ class Party:
             A JSON-ready dictionary.
         """
         with self._lock:
+            self._prune()
             return self._state()
 
     def join(self, name: object, key: object = None) -> tuple[Player, dict[str, Any]]:
@@ -247,6 +291,7 @@ class Party:
             PartyError: If the game is over, or the room is full.
         """
         with self._lock:
+            self._prune()
             known = self._by_key.get(key) if isinstance(key, str) else None
             if known is not None:
                 known.seen = self._now()
@@ -263,6 +308,8 @@ class Party:
                 seen=self._now(),
             )
             self._next_id += 1
+            if self._host_id is None:
+                self._host_id = player.id
             self._players[player.id] = player
             self._by_key[player.key] = player
             return player, self._state()
@@ -282,9 +329,11 @@ class Party:
         """
         with self._lock:
             p = self._player(key)
+            self._prune()
             if "x" in body and "y" in body:
                 p.x = _number(body["x"], -COORD_LIMIT, COORD_LIMIT)
                 p.y = _number(body["y"], -COORD_LIMIT, COORD_LIMIT)
+                p.at = self._now()
             if "hx" in body and "hy" in body:
                 p.hx = _number(body["hx"], -1.0, 1.0)
                 p.hy = _number(body["hy"], -1.0, 1.0)
@@ -339,8 +388,18 @@ class Party:
             del self._claims[n]
             return True
 
+    def _host(self, token: object) -> None:
+        """Check the host token.
+
+        Raises:
+            PartyError: If the token is not the host's.
+        """
+        if not isinstance(token, str) or not secrets.compare_digest(token, self.token):
+            raise PartyError("host_only", HTTPStatus.FORBIDDEN)
+
     def start(
         self,
+        token: object,
         shift: object,
         difficulty: object,
         duration: object = DEFAULT_DURATION,
@@ -349,6 +408,7 @@ class Party:
         """Start the shift for everybody after a short countdown (host only).
 
         Args:
+            token: The host token.
             shift: Index of the shift in the game data.
             difficulty: ``easy``, ``normal`` or ``hard``.
             duration: Real seconds the shift lasts.
@@ -358,9 +418,10 @@ class Party:
             The new state.
 
         Raises:
-            PartyError: If a game is already running, or a value is invalid.
+            PartyError: If the token is wrong, a game is already running, or a value is invalid.
         """
         with self._lock:
+            self._host(token)
             if self._phase() != "lobby":
                 raise PartyError("phase", HTTPStatus.CONFLICT)
             if difficulty not in DIFFICULTIES:
@@ -374,15 +435,24 @@ class Party:
                 p.money, p.trips = 0.0, 0
             return self._state()
 
-    def reset(self) -> dict[str, Any]:
+    def reset(self, token: object) -> dict[str, Any]:
         """Back to the lobby (host only): clears claims and money, drops phones that left.
+
+        Args:
+            token: The host token.
 
         Returns:
             The new state.
+
+        Raises:
+            PartyError: If the token is wrong.
         """
         with self._lock:
+            self._host(token)
             now = self._now()
             for p in [p for p in self._players.values() if now - p.seen > OFFLINE_S]:
+                if p.id == self._host_id:
+                    continue
                 del self._players[p.id]
                 del self._by_key[p.key]
             for p in self._players.values():
@@ -392,8 +462,64 @@ class Party:
             return self._state()
 
 
+class Rooms:
+    """Many parties side by side, found by a 4-letter code."""
+
+    def __init__(
+        self, now: Callable[[], float] = time.time, rng: random.Random | None = None
+    ) -> None:
+        """Create an empty registry.
+
+        Args:
+            now: Clock in seconds (injected for tests).
+            rng: Source of room codes (injected for tests).
+        """
+        self._now = now
+        self._rng = rng or random.Random()  # noqa: S311 (a room code is not a secret)
+        self._lock = threading.Lock()
+        self._rooms: dict[str, Party] = {}
+
+    def create(self, name: object) -> tuple[Party, Player, dict[str, Any]]:
+        """Open a room; its creator joins it as the first player and holds the host token.
+
+        Args:
+            name: The creator's wanted name.
+
+        Returns:
+            The room, the creator and the new state.
+
+        Raises:
+            PartyError: If there are too many rooms.
+        """
+        with self._lock:
+            now = self._now()
+            for code in [c for c, r in self._rooms.items() if now - r.touched > ROOM_TTL_S]:
+                del self._rooms[code]
+            if len(self._rooms) >= MAX_ROOMS:
+                raise PartyError("busy", HTTPStatus.SERVICE_UNAVAILABLE)
+            code = ""
+            while not code or code in self._rooms:
+                code = "".join(self._rng.choice(CODE_ALPHABET) for _ in range(CODE_LEN))
+            room = Party(self._now, code)
+            self._rooms[code] = room
+        player, state = room.join(name)
+        return room, player, state
+
+    def get(self, code: object) -> Party:
+        """Find a room by the code as typed.
+
+        Raises:
+            PartyError: If there is no such room.
+        """
+        with self._lock:
+            room = self._rooms.get(clean_code(code))
+        if room is None:
+            raise PartyError("no_room", HTTPStatus.NOT_FOUND)
+        return room
+
+
 def qr_payload(url: str) -> dict[str, Any]:
-    """The QR code of the player URL for the host's big screen.
+    """The QR code of a join link for the projector view and the lobby.
 
     Args:
         url: URL the phones should open (empty: no code).
@@ -409,31 +535,51 @@ def qr_payload(url: str) -> dict[str, Any]:
     return {"url": url, "rows": ["".join("1" if m else "0" for m in row) for row in matrix]}
 
 
-def make_handler(
-    party: Party, host_ips: frozenset[str], open_host: bool, join_url: str = ""
-) -> type:
-    """Build the request handler class bound to a party.
+def join_link(host_header: str, code: str, lan_base: str = "") -> str:
+    """The link that opens a room: the caller's own address, or the LAN one for a loopback caller.
 
     Args:
-        party: The game state.
-        host_ips: Client addresses allowed to start and reset the game.
-        open_host: Allow host actions from any address.
-        join_url: URL of the players' page, served as a QR code at ``/api/qr``.
+        host_header: The ``Host`` header of the request (``name:port``).
+        code: The room code.
+        lan_base: ``http://LAN-IP:port/`` to use when the caller is on this machine itself.
+
+    Returns:
+        ``<base>?room=CODE``.
+    """
+    name = host_header.rsplit(":", 1)[0].strip("[]")
+    local = name in (LOOPBACK, "::1", "localhost")
+    base = lan_base if local and lan_base else f"http://{host_header}/"
+    return f"{base}?room={code}"
+
+
+def make_handler(rooms: Rooms, lan_base: str = "") -> type:
+    """Build the request handler class bound to the rooms.
+
+    Args:
+        rooms: The registry of parties.
+        lan_base: URL of this server on the LAN, used in links when the caller is on loopback.
 
     Returns:
         A handler class for :class:`serve.LanServer`.
     """
 
     class PartyHandler(NoCacheHandler):
-        """Static files from the game folder plus the JSON API."""
+        """Static files from the game folder plus the JSON API (keep-alive, no Nagle delay)."""
+
+        protocol_version = "HTTP/1.1"
+
+        def setup(self) -> None:
+            """Turn off Nagle's algorithm: a small reply must leave at once."""
+            super().setup()
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
         def log_message(self, format: str, *args: object) -> None:  # noqa: A002
-            """Log everything except the 500 ms API polling."""
+            """Log everything except the 200 ms API polling."""
             if not self.path.startswith("/api/"):
                 super().log_message(format, *args)
 
         def _reply(self, status: int, payload: dict[str, Any]) -> None:
-            """Send a JSON reply."""
+            """Send a JSON reply in one write."""
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -462,55 +608,68 @@ def make_handler(
             return body
 
         def do_GET(self) -> None:  # noqa: N802
-            """Serve ``/api/party`` or a static file."""
-            path = self.path.split("?", 1)[0]
-            if path == "/api/party":
-                self._reply(HTTPStatus.OK, party.state())
-            elif path == "/api/qr":
-                self._reply(HTTPStatus.OK, qr_payload(join_url))
-            elif path.startswith("/api/"):
-                self._reply(HTTPStatus.NOT_FOUND, {"error": "not_found"})
-            else:
+            """Serve ``/api/party?room=``, ``/api/qr?room=`` or a static file."""
+            path, _, query = self.path.partition("?")
+            if not path.startswith("/api/"):
                 super().do_GET()
+                return
+            try:
+                code = parse_qs(query).get("room", [""])[0]
+                if path == "/api/party":
+                    self._reply(HTTPStatus.OK, rooms.get(code).state())
+                elif path == "/api/qr":
+                    room = rooms.get(code)
+                    link = join_link(self.headers.get("Host", ""), room.code, lan_base)
+                    self._reply(HTTPStatus.OK, qr_payload(link))
+                else:
+                    raise PartyError("not_found", HTTPStatus.NOT_FOUND)
+            except PartyError as err:
+                self._reply(err.status, {"error": err.code})
 
         def do_POST(self) -> None:  # noqa: N802
             """Run one API action."""
-            path = self.path.split("?", 1)[0]
             try:
-                if path in HOST_PATHS and not (
-                    open_host or self.client_address[0] in host_ips
-                ):
-                    raise PartyError("host_only", HTTPStatus.FORBIDDEN)
-                self._reply(HTTPStatus.OK, self._route(path, self._body()))
+                self._reply(HTTPStatus.OK, self._route(self.path.split("?", 1)[0], self._body()))
             except PartyError as err:
                 self._reply(err.status, {"error": err.code})
 
         def _route(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-            """Dispatch a POST to the party.
+            """Dispatch a POST to its room.
 
             Raises:
                 PartyError: If the path is unknown or the party refuses.
             """
+            if path == "/api/create":
+                room, player, state = rooms.create(body.get("name"))
+                return {
+                    "room": room.code,
+                    "token": room.token,
+                    "id": player.id,
+                    "key": player.key,
+                    "state": state,
+                }
+            room = rooms.get(body.get("room"))
             key = body.get("key")
             if path == "/api/join":
-                player, state = party.join(body.get("name"), key)
+                player, state = room.join(body.get("name"), key)
                 return {"id": player.id, "key": player.key, "state": state}
             if path == "/api/sync":
-                return party.sync(key, body)
+                return room.sync(key, body)
             if path == "/api/claim":
-                ok, by = party.claim(key, body.get("order"))
+                ok, by = room.claim(key, body.get("order"))
                 return {"ok": ok, "by": by}
             if path == "/api/release":
-                return {"ok": party.release(key, body.get("order"))}
+                return {"ok": room.release(key, body.get("order"))}
             if path == "/api/start":
-                return party.start(
+                return room.start(
+                    body.get("token"),
                     body.get("shift"),
                     body.get("difficulty"),
                     body.get("duration", DEFAULT_DURATION),
                     body.get("countdown", DEFAULT_COUNTDOWN),
                 )
             if path == "/api/reset":
-                return party.reset()
+                return room.reset(body.get("token"))
             raise PartyError("not_found", HTTPStatus.NOT_FOUND)
 
     return PartyHandler
@@ -519,27 +678,23 @@ def make_handler(
 def make_party_server(
     directory: Path,
     port: int,
-    party: Party,
-    host_ips: frozenset[str] = frozenset({LOOPBACK, "::1"}),
-    open_host: bool = False,
+    rooms: Rooms,
     host: str = BIND_HOST,
-    join_url: str = "",
+    lan_base: str = "",
 ) -> LanServer:
     """Create (but do not start) the party server.
 
     Args:
         directory: Folder with ``index.html``.
         port: TCP port; 0 lets the OS pick a free one.
-        party: The game state.
-        host_ips: Client addresses allowed to start and reset the game.
-        open_host: Allow host actions from any address.
+        rooms: The registry of parties.
         host: Interface to bind.
-        join_url: URL of the players' page for the QR code on the host screen.
+        lan_base: URL of this server on the LAN, for links shown on this machine itself.
 
     Returns:
         The bound server.
     """
-    handler = make_handler(party, host_ips, open_host, join_url)
+    handler = make_handler(rooms, lan_base)
 
     def build(*args: Any, **kwargs: Any) -> Any:
         """Create a handler that serves ``directory``."""
@@ -557,13 +712,12 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         0 after a clean stop (Ctrl+C), 1 if the build or the server could not start.
     """
-    ap = argparse.ArgumentParser(description="Party mode: one map for everybody, from the phones")
+    ap = argparse.ArgumentParser(description="Party mode: rooms for friends, each on a phone")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT, help="TCP port (default 8090)")
     ap.add_argument("--build", action="store_true", help="run pipeline.build_game first")
     ap.add_argument("--dir", type=Path, default=DEFAULT_DIR, help="folder to serve")
     ap.add_argument("--host", default=None, help="address to show in the URL (default: detect)")
     ap.add_argument("--plain", action="store_true", help="no ANSI colours around the QR code")
-    ap.add_argument("--open-host", action="store_true", help="host actions from any address")
     args = ap.parse_args(argv)
     if args.build and run_build() != 0:
         print("build failed, not serving", file=sys.stderr)
@@ -573,17 +727,13 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_FAIL
     try:
         lan = args.host or detect_lan_ip()
-        player_url = build_url(lan, args.port) + "?party=1"
-        host_url = build_url(LOOPBACK, args.port) + "?party=1&host=1"
-        ips = frozenset({LOOPBACK, "::1", lan})
-        server = make_party_server(
-            args.dir, args.port, Party(), ips, args.open_host, join_url=player_url
-        )
+        base = build_url(lan, args.port)
+        server = make_party_server(args.dir, args.port, Rooms(), lan_base=base)
     except (OSError, ValueError) as err:
         print(f"cannot start the server: {err}", file=sys.stderr)
         return EXIT_FAIL
-    print(banner(player_url, ansi=not args.plain and sys.stdout.isatty()))
-    print(f"Ведучий (ноутбук): {host_url}")
+    print(banner(base, ansi=not args.plain and sys.stdout.isatty()))
+    print("Гра разом: у меню натисни «Гра разом» і створи лобі, або відкрий ?party=1")
     print(f"Party on {BIND_HOST}:{args.port}; Ctrl+C to stop")
     try:
         server.serve_forever()
