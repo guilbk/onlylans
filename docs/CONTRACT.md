@@ -790,3 +790,24 @@ while ×3 is on), `lights` (xenon, yellow fog). An id is `<cat>_<name>`.
   the animation); `mods` undefined means the saved ones. `PG.cars.paint(ctx, id, px, py, len, color, mods)` takes mods too.
 
 Test: `node tools/cars_test.mjs`.
+
+## §21 Теплова мапа «Де заробляли» (heat map)
+
+A soft layer showing where the real drivers of the shift earned in the current hour. Python computes it, JS only paints it.
+
+**`game/heat.json`** (`python -m pipeline.heat`, deterministic, sorted keys, one line, < 80 KB; reads `game_data.json`):
+`{"version":1,"cell_m":400,"cols":38,"rows":48,"shifts":{"<shift id>":[hour0, hour1]}}`. Each shift has two hours (game s
+0..3599 and 3600..7199, by the pickup time). Each hour is a flat list `[gap, value, gap, value, ...]` of the warm cells in
+row-major order: `gap` = cells since the previous warm cell (`index = row * cols + col`, first counted from 0), `value` 1..99
+= the smoothed sum of the fares of trips picked up in that cell, normalised to the hour's maximum (cells under 8 left out).
+Cell `(col, row)` covers map metres `[col, col+1) * cell_m` by `[row, row+1) * cell_m`. The build (§6) inlines the file as
+`<script type="application/json" id="heat-data">` when it exists; without it there is no heat button.
+
+**`43_heat.js` / `43_heat.css`** (`PG.heat`): a 48 px button «🔥» (`#map-heat`, left of the zoom buttons, shown with them,
+`data-no-map`) toggles the layer; off at every shift start. Drawn with `PG.render.onDraw` at z -3 (above the ground and the
+basemap, under the landmarks, pins and cars), one pixel per cell stretched with smoothing, warm yellow to red in the day theme
+and a brighter additive orange to pink at night. A one-line legend `#heat-legend` «Де заробляли справжні таксисти о HH:00»
+(`HH` = shift start hour + hour index) is shown while it is on. The «Про дані» data list should get the line «де заробляли
+справжні таксисти: теплова мапа» (list lives in `65_screens.js`).
+
+Tests: `tests/test_heat.py`, `tests/test_build_game.py`.

@@ -16,6 +16,7 @@ STREETS_DEFAULT = Path("game/streets.png")
 MISSIONS_DEFAULT = Path("game/missions.json")
 FACTS_DEFAULT = Path("game/facts.json")
 ACHIEVEMENTS_DEFAULT = Path("game/achievements.json")
+HEAT_DEFAULT = Path("game/heat.json")
 OUT_DEFAULT = Path("game/index.html")
 
 PH_CSS = "/*__CSS__*/"
@@ -117,6 +118,7 @@ def build_data_block(
     missions: Path | None = None,
     facts: Path | None = None,
     achievements: Path | None = None,
+    heat: Path | None = None,
 ) -> str:
     """Build the inline data: game data, then roads, streets, missions, facts, achievements.
 
@@ -127,6 +129,7 @@ def build_data_block(
         missions: Missions JSON (CONTRACT section 16); skipped silently if missing or ``None``.
         facts: Result facts JSON (CONTRACT section 17); skipped silently if missing or ``None``.
         achievements: Achievements JSON (CONTRACT section 18); skipped if missing or ``None``.
+        heat: Earnings heat JSON (CONTRACT section 21); skipped if missing or ``None``.
 
     Returns:
         HTML for the data elements.
@@ -161,6 +164,11 @@ def build_data_block(
         parts.append(
             f'<script type="application/json" id="achievements-data">{escape_json(atext)}</script>'
         )
+    if heat is not None and heat.is_file():
+        htext = heat.read_text(encoding="utf-8").strip()
+        parts.append(
+            f'<script type="application/json" id="heat-data">{escape_json(htext)}</script>'
+        )
     return "\n".join(parts)
 
 
@@ -172,6 +180,7 @@ def build(
     missions: Path | None = None,
     facts: Path | None = None,
     achievements: Path | None = None,
+    heat: Path | None = None,
 ) -> str:
     """Assemble the final HTML.
 
@@ -183,6 +192,7 @@ def build(
         missions: Missions JSON (optional file; absent = no missions in the game).
         facts: Result facts JSON (optional file; absent = no facts on the result screen).
         achievements: Achievements JSON (optional file; absent = no badges in the game).
+        heat: Heat JSON (optional file; absent = no heat button).
 
     Returns:
         The complete HTML document.
@@ -197,7 +207,7 @@ def build(
     # Pieces are computed first, then placed; each placeholder is checked on the template.
     css = collect_css(src / "css")
     js = collect_js(src / "js")
-    block = build_data_block(data, roads, streets, missions, facts, achievements)
+    block = build_data_block(data, roads, streets, missions, facts, achievements, heat)
     for ph in (PH_CSS, PH_DATA, PH_JS):
         replace_once(html, ph, "")  # validates the count before any substitution
     html = html.replace(PH_CSS, css, 1)
@@ -222,12 +232,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--missions", type=Path, default=MISSIONS_DEFAULT)
     ap.add_argument("--facts", type=Path, default=FACTS_DEFAULT)
     ap.add_argument("--achievements", type=Path, default=ACHIEVEMENTS_DEFAULT)
+    ap.add_argument("--heat", type=Path, default=HEAT_DEFAULT)
     ap.add_argument("--out", type=Path, default=OUT_DEFAULT)
     args = ap.parse_args(argv)
     data = args.data if args.data is not None else default_data()
     try:
         html = build(
-            args.src, data, args.roads, args.streets, args.missions, args.facts, args.achievements
+            args.src,
+            data,
+            args.roads,
+            args.streets,
+            args.missions,
+            args.facts,
+            args.achievements,
+            args.heat,
         )
     except (BuildError, OSError) as err:
         print(f"build error: {err}", file=sys.stderr)
