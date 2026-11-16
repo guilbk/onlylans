@@ -639,6 +639,73 @@ def _flag(draw: ImageDraw.ImageDraw, p: Point, u: float, rgb: tuple[int, int, in
     draw.polygon(cloth, fill=rgb)
 
 
+def scene_px(scene: Scene, side: int, p: Point) -> Point:
+    """Convert a map point to a pixel of the scene picture.
+
+    Args:
+        scene: Shift data and view.
+        side: Picture side, pixels.
+        p: Map-frame point, metres.
+
+    Returns:
+        ``(px, py)`` in pixels.
+    """
+    return to_px(scene.view, side, p[0], p[1])
+
+
+def draw_trails(draw: ImageDraw.ImageDraw, scene: Scene, side: int, t_s: float) -> None:
+    """Draw the travelled part of every ride (trail) and glide (thin dim line).
+
+    Args:
+        draw: Target drawing context.
+        scene: Shift data and view.
+        side: Picture side, pixels.
+        t_s: Shift seconds.
+    """
+    u = side / BASE_SIZE
+    for leg in scene.legs:
+        pts = [scene_px(scene, side, p) for p in leg_points_until(leg, t_s)]
+        if leg.kind == "ride" and len(pts) > 1:
+            draw.line(
+                pts, fill=mix(GHOST, BACKGROUND, TRAIL_MIX), width=round(TRAIL_W * u), joint="curve"
+            )
+        elif leg.kind == "glide" and len(pts) > 1:
+            draw.line(pts, fill=mix(GHOST, BACKGROUND, DEADHEAD_MIX), width=max(1, round(u)))
+
+
+def draw_orders(draw: ImageDraw.ImageDraw, scene: Scene, side: int, t_s: float) -> None:
+    """Draw a flag at every drop-off and a pin at every pickup; used ones are dimmed.
+
+    Args:
+        draw: Target drawing context.
+        scene: Shift data and view.
+        side: Picture side, pixels.
+        t_s: Shift seconds.
+    """
+    u = side / BASE_SIZE
+    for o in scene.orders:
+        rgb = CALL_RGB.get(o[I_CALL], MUTED)
+        pts = ride_points_m(o, scene.unit_m)
+        taken = o[I_T] <= t_s
+        _flag(draw, scene_px(scene, side, pts[-1]), u, rgb if taken else mix(rgb, BACKGROUND, DIM))
+        _pin(draw, scene_px(scene, side, pts[0]), u, mix(rgb, BACKGROUND, DIM) if taken else rgb)
+
+
+def draw_ghost(draw: ImageDraw.ImageDraw, scene: Scene, side: int, t_s: float) -> None:
+    """Draw the ghost's head with its halo at its position.
+
+    Args:
+        draw: Target drawing context.
+        scene: Shift data and view.
+        side: Picture side, pixels.
+        t_s: Shift seconds.
+    """
+    u = side / BASE_SIZE
+    hx, hy = scene_px(scene, side, position_at(scene.legs, t_s))
+    for r, rgb in ((HALO_R, mix(GHOST, BACKGROUND, HALO_MIX)), (HEAD_R, GHOST)):
+        draw.ellipse((hx - r * u, hy - r * u, hx + r * u, hy + r * u), fill=rgb)
+
+
 def draw_scene(scene: Scene, base: Image.Image, side: int, t_s: float) -> Image.Image:
     """Draw the map layer at time ``t_s``: trail, pins, flags and the ghost.
 
@@ -653,36 +720,9 @@ def draw_scene(scene: Scene, base: Image.Image, side: int, t_s: float) -> Image.
     """
     img = base.copy()
     draw = ImageDraw.Draw(img)
-    u = side / BASE_SIZE
-
-    def px(p: Point) -> Point:
-        """Convert a map point to a pixel of the supersampled picture.
-
-        Args:
-            p: Map-frame point, metres.
-
-        Returns:
-            ``(px, py)`` in pixels.
-        """
-        return to_px(scene.view, side, p[0], p[1])
-
-    for leg in scene.legs:
-        pts = [px(p) for p in leg_points_until(leg, t_s)]
-        if leg.kind == "ride" and len(pts) > 1:
-            draw.line(
-                pts, fill=mix(GHOST, BACKGROUND, TRAIL_MIX), width=round(TRAIL_W * u), joint="curve"
-            )
-        elif leg.kind == "glide" and len(pts) > 1:
-            draw.line(pts, fill=mix(GHOST, BACKGROUND, DEADHEAD_MIX), width=max(1, round(u)))
-    for o in scene.orders:
-        rgb = CALL_RGB.get(o[I_CALL], MUTED)
-        pts = ride_points_m(o, scene.unit_m)
-        taken = o[I_T] <= t_s
-        _flag(draw, px(pts[-1]), u, rgb if taken else mix(rgb, BACKGROUND, DIM))
-        _pin(draw, px(pts[0]), u, mix(rgb, BACKGROUND, DIM) if taken else rgb)
-    hx, hy = px(position_at(scene.legs, t_s))
-    for r, rgb in ((HALO_R, mix(GHOST, BACKGROUND, HALO_MIX)), (HEAD_R, GHOST)):
-        draw.ellipse((hx - r * u, hy - r * u, hx + r * u, hy + r * u), fill=rgb)
+    draw_trails(draw, scene, side, t_s)
+    draw_orders(draw, scene, side, t_s)
+    draw_ghost(draw, scene, side, t_s)
     return img
 
 
