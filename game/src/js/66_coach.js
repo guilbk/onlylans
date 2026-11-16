@@ -22,11 +22,12 @@
   const COOLDOWN_S = 20;
   const MAX_IDLE = 3;
   const PLACE_EVERY_S = 0.25;
+  const PENDING_S = 5;
 
   const S = {
     on: false, step: 0, dwell: 0, card: null, skip: null, stage: null,
     text: '', until: 0, kind: '', lastAt: -1e9, idle: 0, idleN: 0, shown: {}, pending: '', lastSel: null,
-    placeAt: 0, top: true, tgt: null
+    placeAt: 0, top: true, tgt: null, pendingAt: 0
   };
   const pt = { k: '', x: 0, y: 0, rx: 0, ry: 0, rw: 0, rh: 0 };   // where the pointer is drawn: '', 'pt' or 'rect'
 
@@ -110,12 +111,14 @@
     S.tgt = tgt || null;
   }
 
+  function later(kind, now) { S.pending = kind; S.pendingAt = now; }
+
   function contextual(g, e) {
     const now = e.now;
     const m = g.mode;
     if (!g.paused) S.idle = (m === 'idle' || m === 'cruise') ? S.idle + e.dt : 0;
     const sel = PG.orders && PG.orders.selected;
-    if (S.lastSel && !sel && S.lastSel.t <= g.t && m !== 'pickup' && m !== 'ride') S.pending = 'expired';
+    if (S.lastSel && !sel && S.lastSel.t <= g.t && m !== 'pickup' && m !== 'ride') later('expired', now);
     S.lastSel = sel || null;
     if (S.text && now >= S.until) { S.text = ''; S.kind = ''; }
     if (S.text || now - S.lastAt < COOLDOWN_S) return;
@@ -123,7 +126,7 @@
     if (S.pending) {
       const k = S.pending;
       S.pending = '';
-      if (!S.shown[k]) { S.shown[k] = true; show(k, TEXT[k], now); return; }
+      if (!S.shown[k] && now - S.pendingAt < PENDING_S) { S.shown[k] = true; show(k, TEXT[k], now); return; }
     }
     if (S.idle >= IDLE_S && S.idleN < MAX_IDLE) {
       S.idle = 0;
@@ -248,7 +251,9 @@
     R.onDraw(draw, 50);
     PG.bus.on('frame', tick);
     PG.bus.on('shift:start', begin);
-    PG.bus.on('order:lost', function (e) { if (!S.on && e) S.pending = e.by === 'real' ? 'expired' : 'stolen'; });
+    PG.bus.on('order:lost', function (e) {
+      if (!S.on && e) later(e.by === 'real' ? 'expired' : 'stolen', performance.now() / 1000);
+    });
     const stop = function () { S.on = false; S.text = ''; pt.k = ''; S.card.classList.remove('on'); S.skip.classList.remove('on'); };
     PG.bus.on('shift:end', stop);
     PG.bus.on('ui:screen', function (e) { if (e && e.name !== 'play') stop(); });
