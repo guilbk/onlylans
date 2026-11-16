@@ -791,7 +791,7 @@ while ×3 is on), `lights` (xenon, yellow fog). An id is `<cat>_<name>`.
 
 Test: `node tools/cars_test.mjs`.
 
-### ОЛЕКС v2 (shop UI, `68_shop.*`; part of §19)
+### ОЛХ v2 (shop UI, `68_shop.*`; part of §19)
 
 Categories: «Авто» (`car`), «Вигляд» (`look`, the cosmetic mods of this section), «Тюнінг» (`tune`, performance, §22).
 Filters: category, price range, «можу купити»; sort `PG.shop.filter.sort` = `def | asc | desc | new | eff`. Dense card
