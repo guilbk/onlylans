@@ -139,7 +139,7 @@ html, body {
 #toast {
   position: absolute;
   left: 50%;
-  top: calc(var(--sat) + 190px);
+  top: var(--fx-top, 128px);
   transform: translateX(-50%);
   max-width: 90%;
   pointer-events: none;

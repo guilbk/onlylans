@@ -334,7 +334,7 @@
 
   function setTop() {          // banner and combo badge sit just below the HUD
     const R = PG.render;
-    if (stageEl && R && R.zone) stageEl.style.setProperty('--fx-top', Math.round(R.zone.top + 8) + 'px');
+    if (R && R.zone) root.document.documentElement.style.setProperty('--fx-top', Math.round(R.zone.top + 8) + 'px');
   }
 
   function mk(tag, id, parent) {

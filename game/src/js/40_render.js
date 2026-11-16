@@ -239,7 +239,7 @@
   let dimCv = null;
   let tile = null;
   let tileName = '';
-  const TILE_PX = 256;
+  const TILE_PX = 512;
   const TILE_M = 800;           // metres of map in one ground tile
   const caches = {};
   let streetImg = null;
@@ -353,47 +353,30 @@
     return cv;
   }
 
-  // Flat ground: a seeded tile of blocks (terracotta roofs, parks, a few azulejo squares), repeated over the map.
+  // Flat ground: a seeded tile of a few irregular, low-contrast blocks (a rare park), repeated over the map.
+  // The streets and the route stay the loudest thing on the map.
   function makeTile(pal) {
     const cv = document.createElement('canvas');
     cv.width = cv.height = TILE_PX;
     const c = cv.getContext('2d');
     c.fillStyle = pal.ground;
     c.fillRect(0, 0, TILE_PX, TILE_PX);
-    let seed = 7;
+    let seed = 11;
     const rnd = function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    const N = 4;
-    const cell = TILE_PX / N;
-    for (let gy = 0; gy < N; gy++) {
-      for (let gx = 0; gx < N; gx++) {
-        const x = gx * cell + 6 + rnd() * 4;
-        const y = gy * cell + 6 + rnd() * 4;
-        const w = cell - 12 - rnd() * 6;
-        const h = cell - 12 - rnd() * 6;
-        const k = (rnd() * 4) | 0;
-        const r = rnd();
-        if (r < 0.1) {
-          c.fillStyle = pal.park;
-          c.fillRect(x, y, w, h);
-          c.fillStyle = pal.tree;
-          for (let i = 0; i < 3; i++) { c.beginPath(); c.arc(x + 10 + rnd() * (w - 20), y + 10 + rnd() * (h - 20), 6, 0, 6.2832); c.fill(); }
-        } else {
-          c.fillStyle = pal.blocks[k];
-          c.fillRect(x, y, w, h);
-          if (r < 0.16) {                                  // azulejo: a small diamond lattice
-            c.fillStyle = pal.azulejo;
-            for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
-              const cx = x + w * (0.25 + i * 0.25);
-              const cy = y + h * (0.25 + j * 0.25);
-              c.beginPath(); c.moveTo(cx, cy - 5); c.lineTo(cx + 5, cy); c.lineTo(cx, cy + 5); c.lineTo(cx - 5, cy); c.closePath(); c.fill();
-            }
-          } else {
-            c.fillStyle = pal.roofs[(k + 1) & 3];
-            c.fillRect(x + 8, y + 8, w - 16, h - 16);
-          }
-        }
+    for (let i = 0; i < 14; i++) {
+      const w = 40 + rnd() * 110, h = 30 + rnd() * 90;
+      const x = rnd() * (TILE_PX - w), y = rnd() * (TILE_PX - h);
+      const park = rnd() < 0.12;
+      c.globalAlpha = park ? 0.5 : 0.55 + rnd() * 0.35;
+      c.fillStyle = park ? pal.park : pal.blocks[(rnd() * 4) | 0];
+      c.fillRect(x, y, w, h);
+      if (!park && rnd() < 0.25) {              // a faint roof inside a few blocks
+        c.globalAlpha = 0.14;
+        c.fillStyle = pal.roofs[(rnd() * 4) | 0];
+        c.fillRect(x + w * 0.2, y + h * 0.2, w * 0.6, h * 0.6);
       }
     }
+    c.globalAlpha = 1;
     return cv;
   }
 
@@ -1109,7 +1092,7 @@
     ctx.fillRect(0, 0, W, H);
     // map plate: flat ground, no outline
     P(0, 0);
-    drawGround(pal, pOut.x, pOut.y);
+    if (PG.render.ground !== false) drawGround(pal, pOut.x, pOut.y);
 
     drawStreets();
     runLayers(now, true);
@@ -1208,6 +1191,7 @@
   }
 
   PG.render = {
+    ground: true,        // false: the ground tile is not drawn (a basemap layer takes its place)
     init: init,
     draw: draw,
     P: P,
