@@ -34,7 +34,7 @@
     master.gain.setTargetAtTime(cfg.muted ? 0 : cfg.master, t, 0.02);
     sfxBus.gain.setTargetAtTime(cfg.sfx, t, 0.02);
     musicBus.gain.setTargetAtTime(cfg.music * 0.5, t, 0.02);
-    ambBus.gain.setTargetAtTime(cfg.amb * 0.11, t, 0.02);
+    ambBus.gain.setTargetAtTime(cfg.amb * 0.07, t, 0.02);
   }
 
   function stopTimer() { if (timer) { root.clearInterval(timer); timer = 0; } }
@@ -58,7 +58,7 @@
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
     engDuck = c.createGain(); engDuck.connect(master);
-    engBus = c.createGain(); engBus.gain.value = 0.3; engBus.connect(engDuck);
+    engBus = c.createGain(); engBus.gain.value = 0.22; engBus.connect(engDuck);
     engGain = c.createGain(); engGain.gain.value = 0;
     engFilt = c.createBiquadFilter(); engFilt.type = 'lowpass'; engFilt.frequency.value = 200;
     engO1 = c.createOscillator(); engO1.type = 'sawtooth'; engO1.frequency.value = 45;
@@ -170,10 +170,10 @@
 
   // ---------- sounds: [duration s, fn(dest, t, opts)] ----------
   const S = {
-    click: [0.08, (d, t) => noise(d, { t, f: 2200, dur: 0.02, v: 0.35, q: 1.5, a: 0.001 })],
+    click: [0.08, (d, t) => noise(d, { t, f: 2200, dur: 0.02, v: 0.9, q: 1.5, a: 0.001 })],
     book: [0.45, (d, t) => { ping(d, t, 988, 0.1); ping(d, t + 0.13, 1319, 0.09); }],
-    pickup: [0.5, (d, t) => { thunk(d, t, 0.22); meter(d, t + 0.25, 0.12); }],
-    dropoff: [0.7, (d, t) => { thunk(d, t, 0.2); meter(d, t + 0.18, 0.1); meter(d, t + 0.3, 0.1); }],
+    pickup: [0.5, (d, t) => { thunk(d, t, 0.35); meter(d, t + 0.25, 0.3); }],
+    dropoff: [0.7, (d, t) => { thunk(d, t, 0.35); meter(d, t + 0.18, 0.3); meter(d, t + 0.3, 0.3); }],
     coin: [0.45, (d, t) => coindrop(d, t, 0.09)],
     lost: [0.4, (d, t) => tone(d, { t, f: 260, f2: 150, dur: 0.3, v: 0.25, lp: 700, a: 0.01 })],
     steal: [0.7, (d, t) => {
@@ -182,7 +182,7 @@
     }],
     combo: [0.5, (d, t, o) => {
       const n = 2 + Math.min(4, o.n || 1);
-      for (let i = 0; i < n; i++) meter(d, t + i * (0.09 - Math.min(n, 6) * 0.006), 0.1);
+      for (let i = 0; i < n; i++) meter(d, t + i * (0.09 - Math.min(n, 6) * 0.006), 0.3);
     }],
     combo_break: [0.4, (d, t) => thunk(d, t, 0.12)],
     rank_up: [0.4, (d, t) => { felt(d, t, 659, 0.25, 0.14); felt(d, t + 0.12, 880, 0.3, 0.14); }],
@@ -193,7 +193,7 @@
       thunk(d, t, 0.22);
       tone(d, { t: t + 0.4, f: 38, f2: 62, dur: 0.7, v: 0.2, type: 'sawtooth', lp: 220, a: 0.2 }); // engine turns over
     }],
-    countdown: [0.12, (d, t) => noise(d, { t, f: 900, dur: 0.04, v: 0.4, q: 3, a: 0.001 })],
+    countdown: [0.12, (d, t) => noise(d, { t, f: 900, dur: 0.04, v: 1.2, q: 3, a: 0.001 })],
     shift_end: [1.2, (d, t) => { thunk(d, t, 0.2); felt(d, t + 0.35, 523, 0.8, 0.12); felt(d, t + 0.35, 784, 0.8, 0.08); }],
     medal: [1.6, (d, t, o) => { // short, tasteful stinger: 2..4 soft notes
       const L = clamp(Math.round(o.level || 0), 0, 4), sc = [523, 659, 784, 1047];
@@ -205,10 +205,10 @@
     }],
     denied: [0.3, (d, t) => { thunk(d, t, 0.1); thunk(d, t + 0.12, 0.1); }],
     whoosh: [0.5, (d, t) => noise(d, { t, f: 400, f2: 1500, dur: 0.45, v: 0.3, q: 0.8, a: 0.15 })],
-    indicator: [1.5, (d, t) => { for (let i = 0; i < 4; i++) { noise(d, { t: t + i * 0.34, f: 1800, dur: 0.01, v: 0.25, q: 3, a: 0.001 }); noise(d, { t: t + i * 0.34 + 0.17, f: 1100, dur: 0.01, v: 0.2, q: 3, a: 0.001 }); } }],
+    indicator: [1.5, (d, t) => { for (let i = 0; i < 4; i++) { noise(d, { t: t + i * 0.34, f: 1800, dur: 0.01, v: 0.5, q: 3, a: 0.001 }); noise(d, { t: t + i * 0.34 + 0.17, f: 1100, dur: 0.01, v: 0.2, q: 3, a: 0.001 }); } }],
     speed_up: [0.6, (d, t) => noise(d, { t, f: 300, f2: 3500, dur: 0.5, v: 0.22, q: 0.8, a: 0.15 })],
     slow_down: [0.6, (d, t) => noise(d, { t, f: 3000, f2: 300, dur: 0.5, v: 0.2, q: 0.8, a: 0.05 })],
-    pause: [0.2, (d, t) => noise(d, { t, f: 1600, dur: 0.025, v: 0.3, q: 2, a: 0.001 })]
+    pause: [0.2, (d, t) => noise(d, { t, f: 1600, dur: 0.025, v: 0.8, q: 2, a: 0.001 })]
   };
 
   function play(name, opts) {
@@ -393,7 +393,7 @@
     rd.lvl = clamp(+l || 0, 0, 1);
     if (!ctx || !rb) return;
     if (rd.lvl > 0 && !mood) tune(true);
-    rOut.gain.setTargetAtTime(rd.lvl, ctx.currentTime, 0.5);
+    rOut.gain.setTargetAtTime(rd.lvl * 0.45, ctx.currentTime, 0.5);
     if (rd.lvl > 0) stat.gain.setTargetAtTime(0.012, ctx.currentTime, 0.3);
   }
   function rdMood(name) {
