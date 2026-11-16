@@ -340,8 +340,8 @@ def test_eta_visible_and_feasibility() -> None:
     o = make_order(0, 600.0, x0=9110.0 + 1000.0, c=2)
     g = sim.new_game(make_shift([o]), "normal", LONG)
     assert sim.eta_from(g, g.x, g.y, 0.0, o) == pytest.approx(1.0 / 30 * 3600 + 30)
-    assert not sim.visible(g, o)  # lead 420: the pin appears at t = 180
-    g.t = 200.0
+    assert not sim.visible(g, o)  # lead 378 (420 * 0.9): the pin appears at t = 222
+    g.t = 230.0
     assert sim.visible(g, o)
     assert sim.feasibility(g, o, False) == sim.OK
     g.t = 590.0

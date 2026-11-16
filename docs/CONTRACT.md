@@ -358,7 +358,7 @@ skipping the missing ones. `10_data` uses `PG.DATA` if set, `12_roads` uses `PG.
 | `CALL` | `0 = A` dispatch call, `1 = B` taxi stand, `2 = C` street hail (`CALL_NAMES = ["Виклик","Стоянка","З вулиці"]`) |
 | `LEAD` (game s) | `[1200, 1200, 900]` for A, B, C — pin visible from `t − LEAD[c]·DIFF_K·leadK`. Chosen for playability, not for the 200-s measuring bot: on normal a pin lives 30 / 30 / 22 real s (LEAD / `BASE_SCALE`), never under 13 (rush calls, `leadK` 0.6, are shorter). A greedy scripted player over the 28 shifts sees on average 4.8 bright (takeable) pins on a 2.8 km phone view on normal (median 2, p90 15: demand comes in bursts), easy 4.9, hard 3.0. `RADIUS` hardly moves this (9000/6500/4500 gives 4.9). Wave-3 values were `[310, 310, 310]`; `[1000, 720, 600]` gave median 0 and was dropped |
 | `RADIUS` (m) | `[6000, 4500, 3000]` — pin visible only within `RADIUS[c]·DIFF_K` of the car (was `[5000, 3500, 2500]`) |
-| `DIFF_K` | `{easy:1.3, normal:1, hard:0.8}` — easy shows more pins for longer, hard fewer (was `1.0 / 1 / 0.9`) |
+| `DIFF_K` | `{easy:1, normal:0.9, hard:0.8}` — fewer pins on screen per difficulty (was `1.3 / 1 / 0.8`) |
 | `BOARD_S` | 30 (boarding seconds added to eta) |
 | `HOME` | `{x: 9110, y: 12443}` metres |
 | `MAP` | `{w: 15000, h: 19000}` metres |

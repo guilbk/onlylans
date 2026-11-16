@@ -91,7 +91,7 @@ def test_grids_vary_only_their_levers() -> None:
     assert len(floored) < len(normal)
     easy = tune.easy_grid(base)
     assert [s.diff_k["easy"] for s in easy] == list(tune.K_EASY_GRID)
-    assert all(s.diff_k["normal"] == 1.0 and s.lead == base.lead for s in easy)
+    assert all(s.diff_k["normal"] == 0.9 and s.lead == base.lead for s in easy)
     hard = tune.hard_grid(base)
     assert len(hard) == len(tune.K_HARD_GRID) * 2 * 2 * 2 * 2
     assert all(s.rivals["normal"] == base.rivals["normal"] for s in hard)
