@@ -621,3 +621,136 @@ def test_load_sizes(tmp_path: Path) -> None:
     assert party.load_sizes(tmp_path / "none.json") == party.DEFAULT_SIZES
     f.write_text("{}", encoding="utf-8")
     assert party.load_sizes(f) == party.DEFAULT_SIZES
+
+
+# ---- public URL, compact replies, 30 players ----
+
+
+def test_join_link_prefers_the_public_url_and_forwarded_scheme() -> None:
+    pub = "https://abc-def.trycloudflare.com"
+    assert party.join_link("127.0.0.1:8090", "BCDF", "http://10.0.0.2:8090/", pub) == (
+        pub + "/?room=BCDF"
+    )
+    assert party.join_link("x.example", "BCDF", "", pub + "/") == pub + "/?room=BCDF"
+    seen = party.join_link("abc.trycloudflare.com", "BCDF", proto="https")
+    assert seen == "https://abc.trycloudflare.com/?room=BCDF"
+    assert party.join_link("a:1", "BCDF", proto="gopher") == "http://a:1/?room=BCDF"
+
+
+def test_state_is_compact_and_does_not_grow() -> None:
+    p, clock = make()
+    players = [p.join(f"P{i}")[0] for i in range(30)]
+    p.start(p.token, 0, "normal", 180, 0)
+    first = len(json.dumps(p.state(), separators=(",", ":")))
+    for i, pl in enumerate(players):
+        p.sync(pl.key, {"x": 1.23456 + i, "y": 2.0, "hx": 0.123456, "hy": 0.5, "money": 1.239})
+        clock.t += 0.2
+    state = p.state()
+    assert state["players"][0]["hx"] == 0.12
+    assert state["players"][0]["money"] == 1.24
+    assert len(str(state["players"][0]["at"]).split(".")[-1]) <= 3
+    for _ in range(300):  # many syncs add nothing: no history
+        p.sync(players[0].key, {"x": 5.0, "y": 5.0, "money": 2})
+        clock.t += 0.2
+    assert len(json.dumps(p.state(), separators=(",", ":"))) <= first * 1.5
+    assert "key" not in json.dumps(state)
+
+
+def test_thirty_players_fit_one_room_and_the_cap_is_forty() -> None:
+    assert party.MAX_PLAYERS == 40
+    p, _ = make()
+    for i in range(30):
+        p.join(f"n{i}")
+    assert len(p.state()["players"]) == 30
+
+
+def test_http_public_url_in_qr_and_forwarded_proto(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("x", encoding="utf-8")
+    pub = "https://abc-def.trycloudflare.com"
+    server = party.make_party_server(tmp_path, 0, party.Rooms(), host="127.0.0.1", public_url=pub)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        _, host = call(port, "POST", "/api/create", {"name": "A"})
+        _, qr = call(port, "GET", f"/api/qr?room={host['room']}")
+        assert qr["url"] == f"{pub}/?room={host['room']}"
+        assert "\n" not in json.dumps(host)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    with serving(tmp_path) as port:
+        _, host = call(port, "POST", "/api/create", {"name": "A"})
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request(
+            "GET",
+            f"/api/qr?room={host['room']}",
+            headers={"Host": "q.trycloudflare.com", "X-Forwarded-Proto": "https"},
+        )
+        qr = json.loads(conn.getresponse().read())
+        conn.close()
+        assert qr["url"] == f"https://q.trycloudflare.com/?room={host['room']}"
+
+
+def test_keep_alive_serves_many_requests_on_one_connection(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("x", encoding="utf-8")
+    with serving(tmp_path) as port:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("POST", "/api/create", json.dumps({"name": "A"}), JSON)
+        room = json.loads(conn.getresponse().read())["room"]
+        for _ in range(20):
+            conn.request("GET", f"/api/party?room={room}")
+            resp = conn.getresponse()
+            assert resp.status == 200
+            resp.read()
+        conn.close()
+
+
+def test_skin_and_mods_are_cleaned_and_shown() -> None:
+    p, _ = make()
+    a, _ = p.join("A", None, "neon", {"wheels": "rim2", "x" * 40: "y" * 40, "": "q", "n": 5})
+    state = p.state()["players"][0]
+    assert state["skin"] == "neon"
+    assert state["mods"] == {"wheels": "rim2", "x" * 24: "y" * 24}
+    b, _ = p.join("B")
+    assert "skin" not in p.state()["players"][1] and "mods" not in p.state()["players"][1]
+    p.sync(b.key, {"skin": "a b\n" + "z" * 50, "mods": {f"k{i}": "v" for i in range(30)}})
+    s2 = p.state()["players"][1]
+    assert len(s2["skin"]) == 24 and " " not in s2["skin"]
+    assert len(s2["mods"]) == party.MAX_MODS
+    p.sync(b.key, {"skin": 7, "mods": ["x"]})
+    assert "skin" not in p.state()["players"][1] and "mods" not in p.state()["players"][1]
+    assert a.skin == "neon"
+
+
+def test_route_passes_skin_and_mods() -> None:
+    rooms = party.Rooms()
+    made = party.route(rooms, "/api/create", {"name": "A", "skin": "gold", "mods": {"a": "b"}})
+    assert made["state"]["players"][0]["skin"] == "gold"
+    j = party.route(rooms, "/api/join", {"room": made["room"], "name": "B", "mods": {"c": "d"}})
+    assert j["state"]["players"][1]["mods"] == {"c": "d"}
+
+
+def test_poll_ms_follows_the_room_size_and_the_server_load() -> None:
+    assert [party.poll_ms(n) for n in (1, 10, 11, 30, 31)] == [200, 200, 350, 350, 500]
+    assert party.poll_ms(5, party.SLOW_MS + 1) == 300
+    assert party.poll_ms(20, party.SLOW_MS + 1) == 525
+    assert party.poll_ms(20, party.SLOW_MS) == 350
+
+
+def test_every_state_carries_poll_ms() -> None:
+    p, _ = make()
+    for i in range(11):
+        p.join(f"n{i}")
+    assert p.state()["poll_ms"] == 350
+    load = party.Load()
+    for _ in range(200):
+        load.add(100.0)
+    assert load.ms > party.SLOW_MS
+    slow = party.Party(load=load)
+    slow.join("A")
+    assert slow.state()["poll_ms"] == 300
+    rooms = party.Rooms()
+    made = party.route(rooms, "/api/create", {"name": "A"})
+    assert made["state"]["poll_ms"] == 200
